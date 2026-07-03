@@ -3,22 +3,26 @@
 
 import PackageDescription
 
-// Repeated identifiers extracted to named constants so the manifest has a
-// single source of truth, following the pattern established by the sibling
-// FoundationModelsRouter and CodeContextKit packages.
+/// The package, library product, and library target name.
+///
+/// Repeated identifiers are extracted to named constants so the manifest has
+/// a single source of truth, following the pattern established by the sibling
+/// FoundationModelsRouter and CodeContextKit packages.
 let packageName = "FoundationModelsMetadataRegistry"
 
-/// The name of the FoundationModelsRouter dependency package, wired as a
-/// sibling path dependency the same way `../CodeContextKit/Package.swift`
-/// does. Router supplies `RoutedLLM`/`RoutedSession` (selection),
-/// `RoutedEmbedder` (cosine), and `Grammar` (xgrammar id enums) to the
-/// production conformers (plan.md §10); the core — catalog, signals, RRF,
-/// both seams — compiles and unit-tests without exercising Router at
-/// runtime (fakes conform to the seams).
+/// The name of the FoundationModelsRouter dependency package.
+///
+/// Wired as a sibling path dependency the same way
+/// `../CodeContextKit/Package.swift` does. Router supplies
+/// `RoutedLLM`/`RoutedSession` (selection), `RoutedEmbedder` (cosine), and
+/// `Grammar` (xgrammar id enums) to the production conformers (plan.md §10);
+/// the core — catalog, signals, RRF, both seams — compiles and unit-tests
+/// without exercising Router at runtime (fakes conform to the seams).
 let routerDependencyName = "FoundationModelsRouter"
 
-/// SwiftPM manifest for FoundationModelsMetadataRegistry (plan.md §10):
-/// a single library target over the FoundationModelsRouter sibling, plus a
+/// The SwiftPM manifest for FoundationModelsMetadataRegistry (plan.md §10).
+///
+/// A single library target over the FoundationModelsRouter sibling, plus a
 /// Swift Testing unit test target. `Examples/` executable targets (§13) are
 /// added by later tasks and are demos only, never a dependency of the
 /// library.

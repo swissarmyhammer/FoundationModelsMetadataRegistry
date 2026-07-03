@@ -17,6 +17,21 @@ comments:
 
     Double-check agent: REVISE with one finding — Package.resolved must be COMMITTED (family convention; Router's .gitignore documents why: with a path dep, only the root package's Package.resolved pins the mlx-swift-lm BRANCH dependency, so untracked = non-reproducible CI). Addressed within my no-commit constraint: Package.resolved is in the working tree (untracked, not ignored) and .gitignore now carries the mirrored "committed, not ignored" comment. ORCHESTRATOR: include Package.resolved in the commit. Task left in doing for /review.
   timestamp: 2026-07-03T20:02:27.379197+00:00
+- actor: claude-code
+  id: 01kwmsd29xnfd9zew9ata7b810
+  text: 'Iteration 1: implement landed green in doing (swift build + swift test, 1 passed/0 failed). Checkpoint committed at 1363c74. Notes: Package.resolved deliberately committed to pin mlx-swift-lm branch dep; ci.yml uses dual checkout ([self-hosted, macOS]) because the family reusable workflow can''t resolve the ../FoundationModelsRouter path dep — workflow untested until pushed. Upstream mlx "missing creator for mutated node" warning is pre-existing, not ours. Proceeding to /review HEAD~1..HEAD.'
+  timestamp: 2026-07-03T20:05:59.229619+00:00
+- actor: claude-code
+  id: 01kwmswrsx8b5cxtev4q7ypw2b
+  text: |-
+    Review findings (2026-07-03 15:06) fixed; both checklist items flipped to [x]. Doc-comment-only changes, no behavior/manifest changes, nothing committed (per orchestrator rules):
+
+    1. Package.swift — converted the plain `//` block above `packageName` to a `///` doc comment, and applied the pattern root-fix across the whole manifest: all three top-level declarations (`packageName`, `routerDependencyName`, `package`) now have doc comments shaped as single-sentence summary ending in a period, blank `///` line, then elaboration. (`routerDependencyName` and `package` previously had doc comments with run-on first lines.) The `// swift-tools-version` directive and the inline macOS-27 note inside `Package(...)` correctly stay plain comments.
+    2. PackageTests.swift — restructured `moduleImportsAndBuilds`'s doc comment to summary "Placeholder scaffold test proving the library target builds and is importable." + blank `///` + elaboration.
+    3. Same pattern applied to the Sources placeholder file's doc comment (Sources/FoundationModelsMetadataRegistry/FoundationModelsMetadataRegistry.swift), which also violated it.
+
+    Verification: `swift build` exit 0, `swift test` exit 0 (1 test passed, 0 failed); only warning is the pre-existing upstream mlx "missing creator for mutated node" one. Double-check agent: PASS — mechanically confirmed the diff touches only comment lines and all five doc comments across the three files follow the pattern. Task left in doing for /review.
+  timestamp: 2026-07-03T20:14:33.789729+00:00
 position_column: doing
 position_ordinal: '80'
 title: Scaffold SwiftPM package with Router dependency
@@ -42,3 +57,8 @@ The core must compile and unit-test without exercising Router at runtime (fakes 
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-07-03 15:06)
+
+- [x] `Package.swift:9` — Public constant `packageName` lacks a documentation comment; sibling constants in the same file have doc comments explaining their specific purposes. Add a /// documentation comment for `packageName` explaining its purpose, consistent with the pattern established by the other constants.
+- [x] `Tests/FoundationModelsMetadataRegistryTests/PackageTests.swift:3` — The first line of a doc comment must be a single-sentence summary ending in a period. The current first line 'Placeholder scaffold test (plan.md §10): proves the' is incomplete and continues across multiple lines without a period. Restructure to: `/// Placeholder scaffold test proving the library target builds and is importable.` followed by a blank `///` line, then the elaboration: `/// The real surface will land with the M1 catalog + retrieval core tasks.`.
