@@ -21,10 +21,14 @@ comments:
 
     Left in `doing` per /implement workflow — ready for /review.
   timestamp: 2026-07-03T20:30:25.414440+00:00
+- actor: claude-code
+  id: 01kwmv0mkvt71wypf39pj8mhg7
+  text: 'Iteration 1: implement landed green in doing (34 tests passed / 0 failed across 3 suites, TDD red→green verified). Checkpoint committed at e73ff34. Renamed BM25 field weights (symbolPathFieldWeight→idFieldWeight, bodyFieldWeight→blockFieldWeight) to match this domain. Proceeding to /review HEAD~1..HEAD.'
+  timestamp: 2026-07-03T20:34:09.147477+00:00
 depends_on:
 - 01KWMEB1EMNP2HMR8TJ3TRGW15
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '8180'
 title: Port retrieval primitives from CodeContextKit (Tokenizer, BM25, Trigram, RRF, Hit)
 ---
 ## What

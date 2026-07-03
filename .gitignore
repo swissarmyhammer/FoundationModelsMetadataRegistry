@@ -1,6 +1,7 @@
 .claude/settings.local.json
 .sah/
 .shell/
+.validators/
 .build/
 .DS_Store
 # Package.resolved is committed (not ignored): with a path dependency on
