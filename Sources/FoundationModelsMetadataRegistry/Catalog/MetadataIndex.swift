@@ -167,7 +167,7 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
     /// times before being unified.
     ///
     /// - Parameters:
-    ///   - id: the id to look up.
+    ///   - forId: the id to look up.
     ///   - keyPath: the `Entry` field to project out.
     /// - Returns: the projected field, or `nil` if `id` isn't indexed.
     private func value<T>(forId id: String, keyPath: KeyPath<Entry, T>) -> T? {
@@ -347,7 +347,7 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
     ///
     /// - Parameters:
     ///   - embedding: the embedding to store, or `nil`.
-    ///   - entry: the entry to copy, with `embedding` replaced.
+    ///   - replacing: the entry to copy, with `embedding` replaced.
     /// - Returns: the copied entry with its embedding replaced.
     private static func withEmbedding(_ embedding: [Float]?, replacing entry: Entry) -> Entry {
         Entry(
