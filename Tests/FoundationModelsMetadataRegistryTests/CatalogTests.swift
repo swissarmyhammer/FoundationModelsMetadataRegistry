@@ -62,24 +62,6 @@ struct CatalogTests {
         }
     }
 
-    /// A thread-safe recorder for `onDiagnostic` callbacks.
-    final class DiagnosticRecorder: @unchecked Sendable {
-        private let lock = NSLock()
-        private var recorded: [MetadataDiagnostic] = []
-
-        var diagnostics: [MetadataDiagnostic] {
-            lock.lock()
-            defer { lock.unlock() }
-            return recorded
-        }
-
-        func record(_ diagnostic: MetadataDiagnostic) {
-            lock.lock()
-            defer { lock.unlock() }
-            recorded.append(diagnostic)
-        }
-    }
-
     // MARK: - SearchableMetadata
 
     @Test

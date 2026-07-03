@@ -1,4 +1,3 @@
-import Foundation
 import Testing
 
 @testable import FoundationModelsMetadataRegistry
@@ -44,25 +43,6 @@ struct RetrievalSearchTests {
         FixtureItem(id: "firewall", block: "controls inbound and outbound traffic rules"),
         FixtureItem(id: "dns", block: "manages domain name records"),
     ]
-
-    /// A thread-safe recorder for `onDiagnostic` callbacks (mirrors
-    /// `CatalogTests.DiagnosticRecorder`).
-    final class DiagnosticRecorder: @unchecked Sendable {
-        private let lock = NSLock()
-        private var recorded: [MetadataDiagnostic] = []
-
-        var diagnostics: [MetadataDiagnostic] {
-            lock.lock()
-            defer { lock.unlock() }
-            return recorded
-        }
-
-        func record(_ diagnostic: MetadataDiagnostic) {
-            lock.lock()
-            defer { lock.unlock() }
-            recorded.append(diagnostic)
-        }
-    }
 
     // MARK: - Golden ranking: id-field weighting
 
