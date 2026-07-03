@@ -161,11 +161,11 @@ actor SelectionTier<Item: SearchableMetadata> {
     /// Derives the xgrammar JSON Schema constraining `Selection.ids` to
     /// exactly `ids` (plan.md §6 "Ids only, grammar-enforced") — the same
     /// derive-then-wrap pattern as Multitool's own
-    /// `Librarian.grammarSchemaSource()` (`Librarian.swift:143-149` wraps the
-    /// analogous derived schema in `Grammar.jsonSchema(_:)`), with an `enum`
-    /// constraint injected into the `ids` array's `items` subschema so the
-    /// model is structurally incapable of inventing an id outside the
-    /// current candidate set.
+    /// `Librarian.grammarSchemaSource()` (which wraps the analogous derived
+    /// schema in `Grammar.jsonSchema(_:)`), with an `enum` constraint
+    /// injected into the `ids` array's `items` subschema so the model is
+    /// structurally incapable of inventing an id outside the current
+    /// candidate set.
     ///
     /// - Parameter ids: the candidate id set to constrain output to — the
     ///   full catalog's ids under budget, the top-M ranked ids over budget (a

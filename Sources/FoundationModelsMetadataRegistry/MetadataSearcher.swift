@@ -43,6 +43,7 @@ public struct Weights: Sendable, Equatable {
 /// then requesting `.selection` explicitly fails loudly rather than silently
 /// substituting retrieval.
 public struct SelectionTierUnavailable: Error, Sendable, Equatable {
+    /// Creates an error indicating that the selection tier is unavailable.
     public init() {}
 }
 

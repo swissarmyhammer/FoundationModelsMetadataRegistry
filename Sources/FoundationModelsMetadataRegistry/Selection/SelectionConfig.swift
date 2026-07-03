@@ -68,9 +68,9 @@ public struct SelectionConfig: Sendable {
 
 extension String {
     /// The curated selection guidance every `SelectionConfig` defaults its
-    /// `preamble` to — Multitool's shipped `Librarian.selectionGuidance`
-    /// (`Librarian.swift:41-45`), lifted verbatim: "fewest that suffice, in
-    /// call order when order matters."
+    /// `preamble` to — Multitool's shipped `Librarian.selectionGuidance`,
+    /// lifted verbatim: "fewest that suffice, in call order when order
+    /// matters."
     public static let librarianDefault: String = """
         You are an API librarian. Given a task, return ONLY the functions needed — fewest
         that suffice, in call order when order matters. Do not invent functions; return an
