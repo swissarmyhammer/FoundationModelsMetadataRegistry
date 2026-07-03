@@ -32,7 +32,7 @@ comments:
 
     Verification: `swift build` exit 0, `swift test` exit 0 (1 test passed, 0 failed); only warning is the pre-existing upstream mlx "missing creator for mutated node" one. Double-check agent: PASS — mechanically confirmed the diff touches only comment lines and all five doc comments across the three files follow the pattern. Task left in doing for /review.
   timestamp: 2026-07-03T20:14:33.789729+00:00
-position_column: doing
+position_column: done
 position_ordinal: '80'
 title: Scaffold SwiftPM package with Router dependency
 ---
