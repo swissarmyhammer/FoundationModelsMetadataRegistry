@@ -1,3 +1,6 @@
+import CryptoKit
+import Foundation
+
 /// An in-memory, tokenized two-field search index over a catalog of
 /// `SearchableMetadata` items (plan.md §1, §4; decision #10: no persistence,
 /// no database — everything lives in memory and is rebuilt wholesale from
@@ -48,9 +51,17 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
         /// This entry's canonical trigram set for `block`.
         let blockTrigramSet: Set<String>
 
-        /// This entry's embedding, or `nil` until a future embedding task
-        /// fills it (plan.md §5 "Embedding storage slots"; §8 incremental
-        /// re-embedding).
+        /// SHA-256 digest of `block`'s UTF-8 bytes — the "block-hash" half of
+        /// the `(id, block-hash)` key `MetadataIndex.build(items:embedder:
+        /// previous:onDiagnostic:)` reuses embeddings by (plan.md §8): two
+        /// builds' entries for the same `id` with equal `blockHash` carry the
+        /// same rendered text, so a stored embedding is still valid and
+        /// re-embedding would be wasted work.
+        let blockHash: Data
+
+        /// This entry's embedding, or `nil` until `MetadataIndex.build(items:
+        /// embedder:previous:onDiagnostic:)` fills it (plan.md §5 "Embedding
+        /// storage slots"; §8 incremental re-embedding).
         let embedding: [Float]?
     }
 
@@ -128,8 +139,14 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
             documentLength: idTokens.count + blockTokens.count,
             idTrigramSet: Trigram.canonicalTrigramSet(text: item.id),
             blockTrigramSet: Trigram.canonicalTrigramSet(text: block),
+            blockHash: Self.hash(block: block),
             embedding: nil
         )
+    }
+
+    /// SHA-256 digest of `block`'s UTF-8 bytes — see `Entry.blockHash`.
+    private static func hash(block: String) -> Data {
+        Data(SHA256.hash(data: Data(block.utf8)))
     }
 
     // MARK: - Lookup
@@ -185,9 +202,124 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
         value(forId: id, keyPath: \.blockTrigramSet)
     }
 
-    /// The embedding stored for `id` — `nil` until a future embedding task
-    /// fills this storage slot, or if `id` isn't indexed.
+    /// The embedding stored for `id` — `nil` until `MetadataIndex.build(items:
+    /// embedder:previous:onDiagnostic:)` fills this storage slot, or if `id`
+    /// isn't indexed.
     public func embedding(forId id: String) -> [Float]? {
         value(forId: id, keyPath: \.embedding) ?? nil
+    }
+
+    // MARK: - Embedding at index-build/update time
+
+    /// Builds an in-memory index from `items` the same way `init(items:
+    /// onDiagnostic:)` does (tokenizing, trigramming — always synchronous),
+    /// then embeds each item's rendered block through `embedder` (plan.md
+    /// §5, §8) — embedding is the one part of index-build that's async,
+    /// because it's the one part that may call out to a model.
+    ///
+    /// **Hash-keyed incremental re-embedding**: an item whose `id` and
+    /// rendered-block `Entry.blockHash` both match `previous`'s, *and* whose
+    /// `previous` entry actually carries a non-`nil` embedding, reuses that
+    /// stored embedding rather than re-embedding unchanged text. A hash match
+    /// against a `nil` previous embedding (no embedder was configured, or a
+    /// transient embed failure, at that prior build) is **not** reused —
+    /// the item is queued for embedding again here, exactly like a brand-new
+    /// item, so it catches up as soon as an embedder is actually available
+    /// instead of staying cosine-blind forever just because its text never
+    /// changed (plan.md §8 "embed catch-up"). `embedder.embed(_:)` is called
+    /// with exactly the new-or-changed-or-never-embedded blocks, batched
+    /// into a single call, never once per item. This is what makes
+    /// `update(items:)` (plan.md §8, a later task) cheap to call on every
+    /// upstream change notification: unchanged, already-embedded items cost
+    /// nothing here.
+    ///
+    /// - Parameters:
+    ///   - items: same as `init(items:onDiagnostic:)`.
+    ///   - embedder: the embedder to embed new-or-changed blocks with. `nil`
+    ///     leaves every embedding `nil` (identical to `init(items:
+    ///     onDiagnostic:)`) — callers report `.embeddingUnavailable`
+    ///     themselves (plan.md §5); this initializer never does, since it
+    ///     has no `onDiagnostic` case reserved for "no embedder configured".
+    ///   - previous: the prior build of this index, if any, to reuse
+    ///     embeddings from for unchanged `(id, block-hash)` pairs. Defaults
+    ///     to `nil` (nothing to reuse — every item is embedded fresh).
+    ///   - onDiagnostic: forwarded to `init(items:onDiagnostic:)` for
+    ///     duplicate-id reporting.
+    /// - Returns: the built index, with embeddings populated wherever
+    ///   `embedder` was configured and ran successfully. If `embedder.embed(_:)`
+    ///   throws, every item that would have been (re-)embedded this call is
+    ///   left with whatever embedding it already had (`nil` for a new item) —
+    ///   graceful degradation, matching plan.md §5's "no embedder configured"
+    ///   handling rather than propagating a transient embedding failure.
+    public static func build(
+        items: [Item],
+        embedder: (any TextEmbedding)?,
+        previous: MetadataIndex<Item>? = nil,
+        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) }
+    ) async -> MetadataIndex<Item> {
+        let baseline = MetadataIndex(items: items, onDiagnostic: onDiagnostic)
+        guard let embedder else { return baseline }
+
+        var entriesById = baseline.entriesById
+        var idsToEmbed: [String] = []
+        var textsToEmbed: [String] = []
+
+        for id in baseline.ids {
+            guard let entry = entriesById[id] else { continue }
+            // Reusing `previousEntry.embedding` is only valid when there is
+            // an actual embedding to reuse: a `nil` embedding (no embedder
+            // configured, or a transient embed failure, at the prior build)
+            // must never be copied forward as if it were a cached result —
+            // that would leave the item cosine-blind forever even once an
+            // embedder becomes available, defeating "embed catch-up"
+            // (plan.md §8). A hash match with no prior embedding still
+            // queues the item for embedding below, same as a brand-new item.
+            if let previousEntry = previous?.entriesById[id],
+                previousEntry.blockHash == entry.blockHash,
+                let previousEmbedding = previousEntry.embedding {
+                entriesById[id] = Self.withEmbedding(previousEmbedding, replacing: entry)
+            } else {
+                idsToEmbed.append(id)
+                textsToEmbed.append(entry.block)
+            }
+        }
+
+        if !idsToEmbed.isEmpty, let vectors = try? await embedder.embed(textsToEmbed), vectors.count == idsToEmbed.count {
+            for (id, vector) in zip(idsToEmbed, vectors) {
+                guard let entry = entriesById[id] else { continue }
+                entriesById[id] = Self.withEmbedding(vector, replacing: entry)
+            }
+        }
+
+        return MetadataIndex(ids: baseline.ids, entriesById: entriesById)
+    }
+
+    /// Returns a copy of `entry` with its `embedding` replaced by `embedding`
+    /// — every other field carried over unchanged. `Entry`'s fields are all
+    /// `let`, so replacing one means rebuilding the whole value; this is the
+    /// single place that does so; both `build`'s reuse and freshly-embedded
+    /// branches go through it.
+    private static func withEmbedding(_ embedding: [Float]?, replacing entry: Entry) -> Entry {
+        Entry(
+            item: entry.item,
+            block: entry.block,
+            weightedTermFrequency: entry.weightedTermFrequency,
+            termSet: entry.termSet,
+            documentLength: entry.documentLength,
+            idTrigramSet: entry.idTrigramSet,
+            blockTrigramSet: entry.blockTrigramSet,
+            blockHash: entry.blockHash,
+            embedding: embedding
+        )
+    }
+
+    /// Reconstructs an index directly from already-precomputed `ids` and
+    /// `entriesById` — the internal counterpart to `init(items:onDiagnostic:)`
+    /// that `build(items:embedder:previous:onDiagnostic:)` uses to return a
+    /// new index after filling in embeddings, without re-tokenizing or
+    /// re-trigramming anything `baseline` already computed.
+    private init(ids: [String], entriesById: [String: Entry]) {
+        self.ids = ids
+        self.entriesById = entriesById
     }
 }

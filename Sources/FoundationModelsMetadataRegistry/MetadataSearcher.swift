@@ -15,10 +15,11 @@ public struct Weights: Sendable, Equatable {
     /// The weight applied to the trigram fuzzy-ranking signal.
     public var trigram: Double
 
-    /// The weight applied to the cosine semantic-ranking signal. No embedder
-    /// is wired up yet (a later task lands it), so the cosine signal never
-    /// ranks anything and this weight has no effect on `.retrieval` results
-    /// today.
+    /// The weight applied to the cosine semantic-ranking signal. Only takes
+    /// effect when the searcher is configured with an embedder (`init(items:
+    /// mode:weights:embedder:onDiagnostic:)` or `init(index:mode:weights:
+    /// embedder:onDiagnostic:)`) — without one, cosine never ranks anything
+    /// regardless of this weight.
     public var cosine: Double
 
     /// Creates a set of per-signal fusion weights.
@@ -51,17 +52,20 @@ public struct SelectionTierUnavailable: Error, Sendable, Equatable {
 /// `search(intent:limit:)` entry point.
 ///
 /// Only `.retrieval` is implemented today — BM25 (two fields) + character-
-/// trigram Dice, fused by `RRF.fuse(k: 60)` and normalized to `[0, 1]`
-/// (plan.md §5). There is no session, no tokens, and no embedder yet, so the
-/// cosine signal never ranks anything and every `Match.signals.cosine` is
-/// `0.0` — the same "no embedding available" value `Signals.cosine`
-/// documents, not a crash or a special case (plan.md §5 "absent-signal
-/// rule"). `.selection` and `.auto` are stubs until the selection tier
-/// (plan.md §6) lands: `.auto` falls back to `.retrieval` (matching plan.md
-/// §7's "selection when a model is configured, else retrieval" — no model is
-/// ever configured yet), and explicit `.selection` throws
-/// `SelectionTierUnavailable` rather than silently doing something the
-/// caller didn't ask for.
+/// trigram Dice + cosine (when an embedder is configured), fused by
+/// `RRF.fuse(k: 60)` and normalized to `[0, 1]` (plan.md §5). There is no
+/// session, no tokens yet — cosine is real, but selection isn't. Without an
+/// `embedder` (or before any catalog item has been embedded), the cosine
+/// signal never ranks anything and every `Match.signals.cosine` is `0.0` —
+/// the same "no embedding available" value `Signals.cosine` documents, not a
+/// crash or a special case (plan.md §5 "absent-signal rule") — and
+/// `.embeddingUnavailable` is reported via `onDiagnostic` on every such
+/// search, never silently. `.selection` and `.auto` are stubs until the
+/// selection tier (plan.md §6) lands: `.auto` falls back to `.retrieval`
+/// (matching plan.md §7's "selection when a model is configured, else
+/// retrieval" — no model is ever configured yet), and explicit `.selection`
+/// throws `SelectionTierUnavailable` rather than silently doing something
+/// the caller didn't ask for.
 public actor MetadataSearcher<Item: SearchableMetadata> {
     /// The in-memory index built from the catalog's items at `init`.
     private let index: MetadataIndex<Item>
@@ -72,7 +76,22 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// Which tier `search(intent:limit:)` uses.
     private let mode: SearchMode
 
-    /// Builds a searcher over `items`, indexing them once at `init`.
+    /// The embedder used to embed the *query* text at search time (plan.md
+    /// §5 "only the query itself is embedded per search") — `nil` means no
+    /// embedder is configured, so cosine ranking is skipped and every search
+    /// degrades to keyword-only. Catalog items are never embedded here; that
+    /// happens once, at index-build/update time, via `MetadataIndex.build(
+    /// items:embedder:previous:onDiagnostic:)`.
+    private let embedder: (any TextEmbedding)?
+
+    /// Called for every diagnostic emitted while building the index and
+    /// while searching (currently `.duplicateId` and `.embeddingUnavailable`).
+    private let onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
+
+    /// Builds a searcher over `items`, indexing them once at `init` with no
+    /// embedder — cosine never ranks anything and every search degrades to
+    /// keyword-only, reported via `.embeddingUnavailable` (plan.md §5). Use
+    /// `init(items:mode:weights:embedder:onDiagnostic:)` to wire up cosine.
     ///
     /// - Parameters:
     ///   - items: the catalog's items, in first-seen-wins duplicate-id order
@@ -89,11 +108,81 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         items: [Item],
         mode: SearchMode = .auto,
         weights: Weights = Weights(),
-        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) }
+        onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) }
     ) {
+        self.init(
+            index: MetadataIndex(items: items, onDiagnostic: onDiagnostic),
+            mode: mode,
+            weights: weights,
+            embedder: nil,
+            onDiagnostic: onDiagnostic
+        )
+    }
+
+    /// Builds a searcher over `items`, embedding every item's rendered block
+    /// through `embedder` at index-build time (plan.md §5, §8) so cosine can
+    /// join RRF fusion in `search(intent:limit:)`.
+    ///
+    /// - Parameters:
+    ///   - items: the catalog's items, in first-seen-wins duplicate-id order
+    ///     (forwarded to `MetadataIndex.build(items:embedder:previous:
+    ///     onDiagnostic:)`).
+    ///   - mode: which tier `search(intent:limit:)` uses. Defaults to
+    ///     `.auto`, which falls back to `.retrieval` until a selection tier
+    ///     is configured.
+    ///   - weights: the per-signal fusion weights for the retrieval tier.
+    ///     Defaults to `1.0` for every signal.
+    ///   - embedder: the embedder to embed every item's block with at build
+    ///     time, and the query with at search time. `nil` behaves like
+    ///     `init(items:mode:weights:onDiagnostic:)` — keyword-only, with
+    ///     `.embeddingUnavailable` reported on every search.
+    ///   - onDiagnostic: called for every diagnostic emitted while building
+    ///     the index and while searching. Defaults to logging via
+    ///     `MetadataDiagnostic.log(_:)`.
+    public init(
+        items: [Item],
+        mode: SearchMode = .auto,
+        weights: Weights = Weights(),
+        embedder: (any TextEmbedding)?,
+        onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) }
+    ) async {
+        self.init(
+            index: await MetadataIndex.build(items: items, embedder: embedder, onDiagnostic: onDiagnostic),
+            mode: mode,
+            weights: weights,
+            embedder: embedder,
+            onDiagnostic: onDiagnostic
+        )
+    }
+
+    /// Builds a searcher directly over an already-built `index` — the seam
+    /// `update(items:)` (plan.md §8, a later task) and tests needing precise
+    /// control over an index's embeddings (e.g. a mix of embedded and
+    /// not-yet-embedded items) use instead of re-deriving the index from
+    /// `items` on every call.
+    ///
+    /// - Parameters:
+    ///   - index: the prebuilt index to search over.
+    ///   - mode: which tier `search(intent:limit:)` uses. Defaults to
+    ///     `.auto`.
+    ///   - weights: the per-signal fusion weights for the retrieval tier.
+    ///     Defaults to `1.0` for every signal.
+    ///   - embedder: the embedder to embed the query with at search time.
+    ///     Defaults to `nil` (keyword-only).
+    ///   - onDiagnostic: called for every diagnostic emitted while searching.
+    ///     Defaults to logging via `MetadataDiagnostic.log(_:)`.
+    public init(
+        index: MetadataIndex<Item>,
+        mode: SearchMode = .auto,
+        weights: Weights = Weights(),
+        embedder: (any TextEmbedding)? = nil,
+        onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) }
+    ) {
+        self.index = index
         self.mode = mode
         self.weights = weights
-        self.index = MetadataIndex(items: items, onDiagnostic: onDiagnostic)
+        self.embedder = embedder
+        self.onDiagnostic = onDiagnostic
     }
 
     /// Searches the catalog for `intent`, returning at most `limit` matches
@@ -109,7 +198,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     public func search(intent: String, limit: Int) async throws -> [Match<Item>] {
         switch mode {
         case .retrieval, .auto:
-            return retrievalSearch(intent: intent, limit: limit)
+            return await retrievalSearch(intent: intent, limit: limit)
         case .selection:
             throw SelectionTierUnavailable()
         }
@@ -117,21 +206,29 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
 
     // MARK: - Retrieval tier
 
-    /// Runs the `.retrieval` tier: BM25 + trigram rankings fused by
+    /// Runs the `.retrieval` tier: BM25 + trigram + cosine rankings fused by
     /// `RRF.fuse(k: 60)`, normalized to `[0, 1]`, mapped back through the
     /// catalog to verbatim `Match`es (plan.md §5).
-    private func retrievalSearch(intent: String, limit: Int) -> [Match<Item>] {
+    private func retrievalSearch(intent: String, limit: Int) async -> [Match<Item>] {
         guard limit > 0, index.count > 0 else { return [] }
 
         let (bm25Ranking, bm25Scores) = computeBM25Ranking(intent: intent)
         let (trigramRanking, trigramScores) = computeTrigramRanking(intent: intent)
+        // Cosine only runs when configured to actually count: a zero weight
+        // means the caller doesn't want the signal, so there's no reason to
+        // embed the query or warn about a missing embedder for it.
+        let (cosineRanking, cosineScores): ([Int], [Double])
+        if weights.cosine > 0.0 {
+            (cosineRanking, cosineScores) = await computeCosineRanking(intent: intent)
+        } else {
+            (cosineRanking, cosineScores) = ([], [Double](repeating: 0.0, count: index.count))
+        }
 
-        // One (ranking, weight) pair per signal so adding a fourth (cosine,
-        // once an embedder lands) is a one-line addition here rather than a
-        // third hand-maintained arm.
+        // One (ranking, weight) pair per signal.
         let signals: [(ranking: [Int], weight: Double)] = [
             (bm25Ranking, weights.bm25),
             (trigramRanking, weights.trigram),
+            (cosineRanking, weights.cosine),
         ]
 
         var rankedLists: [[Int]] = []
@@ -167,7 +264,11 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
                 id: id,
                 block: block,
                 score: normalized[documentIndex] ?? 0.0,
-                signals: Signals(bm25: bm25Scores[documentIndex], trigram: trigramScores[documentIndex], cosine: 0.0),
+                signals: Signals(
+                    bm25: bm25Scores[documentIndex],
+                    trigram: trigramScores[documentIndex],
+                    cosine: cosineScores[documentIndex]
+                ),
                 item: item
             )
         }
@@ -219,6 +320,77 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
                 + BM25.blockFieldWeight * Trigram.dice(querySet: querySet, targetSet: blockTrigramSet)
         }
         return (rankingOfPositiveScores(scores: scores), scores)
+    }
+
+    /// Computes the cosine semantic-ranking signal: `intent` embedded
+    /// through `embedder`, scored against each catalog entry's precomputed
+    /// block embedding via a brute-force per-row dot product (plan.md §5
+    /// "brute-force scoring — plain per-row dot products for cosine — is
+    /// exact and effectively instant" at metadata scale; decision #10, no
+    /// vector store).
+    ///
+    /// Degrades to keyword-only and reports `.embeddingUnavailable` via
+    /// `onDiagnostic` whenever cosine can't contribute: no `embedder` is
+    /// configured, none of the catalog's items carry an embedding yet, or
+    /// embedding the query itself fails. An item with no stored embedding
+    /// scores `0.0` here regardless — the absent-signal rule (plan.md §5):
+    /// it contributes nothing to cosine but still ranks via BM25 + trigram.
+    ///
+    /// - Returns: the matching document indices (into `index.ids`) ranked
+    ///   descending by score, and the full-length, positionally aligned raw
+    ///   score for every document.
+    private func computeCosineRanking(intent: String) async -> (ranking: [Int], scores: [Double]) {
+        let zeroScores = [Double](repeating: 0.0, count: index.count)
+
+        guard let embedder, index.ids.contains(where: { index.embedding(forId: $0) != nil }) else {
+            onDiagnostic(.embeddingUnavailable)
+            return ([], zeroScores)
+        }
+
+        let queryEmbedding: [Float]
+        do {
+            guard let firstVector = try await embedder.embed([intent]).first else {
+                // A well-behaved `TextEmbedding` conformer returns exactly
+                // one vector per input; an empty result for a one-element
+                // input is itself a degradation worth reporting, not a
+                // silent empty ranking (plan.md §1 "every degradation is
+                // reported, never silent").
+                onDiagnostic(.embeddingUnavailable)
+                return ([], zeroScores)
+            }
+            queryEmbedding = firstVector
+        } catch {
+            onDiagnostic(.embeddingUnavailable)
+            return ([], zeroScores)
+        }
+
+        let scores = index.ids.map { id -> Double in
+            guard let itemEmbedding = index.embedding(forId: id) else { return 0.0 }
+            return Self.cosineSimilarity(queryEmbedding, itemEmbedding)
+        }
+        return (rankingOfPositiveScores(scores: scores), scores)
+    }
+
+    /// Cosine similarity between two equal-length vectors: `(a · b) / (|a| |b|)`.
+    ///
+    /// - Returns: the similarity in `[-1.0, 1.0]`, or `0.0` if the vectors
+    ///   differ in length or either has zero magnitude (orthogonal-by-
+    ///   convention, matching `Signals.cosine`'s documented `0.0` for "either
+    ///   the query or the doc lacks an embedding").
+    private static func cosineSimilarity(_ query: [Float], _ target: [Float]) -> Double {
+        guard query.count == target.count, !query.isEmpty else { return 0.0 }
+
+        var dotProduct: Float = 0.0
+        var queryMagnitudeSquared: Float = 0.0
+        var targetMagnitudeSquared: Float = 0.0
+        for index in query.indices {
+            dotProduct += query[index] * target[index]
+            queryMagnitudeSquared += query[index] * query[index]
+            targetMagnitudeSquared += target[index] * target[index]
+        }
+
+        guard queryMagnitudeSquared > 0.0, targetMagnitudeSquared > 0.0 else { return 0.0 }
+        return Double(dotProduct / (queryMagnitudeSquared.squareRoot() * targetMagnitudeSquared.squareRoot()))
     }
 
     /// The indices of every positive score, descending by score — the
