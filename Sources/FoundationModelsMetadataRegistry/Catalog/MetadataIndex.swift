@@ -1,13 +1,12 @@
 import CryptoKit
 import Foundation
 
-/// An in-memory, tokenized two-field search index over a catalog of
-/// `SearchableMetadata` items (plan.md §1, §4; decision #10: no persistence,
-/// no database — everything lives in memory and is rebuilt wholesale from
-/// the caller's items).
+/// A tokenized, two-field search index over a catalog of `SearchableMetadata` items.
 ///
-/// Each item's `id` and rendered `renderBlock()` are precomputed once at
-/// `init` into the data the retrieval tier scores against: a BM25
+/// Built per plan.md §1, §4 (decision #10: no persistence, no database —
+/// everything lives in memory and is rebuilt wholesale from the caller's
+/// items). Each item's `id` and rendered `renderBlock()` are precomputed
+/// once at `init` into the data the retrieval tier scores against: a BM25
 /// field-weighted term frequency (`id` at `BM25.idFieldWeight`, block at
 /// `BM25.blockFieldWeight` — the `symbol_path`/body treatment
 /// `CodeContextKit`'s `SearchCorpusSnapshot` established, ported here for
@@ -20,29 +19,35 @@ import Foundation
 /// `MetadataIndex` never interprets a block's contents — it only tokenizes
 /// and trigrams the opaque text `renderBlock()` returns.
 public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
-    /// One catalog entry's precomputed search data, keyed by `id` in
-    /// `entriesById`.
+    /// One catalog entry's precomputed search data, keyed by `id` in `entriesById`.
     private struct Entry: Sendable {
         /// The catalog item itself.
         let item: Item
 
-        /// `item.renderBlock()`, captured once at build time — the value
-        /// every `Match.block` traces back to verbatim, never re-derived
-        /// (plan.md §1 "Verbatim by construction, not by prompt").
+        /// `item.renderBlock()`, captured once at build time.
+        ///
+        /// The value every `Match.block` traces back to verbatim, never
+        /// re-derived (plan.md §1 "Verbatim by construction, not by
+        /// prompt").
         let block: String
 
-        /// The field-weighted term frequency across both fields: `id`'s
-        /// tokens weighted `BM25.idFieldWeight`, `block`'s tokens weighted
-        /// `BM25.blockFieldWeight` — the `tf` term `BM25Corpus.score` needs.
+        /// The field-weighted term frequency across both fields.
+        ///
+        /// `id`'s tokens are weighted `BM25.idFieldWeight`, `block`'s
+        /// tokens weighted `BM25.blockFieldWeight` — the `tf` term
+        /// `BM25Corpus.score` needs.
         let weightedTermFrequency: [String: Double]
 
-        /// `Set(weightedTermFrequency.keys)` — this entry's distinct term
-        /// set, cached separately so `BM25Corpus.init(queryTokens:documents:)`
+        /// This entry's distinct term set: `Set(weightedTermFrequency.keys)`.
+        ///
+        /// Cached separately so `BM25Corpus.init(queryTokens:documents:)`
         /// doesn't rebuild it from `weightedTermFrequency` on every query.
         let termSet: Set<String>
 
-        /// This entry's unweighted token count across both fields — the
-        /// `|D|` `BM25Corpus.score` needs for length normalization.
+        /// This entry's unweighted token count across both fields.
+        ///
+        /// The `|D|` value `BM25Corpus.score` needs for length
+        /// normalization.
         let documentLength: Int
 
         /// This entry's canonical trigram set for `item.id`.
@@ -51,39 +56,43 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
         /// This entry's canonical trigram set for `block`.
         let blockTrigramSet: Set<String>
 
-        /// SHA-256 digest of `block`'s UTF-8 bytes — the "block-hash" half of
-        /// the `(id, block-hash)` key `MetadataIndex.build(items:embedder:
-        /// previous:onDiagnostic:)` reuses embeddings by (plan.md §8): two
-        /// builds' entries for the same `id` with equal `blockHash` carry the
-        /// same rendered text, so a stored embedding is still valid and
-        /// re-embedding would be wasted work.
+        /// SHA-256 digest of `block`'s UTF-8 bytes.
+        ///
+        /// The "block-hash" half of the `(id, block-hash)` key
+        /// `MetadataIndex.build(items:embedder:previous:onDiagnostic:)`
+        /// reuses embeddings by (plan.md §8): two builds' entries for the
+        /// same `id` with equal `blockHash` carry the same rendered text,
+        /// so a stored embedding is still valid and re-embedding would be
+        /// wasted work.
         let blockHash: Data
 
-        /// This entry's embedding, or `nil` until `MetadataIndex.build(items:
-        /// embedder:previous:onDiagnostic:)` fills it (plan.md §5 "Embedding
-        /// storage slots"; §8 incremental re-embedding).
+        /// This entry's embedding, or `nil` until it is filled in.
+        ///
+        /// Filled by `MetadataIndex.build(items:embedder:previous:
+        /// onDiagnostic:)` (plan.md §5 "Embedding storage slots"; §8
+        /// incremental re-embedding).
         let embedding: [Float]?
     }
 
-    /// Every indexed id, in first-seen order — duplicates already resolved
-    /// by the first-wins policy, so this is exactly the set of ids
-    /// `item(forId:)`/`block(forId:)`/etc. can resolve.
+    /// The indexed ids, in first-seen order, with duplicates already resolved per the first-wins policy.
+    ///
+    /// Exactly the set of ids `item(forId:)`/`block(forId:)`/etc. can
+    /// resolve.
     public let ids: [String]
 
     /// Precomputed search data, keyed by `id`.
     private let entriesById: [String: Entry]
 
-    /// The number of entries in this index (after duplicate ids are
-    /// dropped).
+    /// The number of entries in this index after duplicate ids are dropped.
     public var count: Int { ids.count }
 
-    /// Builds an in-memory index from `items`, tokenizing and trigramming
-    /// each item's `id` and rendered block exactly once.
+    /// Builds an in-memory index from `items`.
     ///
-    /// **Duplicate-id policy**: when two items share an `id`, the first one
-    /// (in `items` order) wins; every later duplicate is dropped and
-    /// reported via `onDiagnostic(.duplicateId(id:))` — never a crash, never
-    /// silent (plan.md §4 "`id` is the join key").
+    /// Tokenizes and trigrams each item's `id` and rendered block exactly
+    /// once. **Duplicate-id policy**: when two items share an `id`, the
+    /// first one (in `items` order) wins; every later duplicate is dropped
+    /// and reported via `onDiagnostic(.duplicateId(id:))` — never a crash,
+    /// never silent (plan.md §4 "`id` is the join key").
     ///
     /// - Parameters:
     ///   - items: the catalog's items, in the order duplicate resolution
@@ -113,8 +122,11 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
         self.entriesById = entriesById
     }
 
-    /// Tokenizes `item.id` and its rendered block, builds the field-weighted
-    /// term frequency and term set, and the per-field trigram sets.
+    /// Precomputes one catalog item's search data.
+    ///
+    /// Tokenizes `item.id` and its rendered block, then builds the
+    /// field-weighted term frequency and term set, and the per-field
+    /// trigram sets.
     ///
     /// - Parameter item: the catalog item to precompute an `Entry` for.
     /// - Returns: the precomputed entry, ready to store under `item.id`.
@@ -146,87 +158,124 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
 
     // MARK: - Lookup
 
-    /// Looks up one precomputed field of the `Entry` stored under `id`, or
-    /// `nil` if `id` isn't indexed (never indexed, or dropped as a
+    /// Looks up one precomputed field of the `Entry` stored under `id`.
+    ///
+    /// Returns `nil` if `id` isn't indexed (never indexed, or dropped as a
     /// duplicate). Every public lookup method below is a one-line
     /// specialization of this accessor over a single `Entry` key path —
     /// the copy-paste `entriesById[id]?.field` pattern lived here eight
     /// times before being unified.
+    ///
+    /// - Parameters:
+    ///   - id: the id to look up.
+    ///   - keyPath: the `Entry` field to project out.
+    /// - Returns: the projected field, or `nil` if `id` isn't indexed.
     private func value<T>(forId id: String, keyPath: KeyPath<Entry, T>) -> T? {
         entriesById[id]?[keyPath: keyPath]
     }
 
-    /// The catalog item stored under `id`, or `nil` if `id` isn't indexed
-    /// (never indexed, or dropped as a duplicate).
+    /// The catalog item stored under `id`.
+    ///
+    /// Returns `nil` if `id` isn't indexed (never indexed, or dropped as a
+    /// duplicate).
+    ///
+    /// - Parameter forId: the id to look up.
+    /// - Returns: the catalog item, or `nil` if `id` isn't indexed.
     public func item(forId id: String) -> Item? {
         value(forId: id, keyPath: \.item)
     }
 
-    /// The rendered block stored under `id`, verbatim from `renderBlock()`
-    /// at build time — or `nil` if `id` isn't indexed.
+    /// The rendered block stored under `id`, verbatim from its build-time render.
+    ///
+    /// Returns `nil` if `id` isn't indexed.
+    ///
+    /// - Parameter forId: the id to look up.
+    /// - Returns: the rendered block, or `nil` if `id` isn't indexed.
     public func block(forId id: String) -> String? {
         value(forId: id, keyPath: \.block)
     }
 
-    /// The field-weighted BM25 term frequency for `id`, or `nil` if `id`
-    /// isn't indexed.
+    /// The field-weighted BM25 term frequency for `id`, or `nil` if `id` isn't indexed.
+    ///
+    /// - Parameter forId: the id to look up.
+    /// - Returns: the field-weighted term frequency, or `nil` if `id`
+    ///   isn't indexed.
     public func weightedTermFrequency(forId id: String) -> [String: Double]? {
         value(forId: id, keyPath: \.weightedTermFrequency)
     }
 
     /// The distinct term set for `id`, or `nil` if `id` isn't indexed.
+    ///
+    /// - Parameter forId: the id to look up.
+    /// - Returns: the distinct term set, or `nil` if `id` isn't indexed.
     public func termSet(forId id: String) -> Set<String>? {
         value(forId: id, keyPath: \.termSet)
     }
 
-    /// The unweighted token count across both fields for `id`, or `nil` if
-    /// `id` isn't indexed.
+    /// The unweighted token count across both fields for `id`, or `nil` if `id` isn't indexed.
+    ///
+    /// - Parameter forId: the id to look up.
+    /// - Returns: the unweighted token count, or `nil` if `id` isn't
+    ///   indexed.
     public func documentLength(forId id: String) -> Int? {
         value(forId: id, keyPath: \.documentLength)
     }
 
-    /// The canonical `id`-field trigram set for `id`, or `nil` if `id` isn't
-    /// indexed.
+    /// The canonical `id`-field trigram set for `id`, or `nil` if `id` isn't indexed.
+    ///
+    /// - Parameter forId: the id to look up.
+    /// - Returns: the canonical `id`-field trigram set, or `nil` if `id`
+    ///   isn't indexed.
     public func idTrigramSet(forId id: String) -> Set<String>? {
         value(forId: id, keyPath: \.idTrigramSet)
     }
 
-    /// The canonical block-field trigram set for `id`, or `nil` if `id`
-    /// isn't indexed.
+    /// The canonical block-field trigram set for `id`, or `nil` if `id` isn't indexed.
+    ///
+    /// - Parameter forId: the id to look up.
+    /// - Returns: the canonical block-field trigram set, or `nil` if `id`
+    ///   isn't indexed.
     public func blockTrigramSet(forId id: String) -> Set<String>? {
         value(forId: id, keyPath: \.blockTrigramSet)
     }
 
-    /// The embedding stored for `id` — `nil` until `MetadataIndex.build(items:
-    /// embedder:previous:onDiagnostic:)` fills this storage slot, or if `id`
-    /// isn't indexed.
+    /// The embedding stored for `id`, or `nil` if `id` isn't indexed or not yet embedded.
+    ///
+    /// `nil` until `MetadataIndex.build(items:embedder:previous:
+    /// onDiagnostic:)` fills this storage slot.
+    ///
+    /// - Parameter forId: the id to look up.
+    /// - Returns: the stored embedding, or `nil` if `id` isn't indexed or
+    ///   not yet embedded.
     public func embedding(forId id: String) -> [Float]? {
         value(forId: id, keyPath: \.embedding) ?? nil
     }
 
     // MARK: - Embedding at index-build/update time
 
-    /// Builds an in-memory index from `items` the same way `init(items:
-    /// onDiagnostic:)` does (tokenizing, trigramming — always synchronous),
-    /// then embeds each item's rendered block through `embedder` (plan.md
-    /// §5, §8) — embedding is the one part of index-build that's async,
-    /// because it's the one part that may call out to a model.
+    /// Builds an in-memory index from `items` with optional async embedding.
+    ///
+    /// Indexes `items` the same way `init(items:onDiagnostic:)` does
+    /// (tokenizing, trigramming — always synchronous), then embeds each
+    /// item's rendered block through `embedder` (plan.md §5, §8) —
+    /// embedding is the one part of index-build that's async, because
+    /// it's the one part that may call out to a model.
     ///
     /// **Hash-keyed incremental re-embedding**: an item whose `id` and
-    /// rendered-block `Entry.blockHash` both match `previous`'s, *and* whose
-    /// `previous` entry actually carries a non-`nil` embedding, reuses that
-    /// stored embedding rather than re-embedding unchanged text. A hash match
-    /// against a `nil` previous embedding (no embedder was configured, or a
-    /// transient embed failure, at that prior build) is **not** reused —
-    /// the item is queued for embedding again here, exactly like a brand-new
-    /// item, so it catches up as soon as an embedder is actually available
-    /// instead of staying cosine-blind forever just because its text never
-    /// changed (plan.md §8 "embed catch-up"). `embedder.embed(_:)` is called
-    /// with exactly the new-or-changed-or-never-embedded blocks, batched
-    /// into a single call, never once per item. This is what makes
-    /// `update(items:)` (plan.md §8, a later task) cheap to call on every
-    /// upstream change notification: unchanged, already-embedded items cost
-    /// nothing here.
+    /// rendered-block `Entry.blockHash` both match `previous`'s, *and*
+    /// whose `previous` entry actually carries a non-`nil` embedding,
+    /// reuses that stored embedding rather than re-embedding unchanged
+    /// text. A hash match against a `nil` previous embedding (no embedder
+    /// was configured, or a transient embed failure, at that prior build)
+    /// is **not** reused — the item is queued for embedding again here,
+    /// exactly like a brand-new item, so it catches up as soon as an
+    /// embedder is actually available instead of staying cosine-blind
+    /// forever just because its text never changed (plan.md §8 "embed
+    /// catch-up"). `embedder.embed(_:)` is called with exactly the
+    /// new-or-changed-or-never-embedded blocks, batched into a single
+    /// call, never once per item. This is what makes `update(items:)`
+    /// (plan.md §8, a later task) cheap to call on every upstream change
+    /// notification: unchanged, already-embedded items cost nothing here.
     ///
     /// - Parameters:
     ///   - items: same as `init(items:onDiagnostic:)`.
@@ -289,11 +338,17 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
         return MetadataIndex(ids: baseline.ids, entriesById: entriesById)
     }
 
-    /// Returns a copy of `entry` with its `embedding` replaced by `embedding`
-    /// — every other field carried over unchanged. `Entry`'s fields are all
-    /// `let`, so replacing one means rebuilding the whole value; this is the
-    /// single place that does so; both `build`'s reuse and freshly-embedded
-    /// branches go through it.
+    /// Returns a copy of `entry` with its `embedding` replaced by `embedding`.
+    ///
+    /// Every other field carries over unchanged. `Entry`'s fields are all
+    /// `let`, so replacing one means rebuilding the whole value; this is
+    /// the single place that does so — both `build`'s reuse and
+    /// freshly-embedded branches go through it.
+    ///
+    /// - Parameters:
+    ///   - embedding: the embedding to store, or `nil`.
+    ///   - entry: the entry to copy, with `embedding` replaced.
+    /// - Returns: the copied entry with its embedding replaced.
     private static func withEmbedding(_ embedding: [Float]?, replacing entry: Entry) -> Entry {
         Entry(
             item: entry.item,
@@ -308,11 +363,16 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
         )
     }
 
-    /// Reconstructs an index directly from already-precomputed `ids` and
-    /// `entriesById` — the internal counterpart to `init(items:onDiagnostic:)`
-    /// that `build(items:embedder:previous:onDiagnostic:)` uses to return a
-    /// new index after filling in embeddings, without re-tokenizing or
+    /// Reconstructs an index directly from already-precomputed `ids` and `entriesById`.
+    ///
+    /// The internal counterpart to `init(items:onDiagnostic:)` that
+    /// `build(items:embedder:previous:onDiagnostic:)` uses to return a new
+    /// index after filling in embeddings, without re-tokenizing or
     /// re-trigramming anything `baseline` already computed.
+    ///
+    /// - Parameters:
+    ///   - ids: the precomputed ids, in first-seen order.
+    ///   - entriesById: the precomputed entries, keyed by id.
     private init(ids: [String], entriesById: [String: Entry]) {
         self.ids = ids
         self.entriesById = entriesById
