@@ -85,8 +85,15 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     private let embedder: (any TextEmbedding)?
 
     /// Called for every diagnostic emitted while building the index and
-    /// while searching (currently `.duplicateId` and `.embeddingUnavailable`).
+    /// while searching (currently `.duplicateId`, `.embeddingUnavailable`,
+    /// and `.unknownSelectedId`).
     private let onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
+
+    /// This searcher's selection tier (plan.md §6), or `nil` when no
+    /// `SelectionConfig` was supplied at `init` — `.selection` throws
+    /// `SelectionTierUnavailable` in that case, exactly as it did before a
+    /// selection tier existed at all.
+    private let selectionTier: SelectionTier<Item>?
 
     /// Builds a searcher over `items`, indexing them once at `init` with no
     /// embedder — cosine never ranks anything and every search degrades to
@@ -101,6 +108,8 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     ///     is configured.
     ///   - weights: the per-signal fusion weights for the retrieval tier.
     ///     Defaults to `1.0` for every signal.
+    ///   - selection: this searcher's selection tier configuration (plan.md
+    ///     §6), or `nil` (the default) to leave `.selection` unavailable.
     ///   - onDiagnostic: called for every diagnostic emitted while building
     ///     the index (currently only `.duplicateId`), and by later tiers as
     ///     they land. Defaults to logging via `MetadataDiagnostic.log(_:)`.
@@ -108,6 +117,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         items: [Item],
         mode: SearchMode = .auto,
         weights: Weights = Weights(),
+        selection: SelectionConfig? = nil,
         onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) }
     ) {
         self.init(
@@ -115,6 +125,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
             mode: mode,
             weights: weights,
             embedder: nil,
+            selection: selection,
             onDiagnostic: onDiagnostic
         )
     }
@@ -136,6 +147,8 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     ///     time, and the query with at search time. `nil` behaves like
     ///     `init(items:mode:weights:onDiagnostic:)` — keyword-only, with
     ///     `.embeddingUnavailable` reported on every search.
+    ///   - selection: this searcher's selection tier configuration (plan.md
+    ///     §6), or `nil` (the default) to leave `.selection` unavailable.
     ///   - onDiagnostic: called for every diagnostic emitted while building
     ///     the index and while searching. Defaults to logging via
     ///     `MetadataDiagnostic.log(_:)`.
@@ -144,6 +157,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         mode: SearchMode = .auto,
         weights: Weights = Weights(),
         embedder: (any TextEmbedding)?,
+        selection: SelectionConfig? = nil,
         onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) }
     ) async {
         self.init(
@@ -151,6 +165,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
             mode: mode,
             weights: weights,
             embedder: embedder,
+            selection: selection,
             onDiagnostic: onDiagnostic
         )
     }
@@ -169,6 +184,8 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     ///     Defaults to `1.0` for every signal.
     ///   - embedder: the embedder to embed the query with at search time.
     ///     Defaults to `nil` (keyword-only).
+    ///   - selection: this searcher's selection tier configuration (plan.md
+    ///     §6), or `nil` (the default) to leave `.selection` unavailable.
     ///   - onDiagnostic: called for every diagnostic emitted while searching.
     ///     Defaults to logging via `MetadataDiagnostic.log(_:)`.
     public init(
@@ -176,6 +193,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         mode: SearchMode = .auto,
         weights: Weights = Weights(),
         embedder: (any TextEmbedding)? = nil,
+        selection: SelectionConfig? = nil,
         onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) }
     ) {
         self.index = index
@@ -183,6 +201,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         self.weights = weights
         self.embedder = embedder
         self.onDiagnostic = onDiagnostic
+        self.selectionTier = selection.map { SelectionTier(index: index, config: $0, onDiagnostic: onDiagnostic) }
     }
 
     /// Searches the catalog for `intent`, returning at most `limit` matches
@@ -192,15 +211,22 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     ///   - intent: the search query.
     ///   - limit: the maximum number of matches to return. `limit <= 0`
     ///     yields an empty result rather than throwing or crashing.
-    /// - Returns: `.retrieval`'s fused, `[0, 1]`-normalized matches; the same
-    ///   for `.auto` (no selection tier is configured yet).
-    /// - Throws: `SelectionTierUnavailable` when `mode == .selection`.
+    /// - Returns: `.retrieval`'s fused, `[0, 1]`-normalized matches (the same
+    ///   for `.auto`, which does not yet resolve to selection — a later
+    ///   task); `.selection`'s verbatim, ids-only matches when a selection
+    ///   tier is configured (plan.md §6).
+    /// - Throws: `SelectionTierUnavailable` when `mode == .selection` and no
+    ///   selection tier is configured (`init(..., selection:)`), or when the
+    ///   configured tier's assembled prefix is over budget (the one-off
+    ///   session path is a later task); otherwise whatever the underlying
+    ///   selection session throws.
     public func search(intent: String, limit: Int) async throws -> [Match<Item>] {
         switch mode {
         case .retrieval, .auto:
             return await retrievalSearch(intent: intent, limit: limit)
         case .selection:
-            throw SelectionTierUnavailable()
+            guard let selectionTier else { throw SelectionTierUnavailable() }
+            return try await selectionTier.search(intent: intent, limit: limit)
         }
     }
 
