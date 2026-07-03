@@ -38,10 +38,12 @@ embedders come from [`../FoundationModelsRouter`](../FoundationModelsRouter/plan
   **MCP catalogs churn at runtime** (`listChanged` notifications for tools, resources,
   and prompts). `update(items:)` is a first-class operation with defined costs, not an
   afterthought.
-- **Catalogs get big.** Skills and agents are 10¹–10²; a fused tool surface is 10²;
-  **MCP resources reach 10⁴–10⁵** (file trees, document stores). The retrieval tier is
-  therefore the *primary* path at scale, with LLM selection layered on top — not a
-  fallback for when a prefix overflows.
+- **In-memory index, no database.** Catalogs are metadata, not documents: skills and
+  agents are 10¹–10², a fused tool surface is 10² — **we are not expecting 10⁴+
+  items**. The entire `MetadataIndex` (tokenized fields, trigram sets, embeddings)
+  lives in memory, rebuilt from the caller's items on `update(items:)`; nothing is
+  persisted — no SQLite, no vector store. Retrieval is still a first-class product
+  (not just an over-budget fallback) because it is free: no session, no tokens.
 - **Graceful degradation.** No embedder → keyword-only retrieval (BM25 + trigram). No
   LLM → retrieval-only results. A signal absent for an item contributes nothing to its
   fused score (never zero-filled). Every degradation is reported, never silent.
@@ -57,7 +59,7 @@ embedders come from [`../FoundationModelsRouter`](../FoundationModelsRouter/plan
 | CodeContextKit `Search/` + `Embedding/` | **shipped** | retrieval tier: `BM25` (field-weighted), `Trigram` Dice, cosine, `RRF.fuse`/`normalize` (k=60, 0-based ranks, absent-signal graceful), `Hit`/`Signals` explainability, `TextEmbedding` seam + `RoutedEmbedderAdapter` |
 | Skills `SkillSearchAgent` (plan §7) | planned | the reload requirement (registry re-injection), visibility pre-filtering as the caller's job, `search skill` as the consuming op |
 | Agents plan | opted out (small catalogs, descriptions baked into `AgentsTool`) | a future opt-in consumer when agent catalogs outgrow the baked-in surface — this plan must not contradict theirs |
-| FoundationModelsMCP | planned | the scale + churn case: tool catalogs hot-load (`listChanged`); **resource catalogs get big** (10⁴+) |
+| FoundationModelsMCP | planned | the churn case: tool catalogs hot-load (`listChanged`) — hundreds of entries appearing mid-session |
 
 Multitool's `lexicallyFilter` (substring keep/drop) is the one piece deliberately **not**
 lifted — it is superseded by real ranked retrieval (§5).
@@ -144,13 +146,14 @@ CodeContextKit's remaining mass (tree-sitter, LSP, chunking) is dead weight here
 them with attribution. *(If a third copy ever appears, extract a shared
 `SwiftRankFusion` micro-package — noted, not done.)*
 
-**Scale.** Brute-force scoring, no vector DB, no ANN — CodeContextKit's own reasoning
-holds *a fortiori* at metadata scale. Plain per-row dot products suffice through ~10⁴
-items; if MCP resource catalogs prove to sit at 10⁵ routinely, adopt CodeContextKit's
-contiguous row-major matrix + `cblas_sgemv` broadcast behind the same `MetadataIndex`
-API (that seam is the designed revisit point, same as theirs). Embedding is the *slow*
-path — it happens at `update()` time, incrementally (§8), never at query time (only the
-query itself is embedded per search).
+**Scale.** Everything lives **in memory** — no database, no vector store, no ANN, no
+persistence. Expected catalogs are 10¹–10³ items (we are not designing for 10⁴+), so
+brute-force scoring — plain per-row dot products for cosine — is exact and effectively
+instant; CodeContextKit's own no-vector-DB reasoning holds *a fortiori* at metadata
+scale. If a catalog ever outgrows this, the `MetadataIndex` API is the seam:
+CodeContextKit's shipped contiguous row-major matrix + vDSP matvec design drops in
+behind it unchanged. Embedding is the *slow* path — it happens at `update()` time,
+incrementally (§8), never at query time (only the query itself is embedded per search).
 
 ## 6. Selection tier — the dynamic session *(from Multitool's Librarian)*
 
@@ -238,8 +241,8 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
   gains: ids-only selection, id-enum grammar, RRF instead of `lexicallyFilter`.
 - **FoundationModelsMCP** — tool catalogs and **resource catalogs** as
   `SearchableMetadata` (id = tool name / resource URI; block = rendered
-  name+description+schema/mime summary). Hot-loads on `listChanged`; resources are the
-  scale driver (§5, §8). Likely first `.retrieval`-mode consumer.
+  name+description+schema/mime summary). Hot-loads on `listChanged`; churn, not
+  scale, is the demand it puts on us (§8). Likely first `.retrieval`-mode consumer.
 - **FoundationModelsAgents** — no change now (its plan deliberately bakes descriptions
   into `AgentsTool`; catalogs are small). When a deployment's agent catalog outgrows
   that, `MetadataSearcher<AgentListing>` is the opt-in, and their plan's "no separate
@@ -247,8 +250,10 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
 
 ## 10. Dependencies & packaging
 
-- **Single SwiftPM target `FoundationModelsMetadataRegistry`**, macOS 27+ (the Router
-  floor; same platform commitment as Multitool/Agents, no fallback paths).
+- **Single SwiftPM library target `FoundationModelsMetadataRegistry`**, macOS 27+ (the
+  Router floor; same platform commitment as Multitool/Agents, no fallback paths), plus
+  the `Examples/` executable targets (§13) — demos only, never a dependency of the
+  library.
 - **Depends on `FoundationModelsRouter`** for `RoutedLLM`/`RoutedSession` (selection),
   `RoutedEmbedder` (cosine), and `Grammar` (xgrammar id enums). The *core* — catalog,
   signals, RRF, both seams — compiles and unit-tests with no Router at runtime (fakes
@@ -277,7 +282,7 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
 5. **Over-budget path → retrieval top-M + one-off session**, replacing lexical
    keep/drop filtering; cuts reported via `onRetrievalCut`.
 6. **Modes → `.retrieval` / `.selection` / `.auto`**; retrieval is a first-class
-   product, not a fallback (MCP resources are the scale driver).
+   product, not a fallback (free to call: no session, no tokens).
 7. **Hot reload → `update(items:)`**: hash-guarded, incremental re-embedding, async
    embed catch-up with keyword-only interim service, root-session + grammar rebuild.
    Required by Skills (file watch) *and* MCP (`listChanged`).
@@ -285,9 +290,11 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
    both lifted from the shipped implementations (Multitool, CodeContextKit).
 9. **Port, don't depend** for the CodeContextKit search files; extract a shared
    micro-package only if a third copy appears.
-10. **Scale → brute force** through ~10⁴ items; the `MetadataIndex` API is the seam to
-    swap in the contiguous-matrix/CBLAS broadcast (CodeContextKit's design) if 10⁵
-    becomes routine.
+10. **In-memory index, no DB** — the whole index (tokenized fields, trigram sets,
+    embeddings) is rebuilt in memory from the caller's items; nothing is persisted.
+    Expected scale is 10¹–10³ items, where brute-force scoring is exact and
+    sufficient; the `MetadataIndex` API is the seam to swap in CodeContextKit's
+    shipped contiguous-matrix/vDSP design if a catalog ever demands it.
 11. **Agents stays opted out** — their baked-in-descriptions decision is respected;
     this package is their future option, not a requirement.
 
@@ -326,7 +333,44 @@ let picker = MetadataSearcher(items: resources, mode: .retrieval,
 let hits = try await picker.search(intent: "quarterly revenue spreadsheet", limit: 10)
 ```
 
-## 13. Milestones
+## 13. Examples
+
+Examples are **explicit, runnable deliverables** — each a small executable
+target under `Examples/` (`swift run <Name>`), kept compiling in CI (the family
+convention, per the MCP plan). Retrieval-only examples run anywhere, GPU-free;
+Router-backed ones compile in CI and run locally against tiny `mlx-community`
+models (the M7 pattern). Together they are the living documentation of every
+capability in this plan:
+
+1. **`CatalogSearch`** — the ~30-line hello world. A handful of fixture items
+   conformed to `SearchableMetadata`, a keyword-only
+   `MetadataSearcher(mode: .retrieval)` (no embedder, no model), one query,
+   printed `Match`es with their per-signal `Signals` — BM25, trigram, RRF, and
+   explainability on one screen. Proves the M1 core.
+2. **`SemanticSearch`** — `CatalogSearch` plus `RoutedEmbedderAdapter`: the
+   cosine signal joins fusion and a paraphrased query ("save my work" →
+   `commit`) now ranks where keywords alone miss. Run with `--no-embedder` to
+   watch the graceful keyword-only degradation and its diagnostic. ↔ M2.
+3. **`Librarian`** — selection mode end-to-end on a Router model: cached root
+   session seeded with the catalog, `fork()` per query, ids-only
+   xgrammar-constrained selection, verbatim blocks out. Drives intent-level
+   queries ("the warmest city on my trip" → `tripCities` + `weather`) that
+   ranking alone can't answer. ↔ M3.
+4. **`BigCatalog`** — the headroom story: a synthetic catalog an order of
+   magnitude past expectation (~10³ entries, ids = URIs), the in-memory index
+   answering retrieval in milliseconds with timings printed, then a selection
+   query that overflows the budget → top-M candidates → one-off session, with
+   the `onRetrievalCut` diagnostic shown. ↔ M3 + decision #10.
+5. **`HotReload`** — churn under fire: `update(items:)` bursts (MCP-style
+   add/remove), items keyword-searchable immediately, cosine catching up
+   asynchronously (hash-guarded incremental re-embed, progress surfaced), root
+   session + id-enum grammar rebuilt. ↔ M4.
+
+Each example doubles as the acceptance demo for its milestone (`CatalogSearch`
+↔ M1, `SemanticSearch` ↔ M2, `Librarian` ↔ M3, `HotReload` ↔ M4,
+`BigCatalog` ↔ decision #10).
+
+## 14. Milestones
 
 - **M1 — Catalog + retrieval core.** `SearchableMetadata`, `MetadataIndex`, ported
   `Tokenizer`/`BM25`/`Trigram`/`RRF`/`Hit`, two-field indexing, keyword-only
@@ -349,8 +393,13 @@ let hits = try await picker.search(intent: "quarterly revenue spreadsheet", limi
   Router test pattern): real fork-per-call prefix reuse, xgrammar id-enum enforcement,
   embed + RRF quality smoke over a fixture catalog, reload under churn (MCP-style
   add/remove bursts).
+- **M8 — Examples.** Build the `Examples/` suite (§13): `CatalogSearch`,
+  `SemanticSearch`, `Librarian`, `BigCatalog`, `HotReload` — each a runnable
+  executable target (`swift run <Name>`), compiled in CI; the Router-backed ones
+  run locally on the M7 tiny-model setup. `CatalogSearch` and `Librarian` double
+  as the human-facing E2E.
 
-## 14. Testing
+## 15. Testing
 
 Unit tier is GPU-free by construction: signals and RRF are pure functions over injected
 corpora (table-driven, plus golden rankings for a fixture catalog); the selection tier
