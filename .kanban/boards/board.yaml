@@ -1,0 +1,2 @@
+description: 'Hybrid metadata search for Foundation Models sessions — plan.md is the design source. Deliberate deferral: plan.md M6 (Skills adoption of MetadataSearcher<SkillMetadata>) has NO task on this board because ../FoundationModelsSkills is plan-only (no Swift sources yet); add that task when Skills reaches its M4. Cross-repo tasks (AgentSession move, Librarian re-base) commit to ../FoundationModelsMultitool.'
+name: FoundationModelsMetadataRegistry
