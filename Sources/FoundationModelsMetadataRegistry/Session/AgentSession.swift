@@ -114,10 +114,28 @@ public struct RoutedAgentSession: AgentSession {
         self.session = session
     }
 
+    /// Sends `prompt` to the wrapped Router session and returns its response.
+    ///
+    /// A pure forward: the wrapped `RoutedSession` does the actual work
+    /// (guided or plain), and this adapter passes the result through
+    /// unchanged.
+    ///
+    /// - Parameter prompt: the prompt to respond to.
+    /// - Returns: the wrapped session's complete text response.
+    /// - Throws: whatever the wrapped `RoutedSession` throws.
     public func respond(to prompt: String) async throws -> String {
         try await session.respond(to: prompt)
     }
 
+    /// Forks the wrapped Router session and returns a new `RoutedAgentSession`
+    /// wrapping the forked child.
+    ///
+    /// Forwards to `RoutedSession.fork(workingDirectory:)` with `nil` —
+    /// this package never needs to steer a fork's working directory — and
+    /// re-adapts the returned child session to the `AgentSession` seam.
+    ///
+    /// - Returns: a new `RoutedAgentSession` wrapping the forked child.
+    /// - Throws: whatever the wrapped `RoutedSession` throws while forking.
     public func fork() async throws -> any AgentSession {
         RoutedAgentSession(session: try await session.fork(workingDirectory: nil))
     }
