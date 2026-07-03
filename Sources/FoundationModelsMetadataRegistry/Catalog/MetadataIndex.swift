@@ -134,50 +134,60 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
 
     // MARK: - Lookup
 
+    /// Looks up one precomputed field of the `Entry` stored under `id`, or
+    /// `nil` if `id` isn't indexed (never indexed, or dropped as a
+    /// duplicate). Every public lookup method below is a one-line
+    /// specialization of this accessor over a single `Entry` key path —
+    /// the copy-paste `entriesById[id]?.field` pattern lived here eight
+    /// times before being unified.
+    private func value<T>(forId id: String, keyPath: KeyPath<Entry, T>) -> T? {
+        entriesById[id]?[keyPath: keyPath]
+    }
+
     /// The catalog item stored under `id`, or `nil` if `id` isn't indexed
     /// (never indexed, or dropped as a duplicate).
     public func item(forId id: String) -> Item? {
-        entriesById[id]?.item
+        value(forId: id, keyPath: \.item)
     }
 
     /// The rendered block stored under `id`, verbatim from `renderBlock()`
     /// at build time — or `nil` if `id` isn't indexed.
     public func block(forId id: String) -> String? {
-        entriesById[id]?.block
+        value(forId: id, keyPath: \.block)
     }
 
     /// The field-weighted BM25 term frequency for `id`, or `nil` if `id`
     /// isn't indexed.
     public func weightedTermFrequency(forId id: String) -> [String: Double]? {
-        entriesById[id]?.weightedTermFrequency
+        value(forId: id, keyPath: \.weightedTermFrequency)
     }
 
     /// The distinct term set for `id`, or `nil` if `id` isn't indexed.
     public func termSet(forId id: String) -> Set<String>? {
-        entriesById[id]?.termSet
+        value(forId: id, keyPath: \.termSet)
     }
 
     /// The unweighted token count across both fields for `id`, or `nil` if
     /// `id` isn't indexed.
     public func documentLength(forId id: String) -> Int? {
-        entriesById[id]?.documentLength
+        value(forId: id, keyPath: \.documentLength)
     }
 
     /// The canonical `id`-field trigram set for `id`, or `nil` if `id` isn't
     /// indexed.
     public func idTrigramSet(forId id: String) -> Set<String>? {
-        entriesById[id]?.idTrigramSet
+        value(forId: id, keyPath: \.idTrigramSet)
     }
 
     /// The canonical block-field trigram set for `id`, or `nil` if `id`
     /// isn't indexed.
     public func blockTrigramSet(forId id: String) -> Set<String>? {
-        entriesById[id]?.blockTrigramSet
+        value(forId: id, keyPath: \.blockTrigramSet)
     }
 
     /// The embedding stored for `id` — `nil` until a future embedding task
     /// fills this storage slot, or if `id` isn't indexed.
     public func embedding(forId id: String) -> [Float]? {
-        entriesById[id]?.embedding ?? nil
+        value(forId: id, keyPath: \.embedding) ?? nil
     }
 }
