@@ -34,29 +34,23 @@ comments:
 
     Task is green and left in `doing` for /review.
   timestamp: 2026-07-03T22:17:02.319256+00:00
+- actor: claude-code
+  id: 01kwn12xq0z2qy8ya2z17harwp
+  text: 'Iteration 1: implement landed green in doing (74 tests passed / 0 failed across 6 suites, TDD red→green verified). Checkpoint committed at d24e54a. Double-check found and fixed a real bug: hash-keyed embedding reuse in MetadataIndex.build was copying forward nil embeddings permanently even after an embedder became available. Note: update(items:) hot-reload is scoped to a later task per plan.md §8 — this task only builds the async MetadataIndex.build primitive that hot-reload will call. Proceeding to /review HEAD~1..HEAD.'
+  timestamp: 2026-07-03T22:20:15.456862+00:00
+- actor: claude-code
+  id: 01kwn1hzr2gdekfh518tyt1n13
+  text: |-
+    Fixed review finding: inlined the single-call-site `hash()` helper in Sources/FoundationModelsMetadataRegistry/Catalog/MetadataIndex.swift. Replaced `blockHash: Self.hash(block: block)` with `blockHash: Data(SHA256.hash(data: Data(block.utf8)))` at its one call site in `buildEntry(item:)`, and removed the now-unused `private static func hash(block:)` helper entirely. Confirmed via grep no other references to it remained.
+
+    Verification: `swift build` — exit 0, only the pre-existing unrelated mlx-swift_Cmlx.bundle warning. `swift test` — "Test run with 74 tests in 6 suites passed", exit 0, zero failures (same 74 as before the change — this was a pure inlining refactor, no behavior change).
+
+    Diff is scoped to exactly this fix (5 lines removed, 1 line changed) — verified via `git diff`. Checklist item flipped to [x]. Leaving task in `doing` per the review-rework contract; not committing (per orchestrator instruction) and not moving columns (that's /review's job).
+  timestamp: 2026-07-03T22:28:29.058881+00:00
 depends_on:
 - 01KWMECA3GC1631WXPX2BJN4DB
 position_column: doing
 position_ordinal: '80'
 title: 'Embedding signal: TextEmbedding seam, RoutedEmbedderAdapter, cosine in fusion'
 ---
-## What
-Add the third signal per plan.md §5 (M2), in `Sources/FoundationModelsMetadataRegistry/Embedding/`:
-- Port `TextEmbedding.swift` (~19-line protocol seam) and `RoutedEmbedderAdapter.swift` (~45 lines, wraps Router's `RoutedEmbedder`) from `../CodeContextKit/Sources/CodeContextKit/Embedding/`, with attribution
-- `MetadataIndex` stores per-item embeddings keyed by `(id, block-hash)`; embedding happens at index-build/update time, never at query time (only the query itself is embedded per search)
-- Cosine ranking joins RRF fusion in `MetadataSearcher.search`; items without embeddings contribute nothing to cosine (absent-signal rule)
-- No embedder configured → keyword-only, surfaced as the shared `MetadataDiagnostic.embeddingUnavailable` case through `onDiagnostic` (never silent)
-- Brute-force per-row dot products — in-memory, no vector store (decision #10)
-
-## Acceptance Criteria
-- [ ] With a `FakeEmbedder`, a paraphrase query ranks the semantically-close item above keyword-only ranking
-- [ ] Omitting the embedder degrades to keyword-only and emits `.embeddingUnavailable` via `onDiagnostic`
-- [ ] Un-embedded items still rank via BM25 + trigram
-- [ ] Embed count is proportional to changed blocks only (hash-keyed), verified by a counting fake
-
-## Tests
-- [ ] `Tests/FoundationModelsMetadataRegistryTests/EmbeddingTests.swift` — `FakeEmbedder` (deterministic vectors + call counter): cosine fusion, degradation diagnostic capture, absent-signal, hash-keyed incremental embed
-- [ ] Run `swift test` — all pass, no GPU (RoutedEmbedderAdapter compiles but is not exercised)
-
-## Workflow
-- Use `/tdd` — write failing tests first, then implement to make them pass.
+## What\nAdd the third signal per plan.md §5 (M2), in `Sources/FoundationModelsMetadataRegistry/Embedding/`:\n- Port `TextEmbedding.swift` (~19-line protocol seam) and `RoutedEmbedderAdapter.swift` (~45 lines, wraps Router's `RoutedEmbedder`) from `../CodeContextKit/Sources/CodeContextKit/Embedding/`, with attribution\n- `MetadataIndex` stores per-item embeddings keyed by `(id, block-hash)`; embedding happens at index-build/update time, never at query time (only the query itself is embedded per search)\n- Cosine ranking joins RRF fusion in `MetadataSearcher.search`; items without embeddings contribute nothing to cosine (absent-signal rule)\n- No embedder configured → keyword-only, surfaced as the shared `MetadataDiagnostic.embeddingUnavailable` case through `onDiagnostic` (never silent)\n- Brute-force per-row dot products — in-memory, no vector store (decision #10)\n\n## Acceptance Criteria\n- [ ] With a `FakeEmbedder`, a paraphrase query ranks the semantically-close item above keyword-only ranking\n- [ ] Omitting the embedder degrades to keyword-only and emits `.embeddingUnavailable` via `onDiagnostic`\n- [ ] Un-embedded items still rank via BM25 + trigram\n- [ ] Embed count is proportional to changed blocks only (hash-keyed), verified by a counting fake\n\n## Tests\n- [ ] `Tests/FoundationModelsMetadataRegistryTests/EmbeddingTests.swift` — `FakeEmbedder` (deterministic vectors + call counter): cosine fusion, degradation diagnostic capture, absent-signal, hash-keyed incremental embed\n- [ ] Run `swift test` — all pass, no GPU (RoutedEmbedderAdapter compiles but is not exercised)\n\n## Workflow\n- Use `/tdd` — write failing tests first, then implement to make them pass.\n\n## Review Findings (2026-07-03 17:20)\n\n> ⚠️ 1/15 review tasks failed — results are INCOMPLETE.\n\n- [x] `Sources/FoundationModelsMetadataRegistry/Catalog/MetadataIndex.swift:132` — Single-call-site helper function `hash()` wraps a straightforward CryptoKit operation with no meaningful abstraction; adds indirection without benefit. Inline the hash computation: replace `blockHash: Self.hash(block: block)` with `blockHash: Data(SHA256.hash(data: Data(block.utf8)))` and remove the `hash()` function.

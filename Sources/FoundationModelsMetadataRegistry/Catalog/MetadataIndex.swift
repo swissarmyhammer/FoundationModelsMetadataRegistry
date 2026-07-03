@@ -139,14 +139,9 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
             documentLength: idTokens.count + blockTokens.count,
             idTrigramSet: Trigram.canonicalTrigramSet(text: item.id),
             blockTrigramSet: Trigram.canonicalTrigramSet(text: block),
-            blockHash: Self.hash(block: block),
+            blockHash: Data(SHA256.hash(data: Data(block.utf8))),
             embedding: nil
         )
-    }
-
-    /// SHA-256 digest of `block`'s UTF-8 bytes — see `Entry.blockHash`.
-    private static func hash(block: String) -> Data {
-        Data(SHA256.hash(data: Data(block.utf8)))
     }
 
     // MARK: - Lookup
