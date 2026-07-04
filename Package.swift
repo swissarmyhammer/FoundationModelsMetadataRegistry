@@ -48,6 +48,53 @@ let huggingFacePackage = "swift-huggingface"
 /// imports it.
 let transformersPackage = "swift-transformers"
 
+/// The product dependencies every `*Core` target on the live-Router path
+/// needs: the main library target, `ExamplesSupport`, `LiveRouterSupport`,
+/// and the Router/MLX/Hugging Face product quartet that resolves a real
+/// `Router` + `LiveModelLoader`.
+///
+/// `SemanticSearchCore`, `LibrarianCore`, `BigCatalogCore`, and
+/// `HotReloadCore` each depended on this identical 8-entry list verbatim —
+/// extracted here so the four targets share one source of truth rather than
+/// four copies that could silently drift. (`CatalogSearchCore` stays
+/// GPU-free/Router-free and deliberately does not use this constant.)
+let liveRouterCoreDependencies: [Target.Dependency] = [
+    .target(name: packageName),
+    .target(name: "ExamplesSupport"),
+    .target(name: "LiveRouterSupport"),
+    .product(name: routerDependencyName, package: routerDependencyName),
+    .product(name: "MLXHuggingFace", package: mlxPackage),
+    .product(name: "MLXLMCommon", package: mlxPackage),
+    .product(name: "HuggingFace", package: huggingFacePackage),
+    .product(name: "Tokenizers", package: transformersPackage),
+]
+
+/// Builds an `Examples/` executable target: a thin runnable entry point that
+/// depends only on its own `*Core` library target plus `ExamplesSupport`,
+/// rooted at `Examples/<name>`.
+///
+/// `CatalogSearch`, `SemanticSearch`, `Librarian`, `BigCatalog`, and
+/// `HotReload` each declared this identical shape verbatim, differing only
+/// in `name`/`coreName` — extracted here so adding the next example's
+/// executable target is one call instead of a fifth copy of the boilerplate.
+///
+/// - Parameters:
+///   - name: the executable target's name, and the `Examples/` subdirectory
+///     it lives in.
+///   - coreName: the name of the `*Core` library target this executable is a
+///     thin entry point over.
+/// - Returns: the configured executable target.
+func exampleExecutableTarget(name: String, coreName: String) -> Target {
+    .executableTarget(
+        name: name,
+        dependencies: [
+            .target(name: coreName),
+            .target(name: "ExamplesSupport"),
+        ],
+        path: "Examples/\(name)"
+    )
+}
+
 /// The SwiftPM manifest for FoundationModelsMetadataRegistry (plan.md §10).
 ///
 /// A single library target over the FoundationModelsRouter sibling, a Swift
@@ -170,14 +217,7 @@ let package = Package(
         // The ~30-line hello world (plan.md §13 M1): a thin runnable entry
         // point over `CatalogSearchCore`. Runs anywhere, GPU-free; `swift
         // build` keeps it compiling in CI.
-        .executableTarget(
-            name: "CatalogSearch",
-            dependencies: [
-                .target(name: "CatalogSearchCore"),
-                .target(name: "ExamplesSupport"),
-            ],
-            path: "Examples/CatalogSearch"
-        ),
+        exampleExecutableTarget(name: "CatalogSearch", coreName: "CatalogSearchCore"),
         // `SemanticSearch`'s entry logic (plan.md §13 M2): `CatalogSearch`
         // plus `RoutedEmbedderAdapter` — the cosine signal joins fusion once
         // a live Router resolves a real embedder, so a paraphrased query
@@ -190,27 +230,11 @@ let package = Package(
         // construct a live `Router` + `LiveModelLoader`.
         .target(
             name: "SemanticSearchCore",
-            dependencies: [
-                .target(name: packageName),
-                .target(name: "ExamplesSupport"),
-                .target(name: "LiveRouterSupport"),
-                .product(name: routerDependencyName, package: routerDependencyName),
-                .product(name: "MLXHuggingFace", package: mlxPackage),
-                .product(name: "MLXLMCommon", package: mlxPackage),
-                .product(name: "HuggingFace", package: huggingFacePackage),
-                .product(name: "Tokenizers", package: transformersPackage),
-            ],
+            dependencies: liveRouterCoreDependencies,
             path: "Examples/SemanticSearchCore"
         ),
         // A thin runnable entry point over `SemanticSearchCore`.
-        .executableTarget(
-            name: "SemanticSearch",
-            dependencies: [
-                .target(name: "SemanticSearchCore"),
-                .target(name: "ExamplesSupport"),
-            ],
-            path: "Examples/SemanticSearch"
-        ),
+        exampleExecutableTarget(name: "SemanticSearch", coreName: "SemanticSearchCore"),
         // `Librarian`'s entry logic (plan.md §13 M8): `.selection` mode
         // end-to-end on a Router model -- a cached root session seeded with
         // the whole (under-budget) catalog, `fork()`ed per query, ids-only
@@ -222,27 +246,11 @@ let package = Package(
         // `Router` + `LiveModelLoader`.
         .target(
             name: "LibrarianCore",
-            dependencies: [
-                .target(name: packageName),
-                .target(name: "ExamplesSupport"),
-                .target(name: "LiveRouterSupport"),
-                .product(name: routerDependencyName, package: routerDependencyName),
-                .product(name: "MLXHuggingFace", package: mlxPackage),
-                .product(name: "MLXLMCommon", package: mlxPackage),
-                .product(name: "HuggingFace", package: huggingFacePackage),
-                .product(name: "Tokenizers", package: transformersPackage),
-            ],
+            dependencies: liveRouterCoreDependencies,
             path: "Examples/LibrarianCore"
         ),
         // A thin runnable entry point over `LibrarianCore`.
-        .executableTarget(
-            name: "Librarian",
-            dependencies: [
-                .target(name: "LibrarianCore"),
-                .target(name: "ExamplesSupport"),
-            ],
-            path: "Examples/Librarian"
-        ),
+        exampleExecutableTarget(name: "Librarian", coreName: "LibrarianCore"),
         // `BigCatalog`'s entry logic (plan.md §13 M8): the headroom story --
         // a synthetic ~10^3-entry catalog (ids = URIs), in-memory retrieval
         // with printed timings, GPU-free. Only when
@@ -254,27 +262,11 @@ let package = Package(
         // directly.
         .target(
             name: "BigCatalogCore",
-            dependencies: [
-                .target(name: packageName),
-                .target(name: "ExamplesSupport"),
-                .target(name: "LiveRouterSupport"),
-                .product(name: routerDependencyName, package: routerDependencyName),
-                .product(name: "MLXHuggingFace", package: mlxPackage),
-                .product(name: "MLXLMCommon", package: mlxPackage),
-                .product(name: "HuggingFace", package: huggingFacePackage),
-                .product(name: "Tokenizers", package: transformersPackage),
-            ],
+            dependencies: liveRouterCoreDependencies,
             path: "Examples/BigCatalogCore"
         ),
         // A thin runnable entry point over `BigCatalogCore`.
-        .executableTarget(
-            name: "BigCatalog",
-            dependencies: [
-                .target(name: "BigCatalogCore"),
-                .target(name: "ExamplesSupport"),
-            ],
-            path: "Examples/BigCatalog"
-        ),
+        exampleExecutableTarget(name: "BigCatalog", coreName: "BigCatalogCore"),
         // `HotReload`'s entry logic (plan.md §13 M8): `update(items:)` bursts
         // (MCP-style add/remove) -- immediate keyword searchability, embed
         // catch-up progress via `.embedCatchUp`, and the selection tier's
@@ -286,26 +278,10 @@ let package = Package(
         // invoke the GPU-free index-rebuild path directly.
         .target(
             name: "HotReloadCore",
-            dependencies: [
-                .target(name: packageName),
-                .target(name: "ExamplesSupport"),
-                .target(name: "LiveRouterSupport"),
-                .product(name: routerDependencyName, package: routerDependencyName),
-                .product(name: "MLXHuggingFace", package: mlxPackage),
-                .product(name: "MLXLMCommon", package: mlxPackage),
-                .product(name: "HuggingFace", package: huggingFacePackage),
-                .product(name: "Tokenizers", package: transformersPackage),
-            ],
+            dependencies: liveRouterCoreDependencies,
             path: "Examples/HotReloadCore"
         ),
         // A thin runnable entry point over `HotReloadCore`.
-        .executableTarget(
-            name: "HotReload",
-            dependencies: [
-                .target(name: "HotReloadCore"),
-                .target(name: "ExamplesSupport"),
-            ],
-            path: "Examples/HotReload"
-        ),
+        exampleExecutableTarget(name: "HotReload", coreName: "HotReloadCore"),
     ]
 )

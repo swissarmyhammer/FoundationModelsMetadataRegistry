@@ -38,7 +38,7 @@ print(
         + "for candidates \(rebuild.updatedCandidateIds)"
 )
 
-if metadataRegistryIntegrationEnabled {
+if isMetadataRegistryIntegrationEnabled {
     print("\n\(metadataRegistryIntegrationEnvVar) is set -- replaying the burst against a real embedder...\n")
     let embedder = try await resolveLiveEmbedder()
     let liveSteps = try await runHotReloadBurst(embedder: embedder)

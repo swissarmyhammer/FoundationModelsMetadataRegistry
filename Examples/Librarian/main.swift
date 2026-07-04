@@ -15,7 +15,7 @@ import LibrarianCore
 /// same shape as `CatalogSearchCore`/`SemanticSearchCore`; this file is just
 /// the runnable entry point.
 
-if metadataRegistryIntegrationEnabled {
+if isMetadataRegistryIntegrationEnabled {
     print("Query: \"\(librarianQuery)\"\n")
     let config = try await resolveLiveSelectionConfig()
     let matches = try await runLibrarianSelection(query: librarianQuery, config: config)

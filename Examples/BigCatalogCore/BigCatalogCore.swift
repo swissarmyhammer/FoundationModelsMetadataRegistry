@@ -10,7 +10,7 @@ import LiveRouterSupport
 /// `CatalogSearch`/`SemanticSearch` use: `runBigCatalogRetrieval(catalog:
 /// query:limit:)` builds a keyword-only `MetadataSearcher(mode: .retrieval)`
 /// over the whole catalog and reports how long indexing + search actually
-/// took. Only when `ExamplesSupport.metadataRegistryIntegrationEnabled` is
+/// took. Only when `ExamplesSupport.isMetadataRegistryIntegrationEnabled` is
 /// set does `runBigCatalogOverBudgetSelection(catalog:query:)` also drive
 /// the `.selection` tier's **over-budget** path (plan.md §6): the assembled
 /// prefix for ~1,000 items overflows any reasonable capacity, so
@@ -128,7 +128,7 @@ public func runBigCatalogRetrieval(
 /// reported via `.retrievalCut(considered:kept:)`, printed by
 /// `printDiagnostic(_:)`.
 ///
-/// Only ever called behind `ExamplesSupport.metadataRegistryIntegrationEnabled`
+/// Only ever called behind `ExamplesSupport.isMetadataRegistryIntegrationEnabled`
 /// -- this is the one path in this target that touches the network/GPU.
 ///
 /// - Parameters:

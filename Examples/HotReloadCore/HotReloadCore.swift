@@ -20,7 +20,7 @@ import LiveRouterSupport
 /// (`DeterministicEmbedder`) -- a `FakeEmbedder`-style test double, but
 /// defined here since production code (a library target) can't import a
 /// test-target type. Only when
-/// `ExamplesSupport.metadataRegistryIntegrationEnabled` is set does
+/// `ExamplesSupport.isMetadataRegistryIntegrationEnabled` is set does
 /// `resolveLiveEmbedder()` additionally resolve a real, live-Router-backed
 /// embedder to replay the same burst against.
 ///
@@ -37,8 +37,15 @@ public typealias HotReloadTool = SearchableFixtureItem
 /// The three tools this example's burst adds and removes, mirroring the
 /// gated integration suite's own churn scenario
 /// (`RouterIntegrationTests.reloadUnderChurnStaysSearchableDuringMCPStyleAddRemoveBursts`).
+/// The first tool in the burst sequence: present from the initial add.
 public let hotReloadToolA = HotReloadTool(id: "toolA", block: "reads a file from disk")
+
+/// The second tool in the burst sequence: added alongside `hotReloadToolA`,
+/// then survives the later remove-and-add step.
 public let hotReloadToolB = HotReloadTool(id: "toolB", block: "writes a file to disk")
+
+/// The third tool in the burst sequence: added only in the final
+/// remove-and-add step, replacing `hotReloadToolA`.
 public let hotReloadToolC = HotReloadTool(id: "toolC", block: "deletes a file from disk")
 
 /// The MCP-style add/remove burst this example replays against a live

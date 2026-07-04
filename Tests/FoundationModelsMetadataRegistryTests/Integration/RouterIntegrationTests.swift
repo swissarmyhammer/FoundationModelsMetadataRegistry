@@ -156,7 +156,7 @@ private let toolCatalogIds = toolCatalog.map(\.id)
     "Gated Router-backed integration suite (M7)",
     .serialized,
     .timeLimit(.minutes(30)),
-    .enabled(if: metadataRegistryIntegrationEnabled)
+     .enabled(if: isMetadataRegistryIntegrationEnabled)
 )
 struct RouterIntegrationTests {
     // MARK: - Scenario 1: fork-per-call prefix reuse through RoutedAgentSession

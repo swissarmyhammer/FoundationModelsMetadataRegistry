@@ -25,7 +25,7 @@ let retrieval = try await runBigCatalogRetrieval(catalog: catalog, query: bigCat
 print(String(format: "Retrieval over %d entries took %.4fs (GPU-free, in-memory)\n", retrieval.catalogCount, retrieval.elapsed))
 print(formattedMatches(matches: retrieval.matches))
 
-if metadataRegistryIntegrationEnabled {
+if isMetadataRegistryIntegrationEnabled {
     print("\n\(metadataRegistryIntegrationEnvVar) is set -- running the over-budget selection query against a live model...\n")
     let matches = try await runBigCatalogOverBudgetSelection(catalog: catalog, query: bigCatalogNeedleQuery)
     print(formattedMatches(matches: matches))

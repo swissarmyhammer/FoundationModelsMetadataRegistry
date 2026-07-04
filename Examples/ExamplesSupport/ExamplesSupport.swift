@@ -96,7 +96,7 @@ public func formattedMatches<Item: SearchableMetadata>(matches: [Match<Item>]) -
 public let metadataRegistryIntegrationEnvVar = "METADATA_REGISTRY_INTEGRATION_TESTS"
 
 /// Whether the gated real-model path is enabled for this run.
-public var metadataRegistryIntegrationEnabled: Bool {
+public var isMetadataRegistryIntegrationEnabled: Bool {
     ProcessInfo.processInfo.environment[metadataRegistryIntegrationEnvVar] != nil
 }
 

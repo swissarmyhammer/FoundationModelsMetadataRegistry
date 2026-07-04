@@ -21,7 +21,7 @@ import LiveRouterSupport
 /// reasoning plan.md §6 says lexical/semantic ranking alone can't do.
 ///
 /// The model run is gated behind
-/// `ExamplesSupport.metadataRegistryIntegrationEnabled` -- the same opt-in
+/// `ExamplesSupport.isMetadataRegistryIntegrationEnabled` -- the same opt-in
 /// env var the gated `Integration/RouterIntegrationTests.swift` suite uses.
 /// Without it, `printCatalog()` prints the catalog and this example exits 0,
 /// GPU-free.
@@ -55,7 +55,7 @@ public let librarianQuery = "the warmest city on my trip"
 
 /// Prints the trip-planning catalog, one line per tool -- the GPU-free path
 /// this example runs when
-/// `ExamplesSupport.metadataRegistryIntegrationEnabled` is unset.
+/// `ExamplesSupport.isMetadataRegistryIntegrationEnabled` is unset.
 public func printCatalog() {
     print("Trip-planning catalog (\(tripPlanningCatalog.count) tools):")
     for tool in tripPlanningCatalog {
