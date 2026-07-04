@@ -48,6 +48,15 @@ let huggingFacePackage = "swift-huggingface"
 /// imports it.
 let transformersPackage = "swift-transformers"
 
+/// The name of the shared `Examples/ExamplesSupport` library target.
+///
+/// Referenced verbatim by every example's dependency list (`CatalogSearchCore`
+/// via `exampleExecutableTarget`, `liveRouterCoreDependencies`, the test
+/// target, and the target's own declaration) — extracted here so all four
+/// share one source of truth rather than four string literals that could
+/// silently drift.
+let examplesSupportName = "ExamplesSupport"
+
 /// The Router/MLX/Hugging Face product quintet that resolves a real
 /// `Router` + `LiveModelLoader`: FoundationModelsRouter itself, MLX's
 /// Hugging Face hub + LM-common products, and the Hugging Face
@@ -77,7 +86,7 @@ let liveRouterProductDependencies: [Target.Dependency] = [
 /// GPU-free/Router-free and deliberately does not use this constant.)
 let liveRouterCoreDependencies: [Target.Dependency] = [
     .target(name: packageName),
-    .target(name: "ExamplesSupport"),
+    .target(name: examplesSupportName),
     .target(name: "LiveRouterSupport"),
 ] + liveRouterProductDependencies
 
@@ -101,7 +110,7 @@ func exampleExecutableTarget(name: String, coreName: String) -> Target {
         name: name,
         dependencies: [
             .target(name: coreName),
-            .target(name: "ExamplesSupport"),
+            .target(name: examplesSupportName),
         ],
         path: "Examples/\(name)"
     )
@@ -151,7 +160,7 @@ let package = Package(
             name: "\(packageName)Tests",
             dependencies: [
                 .target(name: packageName),
-                .target(name: "ExamplesSupport"),
+                .target(name: examplesSupportName),
                 .target(name: "CatalogSearchCore"),
                 .target(name: "SemanticSearchCore"),
                 // `BigCatalogCore`/`HotReloadCore`'s GPU-free paths (plan.md §13
@@ -181,9 +190,9 @@ let package = Package(
         // single source of truth. Each core still owns its own
         // divergent/additional fixture items locally.
         .target(
-            name: "ExamplesSupport",
+            name: examplesSupportName,
             dependencies: [.target(name: packageName)],
-            path: "Examples/ExamplesSupport"
+            path: "Examples/\(examplesSupportName)"
         ),
         // Shared live-Router profile resolution (plan.md §13 M8):
         // `SemanticSearchCore`, `LibrarianCore`, `BigCatalogCore`, and
@@ -210,7 +219,7 @@ let package = Package(
             name: "CatalogSearchCore",
             dependencies: [
                 .target(name: packageName),
-                .target(name: "ExamplesSupport"),
+                .target(name: examplesSupportName),
             ],
             path: "Examples/CatalogSearchCore"
         ),
