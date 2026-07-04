@@ -12,10 +12,11 @@ import FoundationModelsRouter
 
 // MARK: - Gate
 
-/// The opt-in environment variable that enables this gated, real-model suite
-/// (plan.md §15 + M7). Unset (the default, and on any CI/GPU-less box), the
-/// whole suite is skipped, so `swift test` stays green with zero downloads —
-/// mirroring FoundationModelsRouter's own gate
+/// The opt-in environment variable that enables this gated, real-model suite.
+///
+/// Unset (the default, and on any CI/GPU-less box), the whole suite is
+/// skipped, so `swift test` stays green with zero downloads — mirroring
+/// FoundationModelsRouter's own gate
 /// (`../FoundationModelsRouter/Tests/FoundationModelsRouterIntegrationTests/IntegrationTests.swift`'s
 /// `FM_ROUTER_INTEGRATION_TESTS`) and FoundationModelsMultitool's
 /// (`../FoundationModelsMultitool/Tests/FoundationModelsMultitoolIntegrationTests/Support/IntegrationGate.swift`'s
@@ -47,11 +48,13 @@ private enum TinyModels {
     static let embedding: ModelRef = "mlx-community/bge-small-en-v1.5-4bit"
 }
 
-/// The tiny co-fitting profile this suite resolves once per test — mirrors
-/// Router's own `tinyProfile` and Multitool's own `multitoolTinyProfile`. A
-/// modest `context` keeps every slot's KV footprint small so the trio
-/// comfortably co-fits; this suite's fixture catalogs and prompts are all
-/// short, so there is no need for a larger working context.
+/// The tiny co-fitting profile this suite resolves once per test.
+///
+/// Mirrors Router's own `tinyProfile` and Multitool's own
+/// `multitoolTinyProfile`. A modest `context` keeps every slot's KV
+/// footprint small so the trio comfortably co-fits; this suite's fixture
+/// catalogs and prompts are all short, so there is no need for a larger
+/// working context.
 private let tinyProfile = ProfileDefinition(
     name: "metadata-registry-integration-tiny",
     description: "Deliberately tiny real models for the gated Router-backed integration suite (plan.md M7).",
@@ -63,8 +66,9 @@ private let tinyProfile = ProfileDefinition(
 
 // MARK: - Live fixture
 
-/// One resolved, live `Router` + `LanguageModelProfile` pair — everything a
-/// gated scenario needs to build real `RoutedAgentSession`/
+/// One resolved, live `Router` + `LanguageModelProfile` pair.
+///
+/// Everything a gated scenario needs to build real `RoutedAgentSession`/
 /// `RoutedEmbedderAdapter` instances against. Mirrors Multitool's own
 /// `LiveRouterFixture`
 /// (`../FoundationModelsMultitool/Tests/FoundationModelsMultitoolIntegrationTests/Support/IntegrationGate.swift`),
@@ -99,6 +103,7 @@ private struct LiveRouterFixture: Sendable {
     }
 
     /// Releases the resolved profile, evicting its three resident models.
+    ///
     /// Call once a scenario is done with this fixture, on every exit path
     /// (success, assertion failure, or thrown error).
     func tearDown() async {
@@ -304,11 +309,12 @@ struct RouterIntegrationTests {
 
     // MARK: - Scenario 3: embed + RRF quality smoke via RoutedEmbedderAdapter
 
-    /// A real embed + RRF quality smoke test: reuses this package's own
-    /// `Examples/SemanticSearchCore` fixture catalog and paraphrased query
-    /// (`gitCommands` / `query` -- "save my work", which shares no keyword or
-    /// character trigram with `commit`'s rendered block) rather than
-    /// duplicating a second copy of the same fixture, and drives
+    /// A real embed + RRF quality smoke test over this package's own fixture catalog.
+    ///
+    /// Reuses `Examples/SemanticSearchCore`'s fixture catalog and paraphrased
+    /// query (`gitCommands` / `query` -- "save my work", which shares no
+    /// keyword or character trigram with `commit`'s rendered block) rather
+    /// than duplicating a second copy of the same fixture, and drives
     /// `runSemanticSearch(query:embedder:onDiagnostic:)` with a real
     /// `RoutedEmbedderAdapter` wrapping the resolved profile's embedding
     /// model -- the live-Router path `ExamplesSmokeTests` documents as
