@@ -249,6 +249,28 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
 
     // MARK: - Retrieval tier
 
+    /// Sorts document indices by descending normalized fused score, breaking
+    /// ties by ascending catalog index for deterministic, first-seen-order
+    /// output — the shared ordering both `retrievalSearch(intent:limit:)` and
+    /// `rankEntireCatalog(intent:index:weights:embedder:onDiagnostic:)` apply
+    /// to `normalized`'s keys.
+    ///
+    /// - Parameters:
+    ///   - indices: the document indices to sort.
+    ///   - normalized: doc index -> normalized `[0, 1]` fused score.
+    /// - Returns: `indices`, ordered descending by score.
+    private static func sortByNormalizedScore(_ indices: [Int], using normalized: [Int: Double]) -> [Int] {
+        indices.sorted { left, right in
+            let leftScore = normalized[left] ?? 0.0
+            let rightScore = normalized[right] ?? 0.0
+            guard leftScore != rightScore else {
+                // Deterministic tie-break: first-seen catalog order.
+                return left < right
+            }
+            return leftScore > rightScore
+        }
+    }
+
     /// Runs the `.retrieval` tier: BM25 + trigram + cosine rankings fused by
     /// `RRF.fuse(k: 60)`, normalized to `[0, 1]`, mapped back through the
     /// catalog to verbatim `Match`es (plan.md §5). Only ever returns
@@ -262,15 +284,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         let signals = await Self.computeSignals(intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic)
         let normalized = Self.fuseAndNormalize(signals: signals, weights: weights)
 
-        let orderedDocumentIndices = normalized.keys.sorted { left, right in
-            let leftScore = normalized[left] ?? 0.0
-            let rightScore = normalized[right] ?? 0.0
-            guard leftScore != rightScore else {
-                // Deterministic tie-break: first-seen catalog order.
-                return left < right
-            }
-            return leftScore > rightScore
-        }
+        let orderedDocumentIndices = Self.sortByNormalizedScore(Array(normalized.keys), using: normalized)
 
         return Self.buildMatches(
             documentIndices: Array(orderedDocumentIndices.prefix(limit)),
@@ -317,12 +331,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         let signals = await computeSignals(intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic)
         let normalized = fuseAndNormalize(signals: signals, weights: weights)
 
-        let rankedIndices = normalized.keys.sorted { left, right in
-            let leftScore = normalized[left] ?? 0.0
-            let rightScore = normalized[right] ?? 0.0
-            guard leftScore != rightScore else { return left < right }
-            return leftScore > rightScore
-        }
+        let rankedIndices = sortByNormalizedScore(Array(normalized.keys), using: normalized)
         let unrankedIndices = index.ids.indices.filter { normalized[$0] == nil }
 
         return buildMatches(documentIndices: rankedIndices + unrankedIndices, index: index, normalized: normalized, signals: signals)
@@ -365,7 +374,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         embedder: (any TextEmbedding)?,
         onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
     ) async -> RetrievalSignals {
-        let (bm25Ranking, bm25Scores) = computeBM25Ranking(intent: intent, index: index)
+        let (bm25Ranking, bm25Scores) = computeBm25Ranking(intent: intent, index: index)
         let (trigramRanking, trigramScores) = computeTrigramRanking(intent: intent, index: index)
         // Cosine only runs when configured to actually count: a zero weight
         // means the caller doesn't want the signal, so there's no reason to
@@ -376,7 +385,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
                 intent: intent, index: index, embedder: embedder, onDiagnostic: onDiagnostic
             )
         } else {
-            (cosineRanking, cosineScores) = ([], [Double](repeating: 0.0, count: index.count))
+            (cosineRanking, cosineScores) = ([], zeroScoresArray(count: index.count))
         }
         return RetrievalSignals(
             bm25Ranking: bm25Ranking,
@@ -467,10 +476,10 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// - Returns: the matching document indices (into `index.ids`) ranked
     ///   descending by score, and the full-length, positionally aligned raw
     ///   score for every document.
-    private static func computeBM25Ranking(intent: String, index: MetadataIndex<Item>) -> (ranking: [Int], scores: [Double]) {
+    private static func computeBm25Ranking(intent: String, index: MetadataIndex<Item>) -> (ranking: [Int], scores: [Double]) {
         let queryTokens = Tokenizer.tokenize(text: intent)
         guard !queryTokens.isEmpty else {
-            return ([], [Double](repeating: 0.0, count: index.count))
+            return ([], zeroScoresArray(count: index.count))
         }
 
         let documents = index.ids.map { id in
@@ -531,11 +540,8 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         embedder: (any TextEmbedding)?,
         onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
     ) async -> (ranking: [Int], scores: [Double]) {
-        let zeroScores = [Double](repeating: 0.0, count: index.count)
-
         guard let embedder, index.ids.contains(where: { index.embedding(forId: $0) != nil }) else {
-            onDiagnostic(.embeddingUnavailable)
-            return ([], zeroScores)
+            return embeddingUnavailableRanking(count: index.count, onDiagnostic: onDiagnostic)
         }
 
         let queryEmbedding: [Float]
@@ -546,13 +552,11 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
                 // input is itself a degradation worth reporting, not a
                 // silent empty ranking (plan.md §1 "every degradation is
                 // reported, never silent").
-                onDiagnostic(.embeddingUnavailable)
-                return ([], zeroScores)
+                return embeddingUnavailableRanking(count: index.count, onDiagnostic: onDiagnostic)
             }
             queryEmbedding = firstVector
         } catch {
-            onDiagnostic(.embeddingUnavailable)
-            return ([], zeroScores)
+            return embeddingUnavailableRanking(count: index.count, onDiagnostic: onDiagnostic)
         }
 
         let scores = index.ids.map { id -> Double in
@@ -560,6 +564,26 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
             return cosineSimilarity(queryEmbedding, itemEmbedding)
         }
         return (rankingOfPositiveScores(scores: scores), scores)
+    }
+
+    /// Reports `.embeddingUnavailable` and returns the zero-filled ranking
+    /// every guard in `computeCosineRanking(intent:index:embedder:
+    /// onDiagnostic:)` falls back to when cosine can't contribute: no
+    /// `embedder` is configured, none of the catalog's items carry an
+    /// embedding yet, or embedding the query itself fails — the shared
+    /// "degrade to keyword-only, report it, never silently" response
+    /// (plan.md §1, §5).
+    ///
+    /// - Parameters:
+    ///   - count: the number of documents to zero-fill scores for.
+    ///   - onDiagnostic: called with `.embeddingUnavailable`.
+    /// - Returns: an empty ranking and `count` zero-filled scores.
+    private static func embeddingUnavailableRanking(
+        count: Int,
+        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
+    ) -> (ranking: [Int], scores: [Double]) {
+        onDiagnostic(.embeddingUnavailable)
+        return ([], zeroScoresArray(count: count))
     }
 
     /// Cosine similarity between two equal-length vectors: `(a · b) / (|a| |b|)`.
@@ -591,5 +615,13 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// list, exactly as if it weren't in the catalog for this signal.
     private static func rankingOfPositiveScores(scores: [Double]) -> [Int] {
         scores.indices.filter { scores[$0] > 0.0 }.sorted { scores[$0] > scores[$1] }
+    }
+
+    /// A `count`-long array of `0.0` scores — the "signal couldn't be
+    /// computed" placeholder every signal-ranking function returns alongside
+    /// an empty ranking when its guard fails (empty query, disabled weight,
+    /// missing embedder).
+    private static func zeroScoresArray(count: Int) -> [Double] {
+        [Double](repeating: 0.0, count: count)
     }
 }

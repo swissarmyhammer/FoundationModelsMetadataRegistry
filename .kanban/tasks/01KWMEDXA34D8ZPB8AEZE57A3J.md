@@ -24,29 +24,34 @@ comments:
 
     Leaving in `doing` for review per /implement workflow.
   timestamp: 2026-07-04T11:39:57.946195+00:00
+- actor: claude-code
+  id: 01kwpf8xjxp01ymza1mv640cbk
+  text: 'Iteration 1: implement resumed after a session-limit interruption, landed green in doing (106 tests passed / 0 failed across 9 suites, TDD red→green verified, double-check PASS). Checkpoint committed at 2610d91. Note: assemblePrefix widened from private to internal-static to support direct test verification; default Weights has cosine:1.0 with no embedder configured, so rankEntireCatalog legitimately also fires .embeddingUnavailable alongside .retrievalCut in some tests (not a bug — tests pass weights: Weights(cosine: 0.0) where an exact diagnostics array is asserted). Proceeding to /review HEAD~1..HEAD.'
+  timestamp: 2026-07-04T11:47:26.429057+00:00
+- actor: claude-code
+  id: 01kwpg4n1tndjcyrmkz4cke6md
+  text: |-
+    Addressed all 6 review-findings duplication/naming items in Sources/FoundationModelsMetadataRegistry/MetadataSearcher.swift (pure refactor, no behavior change):
+
+    1&2. Extracted `private static func sortByNormalizedScore(_ indices: [Int], using normalized: [Int: Double]) -> [Int]` (descending fused score, ascending-index tie-break) and replaced the verbatim-duplicated sort comparators in both `retrievalSearch` (called via `Self.sortByNormalizedScore(Array(normalized.keys), using: normalized)`) and `rankEntireCatalog` (called directly since it's already static).
+
+    3&4. Extracted `private static func embeddingUnavailableRanking(count: Int, onDiagnostic: ...) -> (ranking: [Int], scores: [Double])` — reports `.embeddingUnavailable` and returns the zero-filled ranking. Replaced all 3 repeated `onDiagnostic(.embeddingUnavailable); return ([], zeroScores)` blocks in `computeCosineRanking` (no-embedder guard, empty-embed-result guard, catch block) with calls to this helper. Removed the now-unused local `zeroScores` variable.
+
+    5. Renamed `computeBM25Ranking` → `computeBm25Ranking` to match the lowercase-algorithm-name convention (`computeTrigramRanking`, `computeCosineRanking`, `bm25Ranking`/`trigramRanking`/`cosineRanking` properties). Updated its one call site in `computeSignals`. Confirmed via grep zero remaining references to the old name in Sources or Tests.
+
+    6. Extracted `private static func zeroScoresArray(count: Int) -> [Double] { [Double](repeating: 0.0, count: count) }` and replaced all 3 occurrences: `computeSignals`'s cosine-disabled else branch, `computeBm25Ranking`'s empty-query early return, and inside the new `embeddingUnavailableRanking` helper. Confirmed via grep the inline `[Double](repeating: 0.0, count:...)` literal now appears exactly once in the file (inside the helper itself).
+
+    Verification:
+    - `swift build`: clean, exit 0.
+    - `swift test`: 106/106 passed, 9 suites, zero failures (same count as before — pure refactor).
+    - Adversarial double-check agent: PASS — confirmed tie-break semantics unchanged, `count` parameter correct at all embeddingUnavailableRanking call sites, zero leftover references to old BM25 name, zero leftover inline zero-array duplication, and no access-level/placement issues with the new private static helpers.
+
+    All 6 checklist items flipped to [x]. Leaving task in `doing` per orchestrator instructions (not moving to review).
+  timestamp: 2026-07-04T12:02:35.194005+00:00
 depends_on:
 - 01KWMEDGSYSM044AX49AG27GAQ
 position_column: doing
 position_ordinal: '80'
 title: Over-budget selection path (retrieval top-M → one-off session) and .auto mode
 ---
-## What
-Complete the selection tier per plan.md §6/§7 (replaces Multitool's `lexicallyFilter` keep/drop):
-- Over budget (preamble + all summary blocks > `capacityCharacterLimit`, using `renderSummaryBlock()` like the under-budget path): retrieval tier ranks the catalog, top-M candidates (default 24, best-first ordering passed to the prompt as summary blocks) seed a **one-off session** — no caching, no fork
-- Id-enum grammar for the one-off session is constrained to the top-M candidate ids only
-- Report the cut through the shared diagnostics surface as `MetadataDiagnostic.retrievalCut(considered:kept:)` (the generalization of Multitool's `onPrefilterCut`, `Librarian.swift:49,88,204`; default logs)
-- `.auto` mode: selection when a model/session factory is configured, else retrieval (plan.md §7)
-- Retrieval-tier `signals` attach to over-budget results where retrieval participated
-
-## Acceptance Criteria
-- [ ] A catalog whose assembled prefix exceeds the budget takes the one-off path: no root caching, zero forks, candidate count == min(candidateLimit, catalog size)
-- [ ] `.retrievalCut` fires with accurate considered/kept counts; under-budget searches never fire it
-- [ ] `.auto` resolves to selection with a session factory configured and retrieval without one
-- [ ] One-off prompt contains candidate summary blocks in best-first retrieval order
-
-## Tests
-- [ ] `Tests/FoundationModelsMetadataRegistryTests/OverBudgetTests.swift` — scripted fakes: budget boundary (at/over limit), top-M membership and ordering, one-off grammar id set, `.retrievalCut` payload capture, `.auto` resolution both ways
-- [ ] Run `swift test` — all pass, no GPU
-
-## Workflow
-- Use `/tdd` — write failing tests first, then implement to make them pass.
+## What\nComplete the selection tier per plan.md §6/§7 (replaces Multitool's `lexicallyFilter` keep/drop):\n- Over budget (preamble + all summary blocks > `capacityCharacterLimit`, using `renderSummaryBlock()` like the under-budget path): retrieval tier ranks the catalog, top-M candidates (default 24, best-first ordering passed to the prompt as summary blocks) seed a **one-off session** — no caching, no fork\n- Id-enum grammar for the one-off session is constrained to the top-M candidate ids only\n- Report the cut through the shared diagnostics surface as `MetadataDiagnostic.retrievalCut(considered:kept:)` (the generalization of Multitool's `onPrefilterCut`, `Librarian.swift:49,88,204`; default logs)\n- `.auto` mode: selection when a model/session factory is configured, else retrieval (plan.md §7)\n- Retrieval-tier `signals` attach to over-budget results where retrieval participated\n\n## Acceptance Criteria\n- [ ] A catalog whose assembled prefix exceeds the budget takes the one-off path: no root caching, zero forks, candidate count == min(candidateLimit, catalog size)\n- [ ] `.retrievalCut` fires with accurate considered/kept counts; under-budget searches never fire it\n- [ ] `.auto` resolves to selection with a session factory configured and retrieval without one\n- [ ] One-off prompt contains candidate summary blocks in best-first retrieval order\n\n## Tests\n- [ ] `Tests/FoundationModelsMetadataRegistryTests/OverBudgetTests.swift` — scripted fakes: budget boundary (at/over limit), top-M membership and ordering, one-off grammar id set, `.retrievalCut` payload capture, `.auto` resolution both ways\n- [ ] Run `swift test` — all pass, no GPU\n\n## Workflow\n- Use `/tdd` — write failing tests first, then implement to make them pass.\n\n## Review Findings (2026-07-04 06:47)\n\n- [x] `Sources/FoundationModelsMetadataRegistry/MetadataSearcher.swift:189` — The sorting comparator for normalized document scores is verbatim duplicated in rankEntireCatalog — both functions use identical sort-by-descending-score logic with the same tie-breaker. Two blocks differing only in variable names should be extracted into one function. Extract the tie-breaking sort logic into a private static helper: `private static func sortByNormalizedScore(_ indices: [Int], using normalized: [Int: Double]) -> [Int]` and call from both locations.\n- [x] `Sources/FoundationModelsMetadataRegistry/MetadataSearcher.swift:230` — This sorting comparator duplicates the identical logic from retrievalSearch (line ~189) — both normalize then sort by descending fused score with identical tie-breaking. Duplicate sorting code inflates maintenance surface area. Call the extracted static helper function instead of repeating the sort comparator.\n- [x] `Sources/FoundationModelsMetadataRegistry/MetadataSearcher.swift:356` — Identical error-handling pattern appears three times in computeCosineRanking (lines 356, 368, 375) — each reports .embeddingUnavailable and returns the same zero-filled ranking. Rule of three: extract into a shared helper function. Extract to a private helper method that encapsulates the embedding-unavailable error response, or restructure to call a common error-return path.\n- [x] `Sources/FoundationModelsMetadataRegistry/MetadataSearcher.swift:375` — This error handling duplicates the identical pattern from lines 356 and 368 — same onDiagnostic(.embeddingUnavailable) and return ([], zeroScores), repeated three times in computeCosineRanking. Call extracted helper function for this error case.\n- [x] `Sources/FoundationModelsMetadataRegistry/MetadataSearcher.swift:418` — Function name `computeBM25Ranking` uses uppercase 'BM25' while similar algorithm functions use lowercase algorithm names: `computeTrigramRanking`, `computeCosineRanking`. The corresponding property names also use lowercase: `bm25Ranking`, `trigramRanking`, `cosineRanking`. This inconsistency breaks the established naming pattern for algorithm-prefixed identifiers within the file. Rename `computeBM25Ranking` to `computeBm25Ranking` to match the lowercase algorithm-name pattern established by `computeTrigramRanking` and `computeCosineRanking`.\n- [x] `Sources/FoundationModelsMetadataRegistry/MetadataSearcher.swift:437` — The expression `[Double](repeating: 0.0, count: index.count)` appears three times across signal-ranking functions when a signal cannot be computed (empty query, disabled weight, missing embedder). This repeated initialization pattern should be extracted to a named helper to eliminate duplication and clarify semantics. Extract to a private static helper: `private static func zeroScoresArray(count: Int) -> [Double] { [Double](repeating: 0.0, count: count) }` and replace all three occurrences with calls to this helper.\n
