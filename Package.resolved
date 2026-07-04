@@ -1,5 +1,5 @@
 {
-  "originHash" : "069447960f9b894fe79aa14ca8b0233b919368d824de7880ca29dd02e75dfb19",
+  "originHash" : "5c6f799b713684f2ac57b3b3549d37bf80f58ab2ba5d6e8dc233fe663210c226",
   "pins" : [
     {
       "identity" : "eventsource",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "a3a85a85214caf642abaa96ae664e4c772a59f6e",
         "version" : "1.4.1"
+      }
+    },
+    {
+      "identity" : "foundationmodelsrouter",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swissarmyhammer/FoundationModelsRouter",
+      "state" : {
+        "branch" : "main",
+        "revision" : "336b1369a85c8d7d5d8685ffd9fc1f4692355e5d"
       }
     },
     {

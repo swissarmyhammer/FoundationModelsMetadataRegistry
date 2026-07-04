@@ -5,7 +5,6 @@
 .build/
 .swiftpm/
 .DS_Store
-# Package.resolved is committed (not ignored): with a path dependency on
-# ../FoundationModelsRouter, Router's own committed Package.resolved is not
-# consulted — only this root package's Package.resolved pins the mlx-swift-lm
-# branch dependency to a specific commit so builds are reproducible.
+# Package.resolved is committed (not ignored): it pins the FoundationModelsRouter
+# and mlx-swift-lm branch dependencies to specific commits so builds are
+# reproducible.

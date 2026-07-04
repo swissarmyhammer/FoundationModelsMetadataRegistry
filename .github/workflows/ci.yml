@@ -11,33 +11,5 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  unit:
-    # The family reusable workflow
-    # (swissarmyhammer/workflows/.github/workflows/swift-ci.yaml@main) only
-    # checks out the calling repository, so it cannot resolve this package's
-    # `.package(path: "../FoundationModelsRouter")` sibling dependency
-    # (plan.md §10). This standalone job reproduces its build-and-test steps
-    # on the same self-hosted macOS runners (which carry the macOS 27 SDK
-    # this package's platform floor requires), after checking out both repos
-    # side by side so the path dependency resolves — this is also what keeps
-    # the Examples/ executables compiling in CI (plan.md §13).
-    runs-on: [self-hosted, macOS]
-    steps:
-      - name: Checkout FoundationModelsMetadataRegistry
-        uses: actions/checkout@v4
-        with:
-          path: FoundationModelsMetadataRegistry
-
-      - name: Checkout FoundationModelsRouter (sibling path dependency)
-        uses: actions/checkout@v4
-        with:
-          repository: swissarmyhammer/FoundationModelsRouter
-          path: FoundationModelsRouter
-
-      - name: Build (including tests)
-        working-directory: FoundationModelsMetadataRegistry
-        run: swift build --build-tests
-
-      - name: Test
-        working-directory: FoundationModelsMetadataRegistry
-        run: swift test
+  ci:
+    uses: swissarmyhammer/workflows/.github/workflows/swift-ci.yaml@main

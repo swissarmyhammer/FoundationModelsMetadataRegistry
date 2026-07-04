@@ -12,12 +12,15 @@ let packageName = "FoundationModelsMetadataRegistry"
 
 /// The name of the FoundationModelsRouter dependency package.
 ///
-/// Wired as a sibling path dependency the same way
-/// `../CodeContextKit/Package.swift` does. Router supplies
-/// `RoutedLLM`/`RoutedSession` (selection), `RoutedEmbedder` (cosine), and
-/// `Grammar` (xgrammar id enums) to the production conformers (plan.md §10);
-/// the core — catalog, signals, RRF, both seams — compiles and unit-tests
-/// without exercising Router at runtime (fakes conform to the seams).
+/// Wired as a remote dependency (`main` branch) the same way
+/// `../FoundationModelsMultitool/Package.swift` does, rather than a local
+/// path dependency, so this package's CI can use the family's shared
+/// `swift-ci.yaml` reusable workflow (which only checks out the calling
+/// repo). Router supplies `RoutedLLM`/`RoutedSession` (selection),
+/// `RoutedEmbedder` (cosine), and `Grammar` (xgrammar id enums) to the
+/// production conformers (plan.md §10); the core — catalog, signals, RRF,
+/// both seams — compiles and unit-tests without exercising Router at runtime
+/// (fakes conform to the seams).
 let routerDependencyName = "FoundationModelsRouter"
 
 /// The `mlx-swift-lm` fork's package name.
@@ -168,7 +171,7 @@ let package = Package(
         )
     ],
     dependencies: [
-        .package(path: "../\(routerDependencyName)"),
+        .package(url: "https://github.com/swissarmyhammer/\(routerDependencyName)", branch: "main"),
         .package(url: "https://github.com/swissarmyhammer/\(mlxPackage)", branch: "mlx-foundationmodels"),
         .package(url: "https://github.com/huggingface/\(huggingFacePackage)", from: "0.9.0"),
         .package(url: "https://github.com/huggingface/\(transformersPackage)", from: "1.3.0"),
