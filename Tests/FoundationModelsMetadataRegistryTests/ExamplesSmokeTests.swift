@@ -2,6 +2,7 @@ import Foundation
 import Testing
 
 @testable import CatalogSearchCore
+import ExamplesSupport
 @testable import SemanticSearchCore
 
 /// Smoke tests for the `Examples/` executable targets (plan.md §13):
@@ -33,7 +34,7 @@ struct ExamplesSmokeTests {
     @Test("CatalogSearch's formatter renders rank, id, score, and every signal")
     func catalogSearchFormatsMatches() async throws {
         let matches = try await CatalogSearchCore.runCatalogSearch(query: "commit changes to git")
-        let formatted = CatalogSearchCore.formatMatches(matches)
+        let formatted = ExamplesSupport.formatMatches(matches)
 
         #expect(formatted.contains("1. commit"))
         #expect(formatted.contains("bm25="))
@@ -75,7 +76,7 @@ struct ExamplesSmokeTests {
             embedder: nil,
             onDiagnostic: { _ in }
         )
-        let formatted = SemanticSearchCore.formatMatches(matches)
+        let formatted = ExamplesSupport.formatMatches(matches)
 
         #expect(!matches.isEmpty)
         #expect(formatted.contains("bm25="))

@@ -30,6 +30,26 @@ comments:
 
     Verification commands run fresh at handoff: `swift build` (exit 0, no warnings besides a pre-existing unrelated mlx-swift bundle warning), `swift test` (110/110 passed), `swift run CatalogSearch` (exit 0), `swift run SemanticSearch --no-embedder` (exit 0). Leaving in `doing` for review per the implement workflow.
   timestamp: 2026-07-04T12:43:00.953897+00:00
+- actor: claude-code
+  id: 01kwpjq31afetk7677xf1cj60a
+  text: 'Iteration 1: implement landed green in doing (110 tests passed / 0 failed across 10 suites, TDD red→green verified, swift run of both executables confirmed exit 0 with correct output). Checkpoint committed at 09e8aa9. Discovery: @testable import of an executable target SIGSEGVs on this Xcode-beta/Swift 6.4/macOS 27 SDK toolchain — worked around with the *Core library-target pattern (CatalogSearchCore/SemanticSearchCore), which is good practice regardless of the bug. Added mlx-swift-lm/swift-huggingface/swift-transformers deps for SemanticSearchCore''s live-Router path. Proceeding to /review HEAD~1..HEAD.'
+  timestamp: 2026-07-04T12:47:36.490204+00:00
+- actor: claude-code
+  id: 01kwpkqvjxczskksmpwte53ndc
+  text: |-
+    Fixed all 5 review-findings duplication items. Root cause: `GitCommand`, the 5-item fixture prefix, and `formatMatches` were verbatim-duplicated between CatalogSearchCore.swift and SemanticSearchCore.swift.
+
+    Fix: added a new shared SwiftPM library target `ExamplesSupport` (Examples/ExamplesSupport/ExamplesSupport.swift) holding the single source of truth for:
+    - `GitCommand: SearchableMetadata` (the fixture type)
+    - `baseGitCommands: [GitCommand]` (the 5-item common prefix: commit/push/pull/branch/stash)
+    - `formatMatches(_:)` (the per-signal match formatter)
+
+    `CatalogSearchCore.gitCommands` is now just `baseGitCommands`. `SemanticSearchCore.gitCommands` is `baseGitCommands + [status item]`, preserving its 6th-item divergence locally as intended. Both `*Core` targets, both executable targets (CatalogSearch/SemanticSearch main.swift), and the test target now depend on/import `ExamplesSupport`; Package.swift wires all four new dependency edges. ExamplesSmokeTests.swift now calls `ExamplesSupport.formatMatches(...)`.
+
+    Adversarial double-check (round 1) caught a real gap: main.swift files imported ExamplesSupport directly but the executableTarget entries in Package.swift didn't declare it as a dependency (relying on SwiftPM's shared-module-search-path leniency rather than the declared graph) -- would break under `--explicit-target-dependency-import-check=error`. Fixed by adding `.target(name: "ExamplesSupport")` to both executableTargets' dependencies. Round 2 double-check independently re-ran `swift build --explicit-target-dependency-import-check=error` (confirmed clean) plus the full verification suite and returned PASS.
+
+    Verification, all run fresh after the fix: `swift build` exit 0; `swift build --explicit-target-dependency-import-check=error` exit 0 (strict check, no undeclared imports); `swift test` -- Test run with 110 tests in 10 suites passed, 0 failures; `swift run CatalogSearch` exit 0, commit ranks first with real bm25/trigram/cosine=0 scores; `swift run SemanticSearch --no-embedder` exit 0, prints embeddingUnavailable diagnostic, status ranks first. No remaining duplicate of GitCommand/formatMatches anywhere in the tree (grep-verified). Leaving in `doing` for review per the implement workflow.
+  timestamp: 2026-07-04T13:05:30.205288+00:00
 depends_on:
 - 01KWMECNX02RYW074R5DFHQ4EA
 position_column: doing
@@ -54,3 +74,11 @@ Implementation note: each example's entry logic is factored into a plain library
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-07-04 07:47)
+
+- [x] `Examples/CatalogSearchCore/CatalogSearchCore.swift:19` — GitCommand struct is verbatim-duplicated across both example cores, creating maintenance burden when the type needs to evolve. Extract GitCommand to a shared location (e.g., ExamplesShared or add it to the main library) and import it in both core targets, or merge the two example cores into one parametrized example.
+- [x] `Examples/CatalogSearchCore/CatalogSearchCore.swift:32` — The first 5 gitCommands entries are verbatim-duplicated in SemanticSearchCore, diverging only at SemanticSearchCore's 6th item (status). Extract the common 5-item base array to a shared constant in one place, then SemanticSearchCore can extend or override it locally if the 6th item is example-specific.
+- [x] `Examples/CatalogSearchCore/CatalogSearchCore.swift:67` — formatMatches function is verbatim-duplicated across both example cores; every line and format string is identical. Move formatMatches to a shared module (ExamplesShared, or the main library) and import it in both cores; the function has no example-specific logic and should not be copied.
+- [x] `Examples/SemanticSearchCore/SemanticSearchCore.swift:24` — GitCommand struct is verbatim-duplicated from CatalogSearchCore; both are identical public types with the same conformance and members. Extract GitCommand to a shared location and import it in both cores to avoid maintaining two copies.
+- [x] `Examples/SemanticSearchCore/SemanticSearchCore.swift:97` — formatMatches function is verbatim-duplicated from CatalogSearchCore; the implementation and all format strings are identical. Move formatMatches to a shared module and import it in both cores; keeping it 'local' for independence is outweighed by the maintenance cost of identical code in two places.

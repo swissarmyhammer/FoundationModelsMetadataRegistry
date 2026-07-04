@@ -82,10 +82,22 @@ let package = Package(
             name: "\(packageName)Tests",
             dependencies: [
                 .target(name: packageName),
+                .target(name: "ExamplesSupport"),
                 .target(name: "CatalogSearchCore"),
                 .target(name: "SemanticSearchCore"),
             ],
             path: "Tests/\(packageName)Tests"
+        ),
+        // Fixture type (`GitCommand`), the common fixture prefix
+        // (`baseGitCommands`), and the match formatter (`formatMatches`)
+        // shared by both example cores (plan.md §13) — extracted here rather
+        // than duplicated so the type and its fixture data/formatting have a
+        // single source of truth. Each core still owns its own
+        // divergent/additional fixture items locally.
+        .target(
+            name: "ExamplesSupport",
+            dependencies: [.target(name: packageName)],
+            path: "Examples/ExamplesSupport"
         ),
         // `CatalogSearch`'s entry logic (plan.md §13 M1): fixture items
         // conformed to `SearchableMetadata`, a keyword-only
@@ -95,7 +107,10 @@ let package = Package(
         // directly.
         .target(
             name: "CatalogSearchCore",
-            dependencies: [.target(name: packageName)],
+            dependencies: [
+                .target(name: packageName),
+                .target(name: "ExamplesSupport"),
+            ],
             path: "Examples/CatalogSearchCore"
         ),
         // The ~30-line hello world (plan.md §13 M1): a thin runnable entry
@@ -103,7 +118,10 @@ let package = Package(
         // build` keeps it compiling in CI.
         .executableTarget(
             name: "CatalogSearch",
-            dependencies: [.target(name: "CatalogSearchCore")],
+            dependencies: [
+                .target(name: "CatalogSearchCore"),
+                .target(name: "ExamplesSupport"),
+            ],
             path: "Examples/CatalogSearch"
         ),
         // `SemanticSearch`'s entry logic (plan.md §13 M2): `CatalogSearch`
@@ -120,6 +138,7 @@ let package = Package(
             name: "SemanticSearchCore",
             dependencies: [
                 .target(name: packageName),
+                .target(name: "ExamplesSupport"),
                 .product(name: routerDependencyName, package: routerDependencyName),
                 .product(name: "MLXHuggingFace", package: mlxPackage),
                 .product(name: "MLXLMCommon", package: mlxPackage),
@@ -131,7 +150,10 @@ let package = Package(
         // A thin runnable entry point over `SemanticSearchCore`.
         .executableTarget(
             name: "SemanticSearch",
-            dependencies: [.target(name: "SemanticSearchCore")],
+            dependencies: [
+                .target(name: "SemanticSearchCore"),
+                .target(name: "ExamplesSupport"),
+            ],
             path: "Examples/SemanticSearch"
         ),
     ]

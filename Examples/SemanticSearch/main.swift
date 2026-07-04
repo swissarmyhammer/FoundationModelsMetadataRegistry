@@ -1,3 +1,4 @@
+import ExamplesSupport
 import Foundation
 import SemanticSearchCore
 

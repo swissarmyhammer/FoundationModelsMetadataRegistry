@@ -1,4 +1,5 @@
 import CatalogSearchCore
+import ExamplesSupport
 
 /// # The ~30-line hello world (plan.md §13 M1).
 ///

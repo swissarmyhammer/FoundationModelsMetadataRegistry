@@ -1,3 +1,4 @@
+import ExamplesSupport
 import Foundation
 import FoundationModelsMetadataRegistry
 import FoundationModelsRouter
@@ -16,35 +17,20 @@ import Tokenizers
 /// library target (rather than living directly in `SemanticSearch`'s
 /// `main.swift`) so `ExamplesSmokeTests` can import and invoke the
 /// `--no-embedder` path directly, with no `swift run` subprocess spawning.
+///
+/// The `GitCommand` fixture type and the match formatter are shared with
+/// `CatalogSearchCore` via `ExamplesSupport`.
 
-/// A tiny catalog item: a git subcommand and its one-line description — the
-/// text IS the search surface (`SearchableMetadata.renderBlock()`).
-public struct GitCommand: SearchableMetadata {
-    public let id: String
-    public let summary: String
-
-    public init(id: String, summary: String) {
-        self.id = id
-        self.summary = summary
-    }
-
-    public func renderBlock() -> String { summary }
-}
-
-/// The fixture catalog this example searches — `CatalogSearch`'s five git
-/// subcommands plus `status`, whose block shares the "work" trigrams with
-/// `query` ("...the working tree" -- see `query`'s doc) so keyword-only
-/// retrieval genuinely surfaces *something* for `--no-embedder`, rather than
-/// an empty result set that would make the degradation indistinguishable
-/// from "found nothing at all."
-public let gitCommands: [GitCommand] = [
-    GitCommand(id: "commit", summary: "Record staged changes as a new snapshot in the repository history."),
-    GitCommand(id: "push", summary: "Upload local branch history to a remote server."),
-    GitCommand(id: "pull", summary: "Download and merge remote branch history."),
-    GitCommand(id: "branch", summary: "List, create, or delete lines of independent development."),
-    GitCommand(id: "stash", summary: "Temporarily set aside uncommitted edits to switch tasks."),
-    GitCommand(id: "status", summary: "Report the current state of the working tree."),
-]
+/// The fixture catalog this example searches — `ExamplesSupport.baseGitCommands`
+/// (`CatalogSearch`'s five git subcommands) plus `status`, whose block shares
+/// the "work" trigrams with `query` ("...the working tree" -- see `query`'s
+/// doc) so keyword-only retrieval genuinely surfaces *something* for
+/// `--no-embedder`, rather than an empty result set that would make the
+/// degradation indistinguishable from "found nothing at all."
+public let gitCommands: [GitCommand] =
+    baseGitCommands + [
+        GitCommand(id: "status", summary: "Report the current state of the working tree.")
+    ]
 
 /// The paraphrased query this example is built around: it shares no keyword
 /// or character trigram with `commit`'s rendered block, so only the cosine
@@ -85,22 +71,6 @@ public func runSemanticSearch(
         onDiagnostic: onDiagnostic
     )
     return try await searcher.search(intent: query, limit: limit)
-}
-
-/// Formats ranked matches, one line each, with their per-signal breakdown —
-/// kept local (rather than shared with `CatalogSearchCore`) so this example
-/// stays self-contained and independently runnable.
-///
-/// - Parameter matches: the matches to format, in ranked order.
-/// - Returns: one formatted line per match, joined by newlines.
-public func formatMatches(_ matches: [Match<GitCommand>]) -> String {
-    matches.enumerated().map { index, match in
-        let breakdown =
-            match.signals.map {
-                String(format: "bm25=%.3f trigram=%.3f cosine=%.3f", $0.bm25, $0.trigram, $0.cosine)
-            } ?? "no signals"
-        return String(format: "%d. %@  score=%.3f  [%@]", index + 1, match.id, match.score, breakdown)
-    }.joined(separator: "\n")
 }
 
 /// Resolves a real, on-device embedding model through a live `Router` and
