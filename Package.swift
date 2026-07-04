@@ -48,10 +48,27 @@ let huggingFacePackage = "swift-huggingface"
 /// imports it.
 let transformersPackage = "swift-transformers"
 
-/// The product dependencies every `*Core` target on the live-Router path
+/// The Router/MLX/Hugging Face product quintet that resolves a real
+/// `Router` + `LiveModelLoader`: FoundationModelsRouter itself, MLX's
+/// Hugging Face hub + LM-common products, and the Hugging Face
+/// hub/transformers products.
+///
+/// This exact 5-entry list appeared verbatim in three places —
+/// `liveRouterCoreDependencies` below, the test target's dependencies
+/// (which link the gated `Integration/RouterIntegrationTests.swift` suite),
+/// and `LiveRouterSupport`'s own target — extracted here so all three share
+/// one source of truth rather than three copies that could silently drift.
+let liveRouterProductDependencies: [Target.Dependency] = [
+    .product(name: routerDependencyName, package: routerDependencyName),
+    .product(name: "MLXHuggingFace", package: mlxPackage),
+    .product(name: "MLXLMCommon", package: mlxPackage),
+    .product(name: "HuggingFace", package: huggingFacePackage),
+    .product(name: "Tokenizers", package: transformersPackage),
+]
+
+/// The full dependency list every `*Core` target on the live-Router path
 /// needs: the main library target, `ExamplesSupport`, `LiveRouterSupport`,
-/// and the Router/MLX/Hugging Face product quartet that resolves a real
-/// `Router` + `LiveModelLoader`.
+/// plus `liveRouterProductDependencies`.
 ///
 /// `SemanticSearchCore`, `LibrarianCore`, `BigCatalogCore`, and
 /// `HotReloadCore` each depended on this identical 8-entry list verbatim —
@@ -62,12 +79,7 @@ let liveRouterCoreDependencies: [Target.Dependency] = [
     .target(name: packageName),
     .target(name: "ExamplesSupport"),
     .target(name: "LiveRouterSupport"),
-    .product(name: routerDependencyName, package: routerDependencyName),
-    .product(name: "MLXHuggingFace", package: mlxPackage),
-    .product(name: "MLXLMCommon", package: mlxPackage),
-    .product(name: "HuggingFace", package: huggingFacePackage),
-    .product(name: "Tokenizers", package: transformersPackage),
-]
+] + liveRouterProductDependencies
 
 /// Builds an `Examples/` executable target: a thin runnable entry point that
 /// depends only on its own `*Core` library target plus `ExamplesSupport`,
@@ -159,12 +171,7 @@ let package = Package(
                 // `FoundationModelsMultitoolIntegrationTests` — so this test target
                 // needs the same product dependencies those targets link, even though
                 // every other test file here never imports them.
-                .product(name: routerDependencyName, package: routerDependencyName),
-                .product(name: "MLXHuggingFace", package: mlxPackage),
-                .product(name: "MLXLMCommon", package: mlxPackage),
-                .product(name: "HuggingFace", package: huggingFacePackage),
-                .product(name: "Tokenizers", package: transformersPackage),
-            ],
+            ] + liveRouterProductDependencies,
             path: "Tests/\(packageName)Tests"
         ),
         // Fixture type (`GitCommand`), the common fixture prefix
@@ -190,14 +197,7 @@ let package = Package(
         // `ExamplesSupport`.
         .target(
             name: "LiveRouterSupport",
-            dependencies: [
-                .target(name: packageName),
-                .product(name: routerDependencyName, package: routerDependencyName),
-                .product(name: "MLXHuggingFace", package: mlxPackage),
-                .product(name: "MLXLMCommon", package: mlxPackage),
-                .product(name: "HuggingFace", package: huggingFacePackage),
-                .product(name: "Tokenizers", package: transformersPackage),
-            ],
+            dependencies: [.target(name: packageName)] + liveRouterProductDependencies,
             path: "Examples/LiveRouterSupport"
         ),
         // `CatalogSearch`'s entry logic (plan.md §13 M1): fixture items
