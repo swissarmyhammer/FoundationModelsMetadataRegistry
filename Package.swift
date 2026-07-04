@@ -89,7 +89,7 @@ let package = Package(
             path: "Tests/\(packageName)Tests"
         ),
         // Fixture type (`GitCommand`), the common fixture prefix
-        // (`baseGitCommands`), and the match formatter (`formatMatches`)
+        // (`baseGitCommands`), and the match formatter (`formattedMatches`)
         // shared by both example cores (plan.md §13) — extracted here rather
         // than duplicated so the type and its fixture data/formatting have a
         // single source of truth. Each core still owns its own

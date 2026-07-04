@@ -11,8 +11,9 @@ import FoundationModelsMetadataRegistry
 /// fixture items locally (`SemanticSearchCore` appends a `status` item so its
 /// keyword-only degradation path has something real to rank).
 
-/// A tiny catalog item: a git subcommand and its one-line description — the
-/// text IS the search surface (`SearchableMetadata.renderBlock()`).
+/// A tiny catalog item: a git subcommand and its one-line description.
+///
+/// The description text IS the search surface (`SearchableMetadata.renderBlock()`).
 public struct GitCommand: SearchableMetadata {
     /// The git subcommand's name — e.g. `"commit"` — and its `SearchableMetadata` id.
     public let id: String
@@ -31,12 +32,15 @@ public struct GitCommand: SearchableMetadata {
     }
 
     /// Renders this item to its search surface: the subcommand's summary text.
+    ///
+    /// - Returns: the item's summary text.
     public func renderBlock() -> String { summary }
 }
 
-/// The fixture catalog prefix both examples search: five common git
-/// subcommands. `CatalogSearchCore` uses this as-is; `SemanticSearchCore`
-/// appends its own `status` item on top.
+/// The fixture catalog prefix both examples search: five common git subcommands.
+///
+/// `CatalogSearchCore` uses this as-is; `SemanticSearchCore` appends its own
+/// `status` item on top.
 public let baseGitCommands: [GitCommand] = [
     GitCommand(id: "commit", summary: "Record staged changes as a new snapshot in the repository history."),
     GitCommand(id: "push", summary: "Upload local branch history to a remote server."),
@@ -49,7 +53,7 @@ public let baseGitCommands: [GitCommand] = [
 ///
 /// - Parameter matches: the matches to format, in ranked order.
 /// - Returns: one formatted line per match, joined by newlines.
-public func formatMatches(_ matches: [Match<GitCommand>]) -> String {
+public func formattedMatches(matches: [Match<GitCommand>]) -> String {
     matches.enumerated().map { index, match in
         let breakdown =
             match.signals.map {

@@ -16,4 +16,4 @@ import ExamplesSupport
 let query = "commit changes to git"
 print("Query: \"\(query)\"\n")
 let matches = try await runCatalogSearch(query: query)
-print(formatMatches(matches))
+print(formattedMatches(matches: matches))

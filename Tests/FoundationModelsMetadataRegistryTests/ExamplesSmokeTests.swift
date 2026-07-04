@@ -34,7 +34,7 @@ struct ExamplesSmokeTests {
     @Test("CatalogSearch's formatter renders rank, id, score, and every signal")
     func catalogSearchFormatsMatches() async throws {
         let matches = try await CatalogSearchCore.runCatalogSearch(query: "commit changes to git")
-        let formatted = ExamplesSupport.formatMatches(matches)
+        let formatted = ExamplesSupport.formattedMatches(matches: matches)
 
         #expect(formatted.contains("1. commit"))
         #expect(formatted.contains("bm25="))
@@ -76,7 +76,7 @@ struct ExamplesSmokeTests {
             embedder: nil,
             onDiagnostic: { _ in }
         )
-        let formatted = ExamplesSupport.formatMatches(matches)
+        let formatted = ExamplesSupport.formattedMatches(matches: matches)
 
         #expect(!matches.isEmpty)
         #expect(formatted.contains("bm25="))

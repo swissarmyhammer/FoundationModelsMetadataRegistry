@@ -23,9 +23,9 @@ print("Query: \"\(query)\"\(noEmbedder ? " (--no-embedder)" : "")\n")
 
 if noEmbedder {
     let matches = try await runSemanticSearch(query: query, embedder: nil, onDiagnostic: printDiagnostic)
-    print(formatMatches(matches))
+    print(formattedMatches(matches: matches))
 } else {
     let embedder = try await resolveLiveEmbedder()
     let matches = try await runSemanticSearch(query: query, embedder: embedder, onDiagnostic: printDiagnostic)
-    print(formatMatches(matches))
+    print(formattedMatches(matches: matches))
 }
