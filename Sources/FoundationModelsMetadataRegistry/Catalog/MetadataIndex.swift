@@ -301,9 +301,45 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
         previous: MetadataIndex<Item>? = nil,
         onDiagnostic: @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) }
     ) async -> MetadataIndex<Item> {
-        let baseline = MetadataIndex(items: items, onDiagnostic: onDiagnostic)
-        guard let embedder else { return baseline }
+        let (baseline, idsToEmbed, textsToEmbed) = incrementalBaseline(items: items, previous: previous, onDiagnostic: onDiagnostic)
+        guard let embedder, !idsToEmbed.isEmpty,
+            let vectors = try? await embedder.embed(textsToEmbed), vectors.count == idsToEmbed.count
+        else {
+            return baseline
+        }
+        return mergingEmbeddings(ids: idsToEmbed, vectors: vectors, embeddedFrom: baseline, into: baseline)
+    }
 
+    /// The synchronous, hash-guarded half of index-build/update: indexes
+    /// `items` exactly like `init(items:onDiagnostic:)` (tokenizing,
+    /// trigramming), then reuses `previous`'s stored embedding for every
+    /// item whose `id` and rendered-block hash both match a `previous` entry
+    /// that actually carries a non-`nil` embedding.
+    ///
+    /// Factored out of `build(items:embedder:previous:onDiagnostic:)` so
+    /// `MetadataSearcher.update(items:)` (plan.md §8, hot reload) can assign
+    /// the returned baseline to its actor-isolated `index` *before* awaiting
+    /// an embedder call with the returned `idsToEmbed`/`textsToEmbed` —
+    /// actor reentrancy across that later `await` is what lets a concurrent
+    /// `search(intent:limit:)` see this rebuilt baseline and serve
+    /// keyword-only results for the still-pending items in the interim,
+    /// rather than blocking behind the whole re-embed.
+    ///
+    /// - Parameters:
+    ///   - items: the catalog's items, in first-seen-wins duplicate-id order.
+    ///   - previous: the prior build of this index, if any, to reuse
+    ///     embeddings from for unchanged `(id, block-hash)` pairs.
+    ///   - onDiagnostic: forwarded to `init(items:onDiagnostic:)` for
+    ///     duplicate-id reporting.
+    /// - Returns: the baseline index (embeddings carried over wherever reuse
+    ///   applied, `nil` everywhere else), plus the ids and matching texts
+    ///   still needing an embedder call, positionally aligned.
+    static func incrementalBaseline(
+        items: [Item],
+        previous: MetadataIndex<Item>?,
+        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
+    ) -> (baseline: MetadataIndex<Item>, idsToEmbed: [String], textsToEmbed: [String]) {
+        let baseline = MetadataIndex(items: items, onDiagnostic: onDiagnostic)
         var entriesById = baseline.entriesById
         var idsToEmbed: [String] = []
         var textsToEmbed: [String] = []
@@ -328,14 +364,79 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
             }
         }
 
-        if !idsToEmbed.isEmpty, let vectors = try? await embedder.embed(textsToEmbed), vectors.count == idsToEmbed.count {
-            for (id, vector) in zip(idsToEmbed, vectors) {
-                guard let entry = entriesById[id] else { continue }
-                entriesById[id] = Self.withEmbedding(vector, replacing: entry)
-            }
-        }
+        return (MetadataIndex(ids: baseline.ids, entriesById: entriesById), idsToEmbed, textsToEmbed)
+    }
 
-        return MetadataIndex(ids: baseline.ids, entriesById: entriesById)
+    /// Returns a copy of `index` with `ids`' embeddings replaced by `vectors`
+    /// (positionally aligned) — but only where `index`'s *current* entry for
+    /// that id still has the same block hash as `source`'s (the baseline
+    /// this batch was actually embedded from). Everything else is
+    /// unchanged.
+    ///
+    /// Merges into whichever index is passed as `into` — `build(items:
+    /// embedder:previous:onDiagnostic:)` merges into its own freshly
+    /// computed `baseline` (also passed as `source`, so the hash check is
+    /// trivially satisfied there), while `MetadataSearcher.update(items:)`
+    /// merges into its *current* `index` (which may have moved on since
+    /// this re-embed started, if another `update(items:)` call interleaved
+    /// during the `await`) rather than the stale baseline it kicked the
+    /// embed off from.
+    ///
+    /// The hash check is what makes that safe for the same id changing
+    /// *twice* across overlapping updates, not just an id being removed: if
+    /// a slower call A (re-embedding id `"x"`'s old text) resolves after a
+    /// faster, later call B has already re-embedded `"x"`'s *new* text and
+    /// merged it in, `index`'s current entry for `"x"` carries B's hash,
+    /// which no longer matches A's `source` hash for the old text — so A's
+    /// stale vector is skipped instead of silently overwriting B's correct,
+    /// newer one (which would otherwise pair fresh block text with a vector
+    /// embedded from stale text, with no diagnostic and no way to detect the
+    /// corruption later, since the hash would still nominally "match" a
+    /// naive by-id-only merge). An id no longer present in `index` at all is
+    /// likewise simply skipped, never resurrected.
+    ///
+    /// - Parameters:
+    ///   - ids: the ids to set embeddings for.
+    ///   - vectors: one embedding per id, positionally aligned with `ids`.
+    ///   - source: the index this embed batch was actually computed from —
+    ///     `ids`' block hashes here are what `index`'s current entries must
+    ///     still match for the merge to apply.
+    ///   - index: the index to merge into.
+    /// - Returns: a copy of `index` with those embeddings applied wherever
+    ///   the hash check passed.
+    static func mergingEmbeddings(
+        ids: [String],
+        vectors: [[Float]],
+        embeddedFrom source: MetadataIndex<Item>,
+        into index: MetadataIndex<Item>
+    ) -> MetadataIndex<Item> {
+        var entriesById = index.entriesById
+        for (id, vector) in zip(ids, vectors) {
+            guard let entry = entriesById[id], let sourceEntry = source.entriesById[id],
+                entry.blockHash == sourceEntry.blockHash
+            else { continue }
+            entriesById[id] = Self.withEmbedding(vector, replacing: entry)
+        }
+        return MetadataIndex(ids: index.ids, entriesById: entriesById)
+    }
+
+    /// Whether `self` and `other` index the same ids, in the same order,
+    /// each with an identical rendered-block hash — `update(items:)`'s
+    /// redundant-update guard (plan.md §8 "hash-guarded"): calling `update`
+    /// with content identical to what's already indexed must cost nothing
+    /// (no re-embed, no selection-tier rebuild, no diagnostics), so callers
+    /// may forward every upstream change notification without coalescing
+    /// first. Embeddings are deliberately not part of this comparison —
+    /// `update(items:)` only ever calls this against a freshly rendered
+    /// baseline, never against an index still catching up on embeddings, so
+    /// there's no case where embeddings alone would need to make two
+    /// otherwise-identical indexes compare unequal.
+    ///
+    /// - Parameter other: the index to compare against.
+    /// - Returns: whether both indexes are content-identical.
+    func hasIdenticalContent(to other: MetadataIndex<Item>) -> Bool {
+        guard ids == other.ids else { return false }
+        return ids.allSatisfy { entriesById[$0]?.blockHash == other.entriesById[$0]?.blockHash }
     }
 
     /// Returns a copy of `entry` with its `embedding` replaced by `embedding`.

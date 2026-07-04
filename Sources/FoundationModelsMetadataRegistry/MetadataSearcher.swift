@@ -66,8 +66,10 @@ public struct SelectionTierUnavailable: Error, Sendable, Equatable {
 /// when a selection tier is configured, `.retrieval` otherwise (plan.md §7
 /// "selection when a model is configured, else retrieval").
 public actor MetadataSearcher<Item: SearchableMetadata> {
-    /// The in-memory index built from the catalog's items at `init`.
-    private let index: MetadataIndex<Item>
+    /// The in-memory index built from the catalog's items at `init`, replaced
+    /// wholesale by `update(items:)` (plan.md §8, hot reload) on every real
+    /// change.
+    private var index: MetadataIndex<Item>
 
     /// The per-signal fusion weights this searcher's retrieval tier uses.
     private let weights: Weights
@@ -80,19 +82,34 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// embedder is configured, so cosine ranking is skipped and every search
     /// degrades to keyword-only. Catalog items are never embedded here; that
     /// happens once, at index-build/update time, via `MetadataIndex.build(
-    /// items:embedder:previous:onDiagnostic:)`.
+    /// items:embedder:previous:onDiagnostic:)` (or, for `update(items:)`,
+    /// `MetadataIndex.incrementalBaseline(items:previous:onDiagnostic:)` +
+    /// `MetadataIndex.mergingEmbeddings(ids:vectors:embeddedFrom:into:)`).
+    /// The same embedder instance is reused for both roles across every
+    /// `update`.
     private let embedder: (any TextEmbedding)?
 
     /// Called for every diagnostic emitted while building the index and
     /// while searching (currently `.duplicateId`, `.embeddingUnavailable`,
-    /// and `.unknownSelectedId`).
+    /// `.unknownSelectedId`, and `.embedCatchUp`).
     private let onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
+
+    /// This searcher's selection tier configuration (plan.md §6), or `nil`
+    /// when none was supplied at `init` — kept around (rather than only
+    /// building `selectionTier` once) so `update(items:)` can rebuild the
+    /// tier from the same configuration whenever the index changes.
+    private let selectionConfig: SelectionConfig?
 
     /// This searcher's selection tier (plan.md §6), or `nil` when no
     /// `SelectionConfig` was supplied at `init` — `.selection` throws
     /// `SelectionTierUnavailable` in that case, exactly as it did before a
-    /// selection tier existed at all.
-    private let selectionTier: SelectionTier<Item>?
+    /// selection tier existed at all. Rebuilt by `update(items:)` on every
+    /// real catalog change (plan.md §8): a fresh `SelectionTier` starts with
+    /// no cached root session and a prefix assembled from the new index, so
+    /// the next under-budget search re-prefills against the new catalog and
+    /// any grammar a caller derives from its candidate ids reflects the new
+    /// id set.
+    private var selectionTier: SelectionTier<Item>?
 
     /// Builds a searcher over `items`, indexing them once at `init` with no
     /// embedder — cosine never ranks anything and every search degrades to
@@ -200,21 +217,135 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         self.weights = weights
         self.embedder = embedder
         self.onDiagnostic = onDiagnostic
+        self.selectionConfig = selection
         self.selectionTier = selection.map { config in
-            SelectionTier(
+            Self.makeSelectionTier(
                 index: index,
                 config: config,
-                onDiagnostic: onDiagnostic,
-                retrievalRanking: { intent in
-                    await Self.rankEntireCatalog(
-                        intent: intent,
-                        index: index,
-                        weights: weights,
-                        embedder: embedder,
-                        onDiagnostic: onDiagnostic
-                    )
-                }
+                weights: weights,
+                embedder: embedder,
+                onDiagnostic: onDiagnostic
             )
+        }
+    }
+
+    /// Builds a `SelectionTier` over `index`, wiring its `retrievalRanking`
+    /// closure to `rankEntireCatalog(intent:index:weights:embedder:
+    /// onDiagnostic:)` — the one piece of tier construction both the
+    /// designated initializer and `update(items:)` (plan.md §8, hot reload)
+    /// need whenever the underlying index changes: a fresh tier starts with
+    /// no cached root session and a prefix assembled from `index`.
+    ///
+    /// - Parameters:
+    ///   - index: the catalog index the new tier answers `search(intent:
+    ///     limit:)` calls over.
+    ///   - config: the selection tier configuration to build against.
+    ///   - weights: the per-signal fusion weights `retrievalRanking` scores
+    ///     the over-budget candidate ranking with.
+    ///   - embedder: the embedder `retrievalRanking` embeds the intent with
+    ///     for the cosine signal.
+    ///   - onDiagnostic: called for every diagnostic the new tier, and its
+    ///     `retrievalRanking` closure, emit.
+    /// - Returns: a freshly constructed selection tier over `index`.
+    private static func makeSelectionTier(
+        index: MetadataIndex<Item>,
+        config: SelectionConfig,
+        weights: Weights,
+        embedder: (any TextEmbedding)?,
+        onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void
+    ) -> SelectionTier<Item> {
+        SelectionTier(
+            index: index,
+            config: config,
+            onDiagnostic: onDiagnostic,
+            retrievalRanking: { intent in
+                await Self.rankEntireCatalog(
+                    intent: intent,
+                    index: index,
+                    weights: weights,
+                    embedder: embedder,
+                    onDiagnostic: onDiagnostic
+                )
+            }
+        )
+    }
+
+    // MARK: - Hot reload (plan.md §8)
+
+    /// Hot-reloads this searcher's catalog from `items`.
+    ///
+    /// 1. Re-renders blocks and rebuilds the tokenized/trigram indexes
+    ///    synchronously (`MetadataIndex.incrementalBaseline(items:previous:
+    ///    onDiagnostic:)`) and assigns the result to `index` immediately —
+    ///    items are keyword-searchable (`.retrieval`/`.auto`'s BM25 +
+    ///    trigram signals) before this call even reaches the embedder.
+    /// 2. Re-embeds incrementally: only items whose `(id, block-hash)`
+    ///    changed since the previous index are embedded, reusing every other
+    ///    item's stored embedding. This step awaits `embedder.embed(_:)` —
+    ///    an actor reentrancy point, so a concurrent `search(intent:limit:)`
+    ///    interleaves and sees the already-rebuilt keyword indexes with cosine
+    ///    absent for the still-pending items (the absent-signal rule, plan.md
+    ///    §5), never blocked behind the whole re-embed. The pending/total gap
+    ///    is reported once via `MetadataDiagnostic.embedCatchUp(pending:
+    ///    total:)`.
+    /// 3. Drops the cached selection-tier root session by rebuilding the
+    ///    whole tier over the new index: the next under-budget `.selection`/
+    ///    `.auto` search re-prefills against the new catalog (one prefix
+    ///    re-prefill), and any id-enum grammar a caller derives from the
+    ///    tier's candidate ids reflects the new id set.
+    ///
+    /// Hash-guarded: if `items` renders to content identical to what's
+    /// already indexed (same ids, same block hashes) *and* nothing is
+    /// pending an embed (every entry already carries a real embedding, or
+    /// none is expected), this call is a complete no-op — no re-embedding,
+    /// no selection-tier rebuild, no diagnostics — so callers may forward
+    /// every upstream change notification (file watcher, MCP `listChanged`)
+    /// without coalescing them first. Content-identical but still catching
+    /// up (e.g. a prior embed call failed transiently) still re-embeds, just
+    /// without rebuilding the selection tier — nothing keyword/selection-
+    /// relevant changed, only the still-missing embedding is worth
+    /// finishing.
+    ///
+    /// - Parameter items: the catalog's new/refreshed items, in first-seen-
+    ///   wins duplicate-id order (forwarded to `MetadataIndex`'s duplicate-id
+    ///   policy).
+    public func update(items: [Item]) async {
+        let previous = index
+        let (baseline, idsToEmbed, textsToEmbed) = MetadataIndex.incrementalBaseline(
+            items: items,
+            previous: previous,
+            onDiagnostic: onDiagnostic
+        )
+
+        let contentChanged = !baseline.hasIdenticalContent(to: previous)
+        guard contentChanged || !idsToEmbed.isEmpty else { return }
+
+        index = baseline
+        // Only a genuine content change warrants dropping the cached root
+        // session -- catching up an embedding for otherwise-unchanged
+        // content doesn't affect keyword search or the selection prefix at
+        // all, so forcing a re-prefill for it would be pure waste.
+        if contentChanged {
+            selectionTier = selectionConfig.map { config in
+                Self.makeSelectionTier(index: baseline, config: config, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic)
+            }
+        }
+
+        guard !idsToEmbed.isEmpty, let embedder else { return }
+
+        onDiagnostic(.embedCatchUp(pending: idsToEmbed.count, total: baseline.count))
+        // Merges into `index` as it stands *after* this suspension -- not
+        // into the stale `baseline` this re-embed started from -- and only
+        // where `index`'s current entry still matches `baseline`'s block
+        // hash for that id (`mergingEmbeddings(ids:vectors:embeddedFrom:
+        // into:)`'s hash check). A concurrent `update(items:)` call may have
+        // moved the catalog on in the meantime (actor reentrancy across
+        // this `await`); its result must win, never be silently clobbered
+        // by this call's now-stale vector finishing late -- including when
+        // that concurrent call re-embedded the *same* id with different
+        // content, not just when it removed the id outright.
+        if let vectors = try? await embedder.embed(textsToEmbed), vectors.count == idsToEmbed.count {
+            index = MetadataIndex.mergingEmbeddings(ids: idsToEmbed, vectors: vectors, embeddedFrom: baseline, into: index)
         }
     }
 
