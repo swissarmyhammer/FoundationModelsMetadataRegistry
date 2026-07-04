@@ -257,13 +257,15 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
 - **FoundationModelsSkills** — `SkillSearchAgent` becomes
   `MetadataSearcher<SkillMetadata>` (blocks: YAML-ish id/description/params; visibility
   filtering stays the caller's job — pass the model-visible subset). The `search skill`
-  op delegates to it; registry reload forwards to `update(items:)`. *(Skills plan §7 +
-  decision #12 to be updated; pulls the Router dependency into Skills — flagged there.)*
+  op delegates to it; registry reload forwards to `update(items:)`. *(The plan side is
+  done: Skills decision #26 records the delegation and its #17 accepts the Router
+  dependency package-wide; the code lands with Skills M4 / our M6.)*
 - **FoundationModelsMultitool** — `Librarian` becomes a thin wrapper over
   `MetadataSearcher<APISurface.Entry>` (blocks: the existing `Entry.block`); `FoundAPIs`
   becomes formatting in `FindAPITool` over verbatim `Match.block`s; `AgentSession` +
-  `RoutedAgentSession` move here and are re-exported/imported. Behavior deltas Multitool
-  gains: ids-only selection, id-enum grammar, RRF instead of `lexicallyFilter`.
+  `RoutedAgentSession` have **moved here (shipped, §6)** for Multitool to re-import.
+  Behavior deltas Multitool gains: ids-only selection, id-enum grammar, RRF instead of
+  `lexicallyFilter`.
 - **FoundationModelsMCP** — tool catalogs and **resource catalogs** as
   `SearchableMetadata` (id = tool name / resource URI; block = rendered
   name+description+schema/mime summary). Hot-loads on `listChanged`; churn, not
@@ -290,6 +292,11 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
   truth* (`SkillsRegistry`, `AgentRegistry`). This package holds a **derived index over
   someone else's registry** — hence the central types are `MetadataSearcher` /
   `MetadataIndex`, and only the package keeps the user-chosen `MetadataRegistry` name.
+  Second collision to know about: our shipped `AgentSession` / `RoutedAgentSession`
+  (the selection-session seam, §6) are **unrelated to FoundationModelsAgents'** sub-agent
+  vocabulary (`AgentRun`, `AgentsTool`) — and that package reaches us transitively via
+  Skills. The Agents plan avoids the `AgentSession` name for its own types (its §10), so
+  the overlap stays a documentation footnote rather than an API ambiguity.
 
 ## 11. Resolved decisions
 
@@ -447,7 +454,8 @@ Each example doubles as the acceptance demo for its milestone (`CatalogSearch`
   repo — `AgentSession`/`RoutedAgentSession` already ship here, waiting to be
   imported.)*
 - ⬜ **M6 — Skills adoption.** `MetadataSearcher<SkillMetadata>` behind the `search skill`
-  op *(lands with Skills M4; updates Skills plan §7 + decision #12)*.
+  op *(lands with Skills M4; the Skills plan already records the delegation as its
+  decision #26)*.
 - ✅ **M7 — Gated integration.** Router-backed suite (tiny `mlx-community` models, the
   Router test pattern): real fork-per-call prefix reuse, xgrammar id-enum enforcement,
   embed + RRF quality smoke over a fixture catalog, reload under churn (MCP-style
