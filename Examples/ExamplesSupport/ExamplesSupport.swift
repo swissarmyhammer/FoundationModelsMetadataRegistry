@@ -14,14 +14,23 @@ import FoundationModelsMetadataRegistry
 /// A tiny catalog item: a git subcommand and its one-line description — the
 /// text IS the search surface (`SearchableMetadata.renderBlock()`).
 public struct GitCommand: SearchableMetadata {
+    /// The git subcommand's name — e.g. `"commit"` — and its `SearchableMetadata` id.
     public let id: String
+
+    /// The subcommand's one-line description, which is also its rendered search surface.
     public let summary: String
 
+    /// Creates one git subcommand fixture item.
+    ///
+    /// - Parameters:
+    ///   - id: the subcommand's name.
+    ///   - summary: the subcommand's one-line description.
     public init(id: String, summary: String) {
         self.id = id
         self.summary = summary
     }
 
+    /// Renders this item to its search surface: the subcommand's summary text.
     public func renderBlock() -> String { summary }
 }
 
