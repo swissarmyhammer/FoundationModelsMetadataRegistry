@@ -9,14 +9,13 @@ public enum SearchMode: Sendable {
 
     /// The LLM selects among candidates (the "librarian" behavior): intent-
     /// level matching that lexical/semantic ranking alone can't do, because
-    /// it requires reasoning about task decomposition (plan.md §6). The
-    /// selection tier lands in a later task — until then, requesting this
-    /// mode throws `SelectionTierUnavailable`.
+    /// it requires reasoning about task decomposition (plan.md §6).
+    /// Requesting this mode without a configured selection tier
+    /// (`MetadataSearcher.init(..., selection:)`) throws
+    /// `SelectionTierUnavailable`.
     case selection
 
-    /// Selection when a model is configured, retrieval otherwise (plan.md
-    /// §7's default). No selection tier is wired up yet, so `.auto` always
-    /// falls back to `.retrieval` for now; once a selection tier lands,
-    /// `.auto` starts choosing between the two the way plan.md describes.
+    /// Selection when a selection tier is configured, retrieval otherwise
+    /// (plan.md §7's default).
     case auto
 }

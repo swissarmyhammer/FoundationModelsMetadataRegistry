@@ -3,6 +3,7 @@
 .shell/
 .validators/
 .build/
+.swiftpm/
 .DS_Store
 # Package.resolved is committed (not ignored): with a path dependency on
 # ../FoundationModelsRouter, Router's own committed Package.resolved is not

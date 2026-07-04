@@ -12,7 +12,8 @@ import Testing
 /// Driven entirely against the internal `AgentSession` seam via scripted
 /// fakes (`TestSupport/SelectionFixtures.swift`) — zero GPU, no Router
 /// dependency, the same pattern Multitool's `LibrarianTests` established.
-/// The over-budget path and `.auto` resolution land in a later task.
+/// The over-budget path and `.auto`'s real resolution are covered in
+/// `OverBudgetTests`.
 struct SelectionTests {
     // MARK: - Fixtures
 
@@ -175,31 +176,6 @@ struct SelectionTests {
         let matches = try await searcher.search(intent: "anything", limit: 5)
 
         #expect(matches.isEmpty)
-    }
-
-    // MARK: - Over budget: the assembled prefix exceeds the capacity limit
-
-    @Test
-    func overBudgetPrefixThrowsSelectionTierUnavailableWithoutInvokingTheSessionFactory() async throws {
-        let factoryCallCount = CallCounter()
-        let config = SelectionConfig(
-            model: { _ in
-                factoryCallCount.increment()
-                return ScriptedAgentSession([#"{"ids":["deploy"]}"#])
-            },
-            // Smaller than the assembled preamble + "# Candidates" header
-            // alone, so every catalog (even a tiny one) is over budget.
-            capacityCharacterLimit: 1
-        )
-        let searcher = MetadataSearcher(items: Self.catalog, mode: .selection, selection: config)
-
-        await #expect(throws: SelectionTierUnavailable.self) {
-            _ = try await searcher.search(intent: "task", limit: 5)
-        }
-        // No session should ever have been created for an over-budget
-        // request -- there's no stable prefix yet to seed one with (the
-        // one-off session path is a later task).
-        #expect(factoryCallCount.count == 0)
     }
 
     // MARK: - Unknown id filtering + diagnostic

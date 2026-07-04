@@ -18,20 +18,30 @@ import FoundationModelsRouter
 /// KV cache is prefilled once and inherited per call — lifted from
 /// `Librarian.findAPIs(task:)`'s cached-root + fork-per-call mechanics.
 ///
-/// **Over budget**: the retrieval top-M + one-off session path (plan.md §6)
-/// lands in a later task; `search(intent:limit:)` throws
-/// `SelectionTierUnavailable` for an over-budget request until then.
+/// **Over budget**: `retrievalRanking` ranks the whole catalog for the
+/// intent, and the top `config.candidateLimit` candidates (best-first) seed
+/// a **fresh, uncached, unforked one-off session** — there is no stable
+/// prefix to reuse, since the candidate set differs per intent. The cut is
+/// reported via `MetadataDiagnostic.retrievalCut(considered:kept:)` (the
+/// `onPrefilterCut` pattern, generalized to ranked retrieval). Unlike the
+/// under-budget path, retrieval genuinely ran, so returned `Match`es carry
+/// its real fused `score`/`signals` instead of the pure-selection `1.0`/
+/// `nil`, and a selected id outside this round's candidates — even a
+/// legitimate id from elsewhere in the wider catalog — is filtered and
+/// reported via `.unknownSelectedId`, exactly like an id absent from the
+/// catalog altogether.
 ///
 /// **Ids only, grammar-enforced** (plan.md §6, decision #4): the guided
 /// output is `Selection { ids: [String] }`; `idEnumGrammar(ids:)` derives the
-/// xgrammar JSON Schema constraining `ids` to the current catalog's own id
-/// set, so the model is structurally incapable of inventing one — the same
+/// xgrammar JSON Schema constraining `ids` to the current candidate id
+/// set — the full catalog under budget, the top-M ranked ids over budget —
+/// so the model is structurally incapable of inventing one — the same
 /// pattern as `Librarian.grammarSchemaSource()`, with an added `enum`
 /// constraint injected into the `ids` array's `items` subschema. Returned ids
-/// map back through the catalog to verbatim `Match`es (score `1.0`,
-/// `signals: nil`); an id absent from the catalog — structurally unreachable
-/// given the grammar, but defended against anyway — is filtered and reported
-/// via `MetadataDiagnostic.unknownSelectedId(id:)`.
+/// map back through the catalog to verbatim `Match`es; an id outside the
+/// current candidate set — structurally unreachable given the grammar, but
+/// defended against anyway — is filtered and reported via
+/// `MetadataDiagnostic.unknownSelectedId(id:)`.
 actor SelectionTier<Item: SearchableMetadata> {
     /// The full catalog index this tier answers `search(intent:limit:)`
     /// calls over.
@@ -44,9 +54,19 @@ actor SelectionTier<Item: SearchableMetadata> {
     /// `index` never changes for this tier's lifetime.
     private let assembledPrefix: String
 
-    /// Called for every diagnostic this tier emits (currently only
-    /// `.unknownSelectedId`).
+    /// Called for every diagnostic this tier emits (currently
+    /// `.unknownSelectedId` and `.retrievalCut`).
     private let onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
+
+    /// Ranks the whole catalog for one intent, best-first, always returning
+    /// exactly as many `Match`es as the catalog has entries — the over-budget
+    /// path's source of top-M candidates. `MetadataSearcher` wires this to
+    /// its own retrieval tier (`MetadataSearcher.rankEntireCatalog(intent:
+    /// index:weights:embedder:onDiagnostic:)`); tests script it directly by
+    /// constructing this tier through `MetadataSearcher`, which drives the
+    /// real BM25/trigram/cosine computation deterministically over small
+    /// fixture catalogs.
+    private let retrievalRanking: @Sendable (String) async -> [Match<Item>]
 
     /// This tier's cached root session — `nil` until the first under-budget
     /// `search(intent:limit:)` call creates and caches it.
@@ -60,15 +80,19 @@ actor SelectionTier<Item: SearchableMetadata> {
     ///     over.
     ///   - config: this tier's session factory, preamble, and budgets.
     ///   - onDiagnostic: called for every diagnostic this tier emits.
+    ///   - retrievalRanking: ranks the whole catalog for one intent,
+    ///     best-first — the over-budget path's source of top-M candidates.
     init(
         index: MetadataIndex<Item>,
         config: SelectionConfig,
-        onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void
+        onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void,
+        retrievalRanking: @escaping @Sendable (String) async -> [Match<Item>]
     ) {
         self.index = index
         self.config = config
         self.assembledPrefix = Self.assemblePrefix(preamble: config.preamble, index: index)
         self.onDiagnostic = onDiagnostic
+        self.retrievalRanking = retrievalRanking
     }
 
     /// Answers one `search(intent:limit:)` call for `.selection` mode.
@@ -76,21 +100,21 @@ actor SelectionTier<Item: SearchableMetadata> {
     /// Under budget: reuses (creating on first use) this tier's cached root
     /// session, seeded with the full assembled prefix, and `fork()`s a fresh
     /// child per call so the prefix's prefilled compute is inherited rather
-    /// than replayed. Over budget: throws `SelectionTierUnavailable` — the
-    /// retrieval top-M + one-off session path (plan.md §6) is a later task.
+    /// than replayed. Over budget: ranks the whole catalog and seeds a
+    /// one-off session with the top-M candidates (`overBudgetSearch(intent:
+    /// limit:)`, plan.md §6) — no caching, no fork.
     ///
     /// - Parameters:
     ///   - intent: the plain-language search intent.
     ///   - limit: the maximum number of matches to return. `limit <= 0`
-    ///     yields an empty result without forking a session.
+    ///     yields an empty result without forking or creating a session.
     /// - Returns: the selected items' verbatim `Match`es, at most `limit`.
-    /// - Throws: `SelectionTierUnavailable` when the assembled prefix exceeds
-    ///   `config.capacityCharacterLimit`, or whatever the underlying
-    ///   session's `fork()`/`respond(to:generating:)` throws.
+    /// - Throws: whatever the underlying session's `fork()`/
+    ///   `respond(to:generating:)` throws.
     func search(intent: String, limit: Int) async throws -> [Match<Item>] {
         guard limit > 0 else { return [] }
         guard assembledPrefix.count <= config.capacityCharacterLimit else {
-            throw SelectionTierUnavailable()
+            return try await overBudgetSearch(intent: intent, limit: limit)
         }
 
         let child = try await cachedRootSession().fork()
@@ -110,9 +134,50 @@ actor SelectionTier<Item: SearchableMetadata> {
         return session
     }
 
+    // MARK: - Over budget: retrieval top-M + one-off session
+
+    /// Answers one over-budget `search(intent:limit:)` call (plan.md §6
+    /// "Over budget"): ranks the whole catalog through `retrievalRanking`,
+    /// takes the top `config.candidateLimit` candidates (best-first —
+    /// always `min(config.candidateLimit, considered)` of them, even when
+    /// few or none score positively, so the model always has a full
+    /// candidate set to pick from), reports the cut via
+    /// `.retrievalCut(considered:kept:)`, and seeds a **fresh, uncached,
+    /// unforked** one-off session with exactly those candidates'
+    /// `renderSummaryBlock()`s — there is no stable prefix here to reuse,
+    /// since the candidate set differs per intent.
+    ///
+    /// - Parameters:
+    ///   - intent: the plain-language search intent.
+    ///   - limit: the maximum number of matches to return.
+    /// - Returns: the selected candidates' verbatim `Match`es, carrying the
+    ///   real retrieval `score`/`signals` that ranked them, at most `limit`.
+    /// - Throws: whatever the one-off session's `respond(to:generating:)`
+    ///   throws.
+    private func overBudgetSearch(intent: String, limit: Int) async throws -> [Match<Item>] {
+        let ranked = await retrievalRanking(intent)
+        let candidates = Array(ranked.prefix(config.candidateLimit))
+        onDiagnostic(.retrievalCut(considered: ranked.count, kept: candidates.count))
+
+        // Nothing to seed a session with -- and nothing worth asking a
+        // model to choose among -- when the catalog itself is empty.
+        guard !candidates.isEmpty else { return [] }
+
+        let candidateIds = candidates.map(\.id)
+        let prefix = Self.assemblePrefix(preamble: config.preamble, ids: candidateIds, index: index)
+        let session = config.model(prefix)
+        let selection = try await session.respond(to: intent, generating: Selection.self)
+        return matches(
+            forIds: selection.ids,
+            limit: limit,
+            allowedIds: Set(candidateIds),
+            retrievalMatches: Dictionary(uniqueKeysWithValues: candidates.map { ($0.id, $0) })
+        )
+    }
+
     /// Maps model-selected `ids` back through the catalog to verbatim
-    /// `Match`es (plan.md §6 "Verbatim lookup"), filtering any id absent from
-    /// the catalog and reporting it via `.unknownSelectedId` — structurally
+    /// `Match`es (plan.md §6 "Verbatim lookup"), filtering any id not
+    /// resolvable and reporting it via `.unknownSelectedId` — structurally
     /// unreachable given the id-enum grammar's `uniqueItems` + per-element
     /// enum constraint, but defended against anyway — deduplicating repeats
     /// (first occurrence wins, keeping the model's own call-order intent)
@@ -121,20 +186,46 @@ actor SelectionTier<Item: SearchableMetadata> {
     /// - Parameters:
     ///   - ids: the model-selected ids, in the order the model returned them.
     ///   - limit: the maximum number of matches to return.
-    /// - Returns: the verbatim `Match`es for every known, first-seen id, at
-    ///   most `limit`.
-    private func matches(forIds ids: [String], limit: Int) -> [Match<Item>] {
+    ///   - allowedIds: restricts resolution to this id set (the over-budget
+    ///     path's current candidates) in addition to the catalog itself; an
+    ///     id absent from `allowedIds` is treated exactly like an id absent
+    ///     from the catalog. `nil` (the under-budget default) allows any
+    ///     catalog id.
+    ///   - retrievalMatches: the retrieval `Match` (real fused `score` and
+    ///     `signals`) for each of this round's candidates, keyed by id — the
+    ///     over-budget path's ranking result. Empty (the under-budget
+    ///     default) yields the pure-selection `1.0`/`nil`.
+    /// - Returns: the verbatim `Match`es for every known, allowed, first-seen
+    ///   id, at most `limit`.
+    private func matches(
+        forIds ids: [String],
+        limit: Int,
+        allowedIds: Set<String>? = nil,
+        retrievalMatches: [String: Match<Item>] = [:]
+    ) -> [Match<Item>] {
         var results: [Match<Item>] = []
         results.reserveCapacity(min(ids.count, limit))
         var seenIds: Set<String> = []
         for id in ids {
             guard results.count < limit else { break }
             guard seenIds.insert(id).inserted else { continue }
-            guard let item = index.item(forId: id), let block = index.block(forId: id) else {
+            guard allowedIds?.contains(id) ?? true,
+                let item = index.item(forId: id),
+                let block = index.block(forId: id)
+            else {
                 onDiagnostic(.unknownSelectedId(id: id))
                 continue
             }
-            results.append(Match(id: id, block: block, score: 1.0, signals: nil, item: item))
+            let retrievalMatch = retrievalMatches[id]
+            results.append(
+                Match(
+                    id: id,
+                    block: block,
+                    score: retrievalMatch?.score ?? 1.0,
+                    signals: retrievalMatch?.signals,
+                    item: item
+                )
+            )
         }
         return results
     }
@@ -151,8 +242,24 @@ actor SelectionTier<Item: SearchableMetadata> {
     ///   - preamble: the selection guidance to prepend.
     ///   - index: the catalog index to assemble a prefix for.
     /// - Returns: the assembled prefix text.
-    private static func assemblePrefix(preamble: String, index: MetadataIndex<Item>) -> String {
-        let summaryBlocks = index.ids.compactMap { index.item(forId: $0)?.renderSummaryBlock() }
+    static func assemblePrefix(preamble: String, index: MetadataIndex<Item>) -> String {
+        assemblePrefix(preamble: preamble, ids: index.ids, index: index)
+    }
+
+    /// Assembles an instruction prefix for an arbitrary candidate id
+    /// set (plan.md §6): `preamble` followed by a `# Candidates` header and
+    /// exactly those ids' **`renderSummaryBlock()`**, in `ids`' order —
+    /// `assemblePrefix(preamble:index:)`'s whole-catalog case is
+    /// `ids: index.ids`; the over-budget path passes the top-M ranked ids
+    /// instead, best-first.
+    ///
+    /// - Parameters:
+    ///   - preamble: the selection guidance to prepend.
+    ///   - ids: the candidate ids to render, in the order they should appear.
+    ///   - index: the catalog index to look candidate blocks up in.
+    /// - Returns: the assembled prefix text.
+    static func assemblePrefix(preamble: String, ids: [String], index: MetadataIndex<Item>) -> String {
+        let summaryBlocks = ids.compactMap { index.item(forId: $0)?.renderSummaryBlock() }
         return "\(preamble)\n\n# Candidates\n\(summaryBlocks.joined(separator: "\n\n"))"
     }
 
@@ -168,8 +275,7 @@ actor SelectionTier<Item: SearchableMetadata> {
     /// candidate set.
     ///
     /// - Parameter ids: the candidate id set to constrain output to — the
-    ///   full catalog's ids under budget, the top-M ranked ids over budget (a
-    ///   later task).
+    ///   full catalog's ids under budget, the top-M ranked ids over budget.
     /// - Returns: the xgrammar-ready `Grammar.jsonSchema(_:)`.
     /// - Throws: an encoding error if `Selection.generationSchema` can't be
     ///   encoded to JSON (not expected for a valid `@Generable` type), or

@@ -38,10 +38,9 @@ public struct Weights: Sendable, Equatable {
 }
 
 /// Thrown by `MetadataSearcher.search(intent:limit:)` when `mode ==
-/// .selection` and no selection tier is configured. The selection tier
-/// (plan.md §6, the dynamic Router session) lands in a later task; until
-/// then requesting `.selection` explicitly fails loudly rather than silently
-/// substituting retrieval.
+/// .selection` and no selection tier is configured (`init(..., selection:)`)
+/// — requesting `.selection` explicitly without one fails loudly rather than
+/// silently substituting retrieval.
 public struct SelectionTierUnavailable: Error, Sendable, Equatable {
     /// Creates an error indicating that the selection tier is unavailable.
     public init() {}
@@ -52,21 +51,20 @@ public struct SelectionTierUnavailable: Error, Sendable, Equatable {
 /// per-signal `Weights` retrieval fuses by, exposed through one
 /// `search(intent:limit:)` entry point.
 ///
-/// Only `.retrieval` is implemented today — BM25 (two fields) + character-
-/// trigram Dice + cosine (when an embedder is configured), fused by
-/// `RRF.fuse(k: 60)` and normalized to `[0, 1]` (plan.md §5). There is no
-/// session, no tokens yet — cosine is real, but selection isn't. Without an
+/// `.retrieval` (BM25 (two fields) + character-trigram Dice + cosine, when an
+/// embedder is configured, fused by `RRF.fuse(k: 60)` and normalized to
+/// `[0, 1]`, plan.md §5) answers with no session, no tokens. Without an
 /// `embedder` (or before any catalog item has been embedded), the cosine
 /// signal never ranks anything and every `Match.signals.cosine` is `0.0` —
 /// the same "no embedding available" value `Signals.cosine` documents, not a
 /// crash or a special case (plan.md §5 "absent-signal rule") — and
 /// `.embeddingUnavailable` is reported via `onDiagnostic` on every such
-/// search, never silently. `.selection` and `.auto` are stubs until the
-/// selection tier (plan.md §6) lands: `.auto` falls back to `.retrieval`
-/// (matching plan.md §7's "selection when a model is configured, else
-/// retrieval" — no model is ever configured yet), and explicit `.selection`
-/// throws `SelectionTierUnavailable` rather than silently doing something
-/// the caller didn't ask for.
+/// search, never silently. `.selection` (plan.md §6) drives a
+/// `SelectionTier` when one is configured (`init(..., selection:)`);
+/// otherwise it throws `SelectionTierUnavailable` rather than silently doing
+/// something the caller didn't ask for. `.auto` resolves to `.selection`
+/// when a selection tier is configured, `.retrieval` otherwise (plan.md §7
+/// "selection when a model is configured, else retrieval").
 public actor MetadataSearcher<Item: SearchableMetadata> {
     /// The in-memory index built from the catalog's items at `init`.
     private let index: MetadataIndex<Item>
@@ -202,7 +200,22 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         self.weights = weights
         self.embedder = embedder
         self.onDiagnostic = onDiagnostic
-        self.selectionTier = selection.map { SelectionTier(index: index, config: $0, onDiagnostic: onDiagnostic) }
+        self.selectionTier = selection.map { config in
+            SelectionTier(
+                index: index,
+                config: config,
+                onDiagnostic: onDiagnostic,
+                retrievalRanking: { intent in
+                    await Self.rankEntireCatalog(
+                        intent: intent,
+                        index: index,
+                        weights: weights,
+                        embedder: embedder,
+                        onDiagnostic: onDiagnostic
+                    )
+                }
+            )
+        }
     }
 
     /// Searches the catalog for `intent`, returning at most `limit` matches
@@ -212,22 +225,25 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     ///   - intent: the search query.
     ///   - limit: the maximum number of matches to return. `limit <= 0`
     ///     yields an empty result rather than throwing or crashing.
-    /// - Returns: `.retrieval`'s fused, `[0, 1]`-normalized matches (the same
-    ///   for `.auto`, which does not yet resolve to selection — a later
-    ///   task); `.selection`'s verbatim, ids-only matches when a selection
-    ///   tier is configured (plan.md §6).
+    /// - Returns: `.retrieval`'s fused, `[0, 1]`-normalized matches;
+    ///   `.selection`'s verbatim matches when a selection tier is configured
+    ///   (plan.md §6); `.auto`'s resolution of whichever of those applies
+    ///   (plan.md §7).
     /// - Throws: `SelectionTierUnavailable` when `mode == .selection` and no
-    ///   selection tier is configured (`init(..., selection:)`), or when the
-    ///   configured tier's assembled prefix is over budget (the one-off
-    ///   session path is a later task); otherwise whatever the underlying
-    ///   selection session throws.
+    ///   selection tier is configured (`init(..., selection:)`); otherwise
+    ///   whatever the underlying selection session throws.
     public func search(intent: String, limit: Int) async throws -> [Match<Item>] {
         switch mode {
-        case .retrieval, .auto:
+        case .retrieval:
             return await retrievalSearch(intent: intent, limit: limit)
         case .selection:
             guard let selectionTier else { throw SelectionTierUnavailable() }
             return try await selectionTier.search(intent: intent, limit: limit)
+        case .auto:
+            if let selectionTier {
+                return try await selectionTier.search(intent: intent, limit: limit)
+            }
+            return await retrievalSearch(intent: intent, limit: limit)
         }
     }
 
@@ -235,44 +251,16 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
 
     /// Runs the `.retrieval` tier: BM25 + trigram + cosine rankings fused by
     /// `RRF.fuse(k: 60)`, normalized to `[0, 1]`, mapped back through the
-    /// catalog to verbatim `Match`es (plan.md §5).
+    /// catalog to verbatim `Match`es (plan.md §5). Only ever returns
+    /// documents at least one signal actually ranked — contrast
+    /// `rankEntireCatalog(intent:index:weights:embedder:onDiagnostic:)`,
+    /// which the over-budget selection path needs a full, always-
+    /// `index.count`-long ordering from.
     private func retrievalSearch(intent: String, limit: Int) async -> [Match<Item>] {
         guard limit > 0, index.count > 0 else { return [] }
 
-        let (bm25Ranking, bm25Scores) = computeBM25Ranking(intent: intent)
-        let (trigramRanking, trigramScores) = computeTrigramRanking(intent: intent)
-        // Cosine only runs when configured to actually count: a zero weight
-        // means the caller doesn't want the signal, so there's no reason to
-        // embed the query or warn about a missing embedder for it.
-        let (cosineRanking, cosineScores): ([Int], [Double])
-        if weights.cosine > 0.0 {
-            (cosineRanking, cosineScores) = await computeCosineRanking(intent: intent)
-        } else {
-            (cosineRanking, cosineScores) = ([], [Double](repeating: 0.0, count: index.count))
-        }
-
-        // One (ranking, weight) pair per signal.
-        let signals: [(ranking: [Int], weight: Double)] = [
-            (bm25Ranking, weights.bm25),
-            (trigramRanking, weights.trigram),
-            (cosineRanking, weights.cosine),
-        ]
-
-        var rankedLists: [[Int]] = []
-        var listWeights: [Double] = []
-        // Only signals with a positive configured weight AND at least one
-        // matching document enter RRF's inputs: an empty ranking would
-        // contribute nothing to `fuse` regardless, but leaving its weight out
-        // of `normalize`'s ceiling too keeps a perfect single-signal match
-        // normalizing to 1.0 instead of being capped below it by an
-        // unreachable share (plan.md §5 "absent-signal rule").
-        for (ranking, weight) in signals where weight > 0.0 && !ranking.isEmpty {
-            rankedLists.append(ranking)
-            listWeights.append(weight)
-        }
-
-        let fused = RRF.fuse(rankedLists: rankedLists, weights: listWeights)
-        let normalized = RRF.normalize(fused: fused, weights: listWeights)
+        let signals = await Self.computeSignals(intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic)
+        let normalized = Self.fuseAndNormalize(signals: signals, weights: weights)
 
         let orderedDocumentIndices = normalized.keys.sorted { left, right in
             let leftScore = normalized[left] ?? 0.0
@@ -284,7 +272,178 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
             return leftScore > rightScore
         }
 
-        return orderedDocumentIndices.prefix(limit).compactMap { documentIndex in
+        return Self.buildMatches(
+            documentIndices: Array(orderedDocumentIndices.prefix(limit)),
+            index: index,
+            normalized: normalized,
+            signals: signals
+        )
+    }
+
+    // MARK: - Over-budget candidate ranking (plan.md §6)
+
+    /// Ranks the entire catalog for `intent`, best-first, always returning
+    /// exactly `index.count` matches: documents any signal actually ranked
+    /// come first, ordered exactly like `retrievalSearch(intent:limit:)`'s
+    /// own fused/normalized ranking; every other document follows in
+    /// catalog order, scored `0.0` with all-absent `Signals` (the
+    /// absent-signal rule, plan.md §5, extended to "no signal ranked this
+    /// document at all"). This is `SelectionTier`'s over-budget top-M
+    /// candidate source (`SelectionTier.init(index:config:onDiagnostic:
+    /// retrievalRanking:)`) — unlike `retrievalSearch(intent:limit:)`, which
+    /// only ever returns real matches, the over-budget path needs a full
+    /// ordering so its top-M candidate count is always `min(candidateLimit,
+    /// index.count)`, never fewer just because a query's signal overlap with
+    /// the catalog happens to be sparse.
+    ///
+    /// - Parameters:
+    ///   - intent: the search query.
+    ///   - index: the catalog index to rank.
+    ///   - weights: the per-signal fusion weights.
+    ///   - embedder: the embedder to embed `intent` with for the cosine
+    ///     signal, or `nil` to skip it.
+    ///   - onDiagnostic: called for every diagnostic emitted while ranking
+    ///     (currently only `.embeddingUnavailable`).
+    /// - Returns: exactly `index.count` matches, best-first.
+    static func rankEntireCatalog(
+        intent: String,
+        index: MetadataIndex<Item>,
+        weights: Weights,
+        embedder: (any TextEmbedding)?,
+        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
+    ) async -> [Match<Item>] {
+        guard index.count > 0 else { return [] }
+
+        let signals = await computeSignals(intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic)
+        let normalized = fuseAndNormalize(signals: signals, weights: weights)
+
+        let rankedIndices = normalized.keys.sorted { left, right in
+            let leftScore = normalized[left] ?? 0.0
+            let rightScore = normalized[right] ?? 0.0
+            guard leftScore != rightScore else { return left < right }
+            return leftScore > rightScore
+        }
+        let unrankedIndices = index.ids.indices.filter { normalized[$0] == nil }
+
+        return buildMatches(documentIndices: rankedIndices + unrankedIndices, index: index, normalized: normalized, signals: signals)
+    }
+
+    /// One (ranking, weight, raw scores) tuple per retrieval signal, as
+    /// computed by `computeSignals(intent:index:weights:embedder:
+    /// onDiagnostic:)` — the shared input both `retrievalSearch(intent:
+    /// limit:)` and `rankEntireCatalog(intent:index:weights:embedder:
+    /// onDiagnostic:)` fuse and order differently.
+    private struct RetrievalSignals {
+        let bm25Ranking: [Int]
+        let bm25Scores: [Double]
+        let trigramRanking: [Int]
+        let trigramScores: [Double]
+        let cosineRanking: [Int]
+        let cosineScores: [Double]
+    }
+
+    /// Computes the BM25, trigram, and cosine signals for `intent` over
+    /// `index` — the one piece of per-signal computation
+    /// `retrievalSearch(intent:limit:)` and `rankEntireCatalog(intent:index:
+    /// weights:embedder:onDiagnostic:)` share.
+    ///
+    /// - Parameters:
+    ///   - intent: the search query.
+    ///   - index: the catalog index to score.
+    ///   - weights: the per-signal fusion weights (cosine is only computed
+    ///     when `weights.cosine > 0.0`).
+    ///   - embedder: the embedder to embed `intent` with for the cosine
+    ///     signal, or `nil` to skip it.
+    ///   - onDiagnostic: called for every diagnostic emitted while computing
+    ///     the cosine signal (currently only `.embeddingUnavailable`).
+    /// - Returns: every signal's ranking and full-length, positionally
+    ///   aligned raw scores.
+    private static func computeSignals(
+        intent: String,
+        index: MetadataIndex<Item>,
+        weights: Weights,
+        embedder: (any TextEmbedding)?,
+        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
+    ) async -> RetrievalSignals {
+        let (bm25Ranking, bm25Scores) = computeBM25Ranking(intent: intent, index: index)
+        let (trigramRanking, trigramScores) = computeTrigramRanking(intent: intent, index: index)
+        // Cosine only runs when configured to actually count: a zero weight
+        // means the caller doesn't want the signal, so there's no reason to
+        // embed the query or warn about a missing embedder for it.
+        let (cosineRanking, cosineScores): ([Int], [Double])
+        if weights.cosine > 0.0 {
+            (cosineRanking, cosineScores) = await computeCosineRanking(
+                intent: intent, index: index, embedder: embedder, onDiagnostic: onDiagnostic
+            )
+        } else {
+            (cosineRanking, cosineScores) = ([], [Double](repeating: 0.0, count: index.count))
+        }
+        return RetrievalSignals(
+            bm25Ranking: bm25Ranking,
+            bm25Scores: bm25Scores,
+            trigramRanking: trigramRanking,
+            trigramScores: trigramScores,
+            cosineRanking: cosineRanking,
+            cosineScores: cosineScores
+        )
+    }
+
+    /// Fuses `signals` via `RRF.fuse(k: 60)` and normalizes to `[0, 1]`
+    /// (plan.md §5), excluding any signal whose weight is `0.0` or whose
+    /// ranking is empty from both the fusion and the normalization ceiling
+    /// (the "absent-signal rule").
+    ///
+    /// - Parameters:
+    ///   - signals: the per-signal rankings to fuse.
+    ///   - weights: the per-signal fusion weights.
+    /// - Returns: doc index -> normalized `[0, 1]` fused score, for every
+    ///   document any included signal ranked.
+    private static func fuseAndNormalize(signals: RetrievalSignals, weights: Weights) -> [Int: Double] {
+        let rankedSignals: [(ranking: [Int], weight: Double)] = [
+            (signals.bm25Ranking, weights.bm25),
+            (signals.trigramRanking, weights.trigram),
+            (signals.cosineRanking, weights.cosine),
+        ]
+
+        var rankedLists: [[Int]] = []
+        var listWeights: [Double] = []
+        // Only signals with a positive configured weight AND at least one
+        // matching document enter RRF's inputs: an empty ranking would
+        // contribute nothing to `fuse` regardless, but leaving its weight out
+        // of `normalize`'s ceiling too keeps a perfect single-signal match
+        // normalizing to 1.0 instead of being capped below it by an
+        // unreachable share (plan.md §5 "absent-signal rule").
+        for (ranking, weight) in rankedSignals where weight > 0.0 && !ranking.isEmpty {
+            rankedLists.append(ranking)
+            listWeights.append(weight)
+        }
+
+        let fused = RRF.fuse(rankedLists: rankedLists, weights: listWeights)
+        return RRF.normalize(fused: fused, weights: listWeights)
+    }
+
+    /// Maps document indices back through the catalog to verbatim
+    /// `Match`es, carrying `normalized`'s fused score (`0.0` if absent) and
+    /// `signals`' raw per-signal breakdown for each — the shared "build a
+    /// `Match`" step `retrievalSearch(intent:limit:)` and
+    /// `rankEntireCatalog(intent:index:weights:embedder:onDiagnostic:)`
+    /// apply to differently-ordered/truncated `documentIndices`.
+    ///
+    /// - Parameters:
+    ///   - documentIndices: the document indices (into `index.ids`) to map,
+    ///     in the order the result should preserve.
+    ///   - index: the catalog index to look items/blocks up in.
+    ///   - normalized: doc index -> normalized `[0, 1]` fused score.
+    ///   - signals: the raw per-signal scores every document was computed
+    ///     against.
+    /// - Returns: one `Match` per resolvable document index, in order.
+    private static func buildMatches(
+        documentIndices: [Int],
+        index: MetadataIndex<Item>,
+        normalized: [Int: Double],
+        signals: RetrievalSignals
+    ) -> [Match<Item>] {
+        documentIndices.compactMap { documentIndex in
             let id = index.ids[documentIndex]
             guard let item = index.item(forId: id), let block = index.block(forId: id) else { return nil }
             return Match(
@@ -292,9 +451,9 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
                 block: block,
                 score: normalized[documentIndex] ?? 0.0,
                 signals: Signals(
-                    bm25: bm25Scores[documentIndex],
-                    trigram: trigramScores[documentIndex],
-                    cosine: cosineScores[documentIndex]
+                    bm25: signals.bm25Scores[documentIndex],
+                    trigram: signals.trigramScores[documentIndex],
+                    cosine: signals.cosineScores[documentIndex]
                 ),
                 item: item
             )
@@ -308,7 +467,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// - Returns: the matching document indices (into `index.ids`) ranked
     ///   descending by score, and the full-length, positionally aligned raw
     ///   score for every document.
-    private func computeBM25Ranking(intent: String) -> (ranking: [Int], scores: [Double]) {
+    private static func computeBM25Ranking(intent: String, index: MetadataIndex<Item>) -> (ranking: [Int], scores: [Double]) {
         let queryTokens = Tokenizer.tokenize(text: intent)
         guard !queryTokens.isEmpty else {
             return ([], [Double](repeating: 0.0, count: index.count))
@@ -338,7 +497,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// - Returns: the matching document indices (into `index.ids`) ranked
     ///   descending by score, and the full-length, positionally aligned raw
     ///   score for every document.
-    private func computeTrigramRanking(intent: String) -> (ranking: [Int], scores: [Double]) {
+    private static func computeTrigramRanking(intent: String, index: MetadataIndex<Item>) -> (ranking: [Int], scores: [Double]) {
         let querySet = Trigram.canonicalTrigramSet(text: intent)
         let scores = index.ids.map { id -> Double in
             let idTrigramSet = index.idTrigramSet(forId: id) ?? []
@@ -366,7 +525,12 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// - Returns: the matching document indices (into `index.ids`) ranked
     ///   descending by score, and the full-length, positionally aligned raw
     ///   score for every document.
-    private func computeCosineRanking(intent: String) async -> (ranking: [Int], scores: [Double]) {
+    private static func computeCosineRanking(
+        intent: String,
+        index: MetadataIndex<Item>,
+        embedder: (any TextEmbedding)?,
+        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
+    ) async -> (ranking: [Int], scores: [Double]) {
         let zeroScores = [Double](repeating: 0.0, count: index.count)
 
         guard let embedder, index.ids.contains(where: { index.embedding(forId: $0) != nil }) else {
@@ -393,7 +557,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
 
         let scores = index.ids.map { id -> Double in
             guard let itemEmbedding = index.embedding(forId: id) else { return 0.0 }
-            return Self.cosineSimilarity(queryEmbedding, itemEmbedding)
+            return cosineSimilarity(queryEmbedding, itemEmbedding)
         }
         return (rankingOfPositiveScores(scores: scores), scores)
     }
@@ -425,7 +589,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// `RRF.fuse(rankedLists:weights:k:)` expects: a document that scored
     /// `0.0` (no match at all for this signal) is simply absent from the
     /// list, exactly as if it weren't in the catalog for this signal.
-    private func rankingOfPositiveScores(scores: [Double]) -> [Int] {
+    private static func rankingOfPositiveScores(scores: [Double]) -> [Int] {
         scores.indices.filter { scores[$0] > 0.0 }.sorted { scores[$0] > scores[$1] }
     }
 }

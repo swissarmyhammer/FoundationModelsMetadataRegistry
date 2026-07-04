@@ -1,7 +1,7 @@
 /// Configuration for `MetadataSearcher`'s `.selection` tier (plan.md §6): how
 /// selection sessions are created, what guidance seeds the assembled prefix,
 /// and the capacity/candidate budgets that decide between the cached-root
-/// (this task) and one-off (a later task) session paths.
+/// and one-off session paths.
 ///
 /// Mirrors Multitool's own `Librarian` initializer parameters
 /// (`capacityCharacterLimit`, `makeSession`), generalized into one value type
@@ -15,17 +15,17 @@ public struct SelectionConfig: Sendable {
     public static let defaultCapacityCharacterLimit = 32_000
 
     /// The default number of top-ranked candidates the over-budget path
-    /// (plan.md §6, a later task) seeds its one-off session with.
+    /// (plan.md §6) seeds its one-off session with.
     public static let defaultCandidateLimit = 24
 
     /// Creates a session seeded with the given instructions text — the seam
-    /// `SelectionTier` drives both the cached root session (this task) and
-    /// the over-budget one-off session (a later task) through. `@Sendable` so
-    /// it can cross `SelectionTier`'s actor isolation boundary; production
-    /// wires it to `RoutedLLM.makeGuidedSession(_:instructions:)`, already
-    /// constrained to the current id-enum grammar
-    /// (`SelectionTier.idEnumGrammar(ids:)`) — the same shape as Multitool's
-    /// own `Librarian`'s `makeSession` parameter.
+    /// `SelectionTier` drives both the cached root session and the
+    /// over-budget one-off session through. `@Sendable` so it can cross
+    /// `SelectionTier`'s actor isolation boundary; production wires it to
+    /// `RoutedLLM.makeGuidedSession(_:instructions:)`, already constrained to
+    /// the current id-enum grammar (`SelectionTier.idEnumGrammar(ids:)`) —
+    /// the same shape as Multitool's own `Librarian`'s `makeSession`
+    /// parameter.
     public var model: @Sendable (String) -> any AgentSession
 
     /// The selection guidance prepended to every assembled prefix. Defaults
@@ -39,8 +39,7 @@ public struct SelectionConfig: Sendable {
     public var capacityCharacterLimit: Int
 
     /// Over budget, how many top-ranked retrieval candidates seed the one-off
-    /// session (plan.md §6; wired up in a later task). Negative values are
-    /// clamped to `0`.
+    /// session (plan.md §6). Negative values are clamped to `0`.
     public var candidateLimit: Int
 
     /// Creates a selection tier configuration.
