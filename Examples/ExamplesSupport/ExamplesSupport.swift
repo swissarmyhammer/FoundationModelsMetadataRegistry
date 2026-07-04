@@ -51,9 +51,15 @@ public let baseGitCommands: [GitCommand] = [
 
 /// Formats ranked matches, one line each, with their per-signal breakdown.
 ///
+/// Generic over any `SearchableMetadata` item — not just `GitCommand` — so
+/// every `Examples/` target (`CatalogSearch`/`SemanticSearch`'s git-command
+/// catalog, and `Librarian`/`BigCatalog`/`HotReload`'s own domain-specific
+/// catalogs) shares this one formatter instead of each maintaining its own
+/// copy.
+///
 /// - Parameter matches: the matches to format, in ranked order.
 /// - Returns: one formatted line per match, joined by newlines.
-public func formattedMatches(matches: [Match<GitCommand>]) -> String {
+public func formattedMatches<Item: SearchableMetadata>(matches: [Match<Item>]) -> String {
     matches.enumerated().map { index, match in
         let breakdown =
             match.signals.map {
@@ -61,4 +67,22 @@ public func formattedMatches(matches: [Match<GitCommand>]) -> String {
             } ?? "no signals"
         return String(format: "%d. %@  score=%.3f  [%@]", index + 1, match.id, match.score, breakdown)
     }.joined(separator: "\n")
+}
+
+// MARK: - Gated real-model opt-in (plan.md §13 M8)
+
+/// The opt-in environment variable that gates every real-model path across
+/// `Examples/`: `Librarian`, `BigCatalog`, and `HotReload` each read this
+/// exact name to decide between their GPU-free/degraded path (unset, the
+/// default -- every example exits 0 with no network/GPU) and their real,
+/// live-Router-backed path (set). The identical literal the gated
+/// `Integration/RouterIntegrationTests.swift` suite gates its own real-model
+/// scenarios behind (`metadataRegistryIntegrationEnvVar` there) -- sharing
+/// one name means a single opt-in switch controls both the gated test suite
+/// and a real-model run of any of these three examples.
+public let metadataRegistryIntegrationEnvVar = "METADATA_REGISTRY_INTEGRATION_TESTS"
+
+/// Whether the gated real-model path is enabled for this run.
+public var metadataRegistryIntegrationEnabled: Bool {
+    ProcessInfo.processInfo.environment[metadataRegistryIntegrationEnvVar] != nil
 }

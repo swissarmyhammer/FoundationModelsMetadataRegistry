@@ -95,6 +95,16 @@ let package = Package(
                 .target(name: "ExamplesSupport"),
                 .target(name: "CatalogSearchCore"),
                 .target(name: "SemanticSearchCore"),
+                // `BigCatalogCore`/`HotReloadCore`'s GPU-free paths (plan.md §13
+                // M8) -- retrieval timing over a synthetic ~10^3-entry catalog,
+                // and `update(items:)` burst/index-rebuild -- both exercised
+                // directly by `ExamplesSmokeTests`, exactly like
+                // `CatalogSearchCore`/`SemanticSearchCore` above. `LibrarianCore`
+                // isn't linked here: its only GPU-free behavior is the catalog
+                // print `swift run Librarian` exercises directly; nothing in it
+                // needs a dedicated unit test.
+                .target(name: "BigCatalogCore"),
+                .target(name: "HotReloadCore"),
                 // The gated `Integration/RouterIntegrationTests.swift` suite (plan.md
                 // M7) builds a real, live `Router` + `LiveModelLoader` directly —
                 // mirroring FoundationModelsRouter's own gated
@@ -120,6 +130,27 @@ let package = Package(
             name: "ExamplesSupport",
             dependencies: [.target(name: packageName)],
             path: "Examples/ExamplesSupport"
+        ),
+        // Shared live-Router profile resolution (plan.md §13 M8):
+        // `SemanticSearchCore`, `LibrarianCore`, `BigCatalogCore`, and
+        // `HotReloadCore` each resolve the identical tiny `mlx-community`
+        // model triple through a live `Router` + `LiveModelLoader` for their
+        // gated (real-model) path — extracted here rather than each target
+        // carrying its own near-identical copy. Deliberately its own target
+        // (not folded into `ExamplesSupport`) so `CatalogSearchCore`/
+        // `CatalogSearch` — which stay GPU-free and never need Router/MLX at
+        // all — don't gain these dependencies transitively through
+        // `ExamplesSupport`.
+        .target(
+            name: "LiveRouterSupport",
+            dependencies: [
+                .product(name: routerDependencyName, package: routerDependencyName),
+                .product(name: "MLXHuggingFace", package: mlxPackage),
+                .product(name: "MLXLMCommon", package: mlxPackage),
+                .product(name: "HuggingFace", package: huggingFacePackage),
+                .product(name: "Tokenizers", package: transformersPackage),
+            ],
+            path: "Examples/LiveRouterSupport"
         ),
         // `CatalogSearch`'s entry logic (plan.md §13 M1): fixture items
         // conformed to `SearchableMetadata`, a keyword-only
@@ -161,6 +192,7 @@ let package = Package(
             dependencies: [
                 .target(name: packageName),
                 .target(name: "ExamplesSupport"),
+                .target(name: "LiveRouterSupport"),
                 .product(name: routerDependencyName, package: routerDependencyName),
                 .product(name: "MLXHuggingFace", package: mlxPackage),
                 .product(name: "MLXLMCommon", package: mlxPackage),
@@ -177,6 +209,102 @@ let package = Package(
                 .target(name: "ExamplesSupport"),
             ],
             path: "Examples/SemanticSearch"
+        ),
+        // `Librarian`'s entry logic (plan.md §13 M8): `.selection` mode
+        // end-to-end on a Router model -- a cached root session seeded with
+        // the whole (under-budget) catalog, `fork()`ed per query, ids-only
+        // xgrammar-constrained output, verbatim blocks out. The model run is
+        // gated behind `METADATA_REGISTRY_INTEGRATION_TESTS` (the same
+        // opt-in env var as the gated integration suite); without it, the
+        // example prints its catalog and exits 0. Links the same MLX +
+        // Hugging Face products as `SemanticSearchCore` to construct a live
+        // `Router` + `LiveModelLoader`.
+        .target(
+            name: "LibrarianCore",
+            dependencies: [
+                .target(name: packageName),
+                .target(name: "ExamplesSupport"),
+                .target(name: "LiveRouterSupport"),
+                .product(name: routerDependencyName, package: routerDependencyName),
+                .product(name: "MLXHuggingFace", package: mlxPackage),
+                .product(name: "MLXLMCommon", package: mlxPackage),
+                .product(name: "HuggingFace", package: huggingFacePackage),
+                .product(name: "Tokenizers", package: transformersPackage),
+            ],
+            path: "Examples/LibrarianCore"
+        ),
+        // A thin runnable entry point over `LibrarianCore`.
+        .executableTarget(
+            name: "Librarian",
+            dependencies: [
+                .target(name: "LibrarianCore"),
+                .target(name: "ExamplesSupport"),
+            ],
+            path: "Examples/Librarian"
+        ),
+        // `BigCatalog`'s entry logic (plan.md §13 M8): the headroom story --
+        // a synthetic ~10^3-entry catalog (ids = URIs), in-memory retrieval
+        // with printed timings, GPU-free. Only when
+        // `METADATA_REGISTRY_INTEGRATION_TESTS` is set does it also run a
+        // selection query that overflows the assembled-prefix budget -> top-M
+        // candidates -> a fresh one-off session, printing the `.retrievalCut`
+        // diagnostic. A plain library (not the executable itself) so
+        // `ExamplesSmokeTests` can invoke the GPU-free retrieval-timing path
+        // directly.
+        .target(
+            name: "BigCatalogCore",
+            dependencies: [
+                .target(name: packageName),
+                .target(name: "ExamplesSupport"),
+                .target(name: "LiveRouterSupport"),
+                .product(name: routerDependencyName, package: routerDependencyName),
+                .product(name: "MLXHuggingFace", package: mlxPackage),
+                .product(name: "MLXLMCommon", package: mlxPackage),
+                .product(name: "HuggingFace", package: huggingFacePackage),
+                .product(name: "Tokenizers", package: transformersPackage),
+            ],
+            path: "Examples/BigCatalogCore"
+        ),
+        // A thin runnable entry point over `BigCatalogCore`.
+        .executableTarget(
+            name: "BigCatalog",
+            dependencies: [
+                .target(name: "BigCatalogCore"),
+                .target(name: "ExamplesSupport"),
+            ],
+            path: "Examples/BigCatalog"
+        ),
+        // `HotReload`'s entry logic (plan.md §13 M8): `update(items:)` bursts
+        // (MCP-style add/remove) -- immediate keyword searchability, embed
+        // catch-up progress via `.embedCatchUp`, and the selection tier's
+        // cached root + grammar rebuild on a real catalog change, all
+        // GPU-free against a deterministic embedder. Only when
+        // `METADATA_REGISTRY_INTEGRATION_TESTS` is set does it also run the
+        // same burst against a real, live-Router-resolved embedder. A plain
+        // library (not the executable itself) so `ExamplesSmokeTests` can
+        // invoke the GPU-free index-rebuild path directly.
+        .target(
+            name: "HotReloadCore",
+            dependencies: [
+                .target(name: packageName),
+                .target(name: "ExamplesSupport"),
+                .target(name: "LiveRouterSupport"),
+                .product(name: routerDependencyName, package: routerDependencyName),
+                .product(name: "MLXHuggingFace", package: mlxPackage),
+                .product(name: "MLXLMCommon", package: mlxPackage),
+                .product(name: "HuggingFace", package: huggingFacePackage),
+                .product(name: "Tokenizers", package: transformersPackage),
+            ],
+            path: "Examples/HotReloadCore"
+        ),
+        // A thin runnable entry point over `HotReloadCore`.
+        .executableTarget(
+            name: "HotReload",
+            dependencies: [
+                .target(name: "HotReloadCore"),
+                .target(name: "ExamplesSupport"),
+            ],
+            path: "Examples/HotReload"
         ),
     ]
 )

@@ -6,35 +6,27 @@ import MLXLMCommon
 import Testing
 import Tokenizers
 
+import ExamplesSupport
 import FoundationModelsRouter
 @testable import SemanticSearchCore
 @testable import FoundationModelsMetadataRegistry
 
 // MARK: - Gate
 
-/// The opt-in environment variable that enables this gated, real-model suite.
-///
+/// The opt-in environment variable that enables this gated, real-model suite:
+/// `ExamplesSupport.metadataRegistryIntegrationEnvVar`
+/// ("METADATA_REGISTRY_INTEGRATION_TESTS"), the single shared literal every
+/// gated real-model path in this package reads — this suite and the
+/// `Librarian`/`BigCatalog`/`HotReload` Examples targets (task "^ew12k0b")
+/// alike — so a rename in one is caught by the compiler everywhere else,
+/// rather than two independent declarations that merely happen to agree.
 /// Unset (the default, and on any CI/GPU-less box), the whole suite is
 /// skipped, so `swift test` stays green with zero downloads — mirroring
 /// FoundationModelsRouter's own gate
 /// (`../FoundationModelsRouter/Tests/FoundationModelsRouterIntegrationTests/IntegrationTests.swift`'s
 /// `FM_ROUTER_INTEGRATION_TESTS`) and FoundationModelsMultitool's
 /// (`../FoundationModelsMultitool/Tests/FoundationModelsMultitoolIntegrationTests/Support/IntegrationGate.swift`'s
-/// `MULTITOOL_INTEGRATION`). Neither sibling repo shares one literal name, so
-/// this package picks its own following the same "component + INTEGRATION"
-/// shape — record this exact string anywhere else that needs to gate the
-/// same suite (the still-unstarted "^ew12k0b" follow-on task references it).
-///
-/// Not `private`: a later integration test file in this same target may need
-/// to check the same gate, the way Multitool's `SearchThenCallTests` and
-/// `PrefixReuseTests` both read `multitoolIntegrationEnvVar` from one shared
-/// file.
-let metadataRegistryIntegrationEnvVar = "METADATA_REGISTRY_INTEGRATION_TESTS"
-
-/// Whether the gated real-model suite is enabled for this run.
-var metadataRegistryIntegrationEnabled: Bool {
-    ProcessInfo.processInfo.environment[metadataRegistryIntegrationEnvVar] != nil
-}
+/// `MULTITOOL_INTEGRATION`).
 
 // MARK: - Tiny real models
 

@@ -2,10 +2,7 @@ import ExamplesSupport
 import Foundation
 import FoundationModelsMetadataRegistry
 import FoundationModelsRouter
-import HuggingFace
-import MLXHuggingFace
-import MLXLMCommon
-import Tokenizers
+import LiveRouterSupport
 
 /// # `SemanticSearch`'s entry logic (plan.md §13 M2).
 ///
@@ -83,34 +80,19 @@ public func runSemanticSearch(
 /// - Throws: whatever `Router.resolve(_:reporting:)` throws (unsatisfiable
 ///   profile, download/load failure).
 public func resolveLiveEmbedder() async throws -> any TextEmbedding {
-    // In production you build a `Router` with a durable `recordingsDir` and
-    // a `LiveModelLoader` configured with a real `Downloader`/
-    // `TokenizerLoader`. The `MLXHuggingFace` macros `#hubDownloader()` /
-    // `#huggingFaceTokenizerLoader()` expand to code that supplies both,
-    // backed by the `HuggingFace` and `Tokenizers` packages linked into this
-    // target (mirrors FoundationModelsRouter's own
-    // `Examples/MultiModelGeneration`).
-    let recordingsDir = FileManager.default.temporaryDirectory
-        .appendingPathComponent("SemanticSearch-\(UUID().uuidString)", isDirectory: true)
-    let router = Router(
-        recordingsDir: recordingsDir,
-        loader: LiveModelLoader(
-            downloader: #hubDownloader(),
-            tokenizerLoader: #huggingFaceTokenizerLoader()
-        )
-    )
-
+    // `LiveRouterSupport.resolveLiveProfile` builds a `Router` with a durable
+    // `recordingsDir` and a `LiveModelLoader` configured with a real
+    // `Downloader`/`TokenizerLoader` (mirrors FoundationModelsRouter's own
+    // `Examples/MultiModelGeneration`), resolving the same tiny
+    // `mlx-community` model triple every gated Examples target shares.
     // Router always resolves all three slots together; deliberately tiny,
     // co-resident models keep this demo cheap even though only `embedding`
     // is exercised below.
-    let profileDefinition = ProfileDefinition(
+    let profile = try await resolveLiveProfile(
+        demoLabel: "SemanticSearch",
         name: "semantic-search-demo",
-        description: "Tiny co-resident models sized for a local demo run of the cosine signal.",
-        standard: ["mlx-community/SmolLM-135M-Instruct-4bit"],
-        flash: ["mlx-community/SmolLM-135M-Instruct-4bit"],
-        embedding: ["mlx-community/bge-small-en-v1.5-4bit"]
+        description: "Tiny co-resident models sized for a local demo run of the cosine signal."
     )
-    let profile = try await router.resolve(profileDefinition, reporting: ResolutionProgress())
     return RoutedEmbedderAdapter(routedEmbedder: profile.embedding)
 }
 

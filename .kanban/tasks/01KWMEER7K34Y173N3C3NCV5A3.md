@@ -47,8 +47,8 @@ comments:
   timestamp: 2026-07-04T16:49:17.035786+00:00
 depends_on:
 - 01KWMEEA0FQB66C11H0V13TGR4
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: 8a80
 title: Gated Router-backed integration suite
 ---
 ## What
