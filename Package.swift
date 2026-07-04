@@ -20,26 +20,30 @@ let packageName = "FoundationModelsMetadataRegistry"
 /// without exercising Router at runtime (fakes conform to the seams).
 let routerDependencyName = "FoundationModelsRouter"
 
-/// The `mlx-swift-lm` fork's package name — the same remote dependency
-/// FoundationModelsRouter itself declares. Re-declared here with the
-/// identical URL/branch (so SwiftPM's dependency resolution unifies the two
-/// into a single resolved checkout, never a duplicate) so `SemanticSearchCore`
-/// can import `MLXHuggingFace`'s `#hubDownloader()` /
-/// `#huggingFaceTokenizerLoader()` macros to build a live `Router` — the
-/// only place this package touches MLX directly (plan.md §13).
+/// The `mlx-swift-lm` fork's package name.
+///
+/// The same remote dependency FoundationModelsRouter itself declares;
+/// re-declared here with the identical URL/branch so SwiftPM's dependency
+/// resolution unifies the two into a single resolved checkout, never a
+/// duplicate, so `SemanticSearchCore` can import `MLXHuggingFace`'s
+/// `#hubDownloader()` / `#huggingFaceTokenizerLoader()` macros to build a
+/// live `Router` — the only place this package touches MLX directly
+/// (plan.md §13).
 let mlxPackage = "mlx-swift-lm"
 
-/// The Hugging Face Hub client and tokenizer packages `SemanticSearchCore`
-/// links to supply `LiveModelLoader`'s `Downloader`/`TokenizerLoader`,
-/// mirroring FoundationModelsRouter's own gated integration suite and its
-/// `Examples/MultiModelGeneration` demo (`hubProducts` in that package's
-/// manifest). Needed only by `SemanticSearchCore`'s live-Router path; the
-/// library target never imports these.
+/// The Hugging Face Hub client package name.
+///
+/// `SemanticSearchCore` links this to supply `LiveModelLoader`'s
+/// `Downloader`, mirroring FoundationModelsRouter's own gated integration
+/// suite and its `Examples/MultiModelGeneration` demo (`hubProducts` in that
+/// package's manifest). Needed only by `SemanticSearchCore`'s live-Router
+/// path; the library target never imports it.
 let huggingFacePackage = "swift-huggingface"
 
-/// The Hugging Face Transformers package, whose `Tokenizers` product
-/// supplies `LiveModelLoader`'s `TokenizerLoader` alongside
-/// `huggingFacePackage`'s `Downloader`. Needed only by
+/// The Hugging Face Transformers package name.
+///
+/// Its `Tokenizers` product supplies `LiveModelLoader`'s `TokenizerLoader`
+/// alongside `huggingFacePackage`'s `Downloader`. Needed only by
 /// `SemanticSearchCore`'s live-Router path; the library target never
 /// imports it.
 let transformersPackage = "swift-transformers"
