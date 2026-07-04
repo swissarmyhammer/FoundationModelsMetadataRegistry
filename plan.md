@@ -13,6 +13,13 @@ rides a **dynamic Router session** (the librarian pattern, lifted from
 embedders come from [`../FoundationModelsRouter`](../FoundationModelsRouter/plan.md).
 **Primary target: macOS 27+, on-device.**
 
+> **Status: implemented.** The library (M1–M4), the gated Router integration
+> suite (M7), and the full `Examples/` suite (M8) are shipped in this repo;
+> §14 tracks per-milestone status. M5 (Multitool migration) and M6 (Skills
+> adoption) are pending and land in their own repos. Where the implementation
+> refined the original design, the sections below describe what shipped and
+> mark the superseded idea inline.
+
 ---
 
 ## 1. Guiding principles
@@ -172,22 +179,35 @@ Mechanics, lifted from the shipped `Librarian` and generalized:
 - **Over budget**: the retrieval tier ranks the catalog and the top-M candidates
   (default 24) seed a **one-off session** — no stable prefix exists, so nothing is
   cached. This *replaces* Multitool's `lexicallyFilter` keep/drop with real ranked
-  retrieval; the cut is still reported (`onRetrievalCut`, the `onPrefilterCut` pattern).
+  retrieval; the cut is still reported, as `.retrievalCut(considered:kept:)` on the
+  unified diagnostics channel (below).
 - **Ids only, grammar-enforced.** The guided output type is
-  `@Generable struct Selection { var ids: [String] }`, and the session's xgrammar JSON
-  Schema constrains `ids` to an **enum of the candidate ids** — the current catalog's
-  ids under budget, the top-M ids over budget. Router's xgrammar enforcement is real
-  (unlike Apple's built-in enum path, per Skills decision #22), so the selector is
-  structurally incapable of inventing an id. The enum only changes on reload (which
-  rebuilds the root session anyway) or per one-off session — both compatible with
-  grammar-at-session-creation.
+  `@Generable struct Selection { var ids: [String] }`;
+  `SelectionTier.idEnumGrammar(ids:)` derives the xgrammar JSON Schema constraining
+  `ids` to an **enum of the candidate ids** (per-element `enum` + `uniqueItems`).
+  Router's xgrammar enforcement is real (unlike Apple's built-in enum path, per Skills
+  decision #22), so the selector is structurally incapable of inventing an id.
+  *As shipped*, the grammar reaches the session through the caller: `SelectionConfig
+  .model` is a **session factory** `(instructions) -> any AgentSession`, and the
+  production factory bakes the grammar into the guided sessions it vends
+  (`RoutedAgentSession(session: llm.makeGuidedSession(grammar, instructions:))` — the
+  `LiveRouterSupport.buildSelectionConfig` pattern). Over budget, membership in the
+  top-M candidate set is enforced by the verbatim-lookup filter rather than a per-call
+  grammar.
 - **Verbatim lookup.** Returned ids map back through the catalog to produce `Match`es
   carrying the catalog's own blocks. Unknown ids from the model are impossible by
-  grammar; a defensive filter + diagnostic backstops it anyway.
+  grammar; a defensive `allowedIds` filter + `.unknownSelectedId` diagnostic backstops
+  it anyway.
+- **One diagnostics channel.** Instead of per-event closures (`onPrefilterCut`-style),
+  everything reports through `onDiagnostic: (MetadataDiagnostic) -> Void` — cases
+  `.duplicateId`, `.embeddingUnavailable`, `.unknownSelectedId`,
+  `.retrievalCut(considered:kept:)`, `.embedCatchUp(pending:total:)` — defaulting to an
+  `os.Logger` sink (`MetadataDiagnostic.log`).
 - The session comes through the **`AgentSession` seam** (`respond(to:)` + `fork()` +
   default `respond(to:generating:)` decoding via `GeneratedContent(json:)`), with
-  `RoutedAgentSession` wrapping `RoutedLLM.makeGuidedSession(_:instructions:)` in
-  production — lifted as-is from Multitool, which then imports it from here.
+  `RoutedAgentSession` wrapping a session vended by
+  `RoutedLLM.makeGuidedSession(_:instructions:)` in production — lifted from Multitool
+  and now shipped here, for Multitool to import back (M5).
 
 ## 7. Modes
 
@@ -219,7 +239,12 @@ notifications, a Multitool rebuild. Semantics:
    keyword-only for not-yet-embedded items in the interim (absent-signal rule, §5).
 3. Drop the cached root session; the next under-budget `search()` rebuilds it (one
    prefix re-prefill — the accepted reload cost, stated in Skills §7 already).
-4. Rebuild the id-enum grammar with the new id set.
+4. Rebuild the id-enum grammar with the new id set — `idEnumGrammar(ids:)` is a pure
+   function of the ids, so the rebuilt selection tier assembles a fresh prefix and a
+   caller whose session factory bakes in the grammar (§6) refreshes that factory
+   alongside `update(items:)`.
+5. Surface the interim gap: `.embedCatchUp(pending:total:)` diagnostics report how many
+   items are still serving keyword-only while embedding catches up.
 
 `update` is cheap to call redundantly (hash-guarded), so callers may forward every
 upstream change notification without coalescing. MCP's churn rate is the design target:
@@ -280,7 +305,7 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
    blocks returned verbatim from the catalog by lookup. Supersedes the
    reproduce-the-block shape of Multitool's `FoundAPIs` (which becomes formatting).
 5. **Over-budget path → retrieval top-M + one-off session**, replacing lexical
-   keep/drop filtering; cuts reported via `onRetrievalCut`.
+   keep/drop filtering; cuts reported as `.retrievalCut(considered:kept:)` diagnostics.
 6. **Modes → `.retrieval` / `.selection` / `.auto`**; retrieval is a first-class
    product, not a fallback (free to call: no session, no tokens).
 7. **Hot reload → `update(items:)`**: hash-guarded, incremental re-embedding, async
@@ -297,8 +322,20 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
     shipped contiguous-matrix/vDSP design if a catalog ever demands it.
 11. **Agents stays opted out** — their baked-in-descriptions decision is respected;
     this package is their future option, not a requirement.
+12. *(shipped refinement)* **`SelectionConfig.model` is a session factory** —
+    `@Sendable (String) -> any AgentSession`, called with the assembled prefix as
+    instructions. The library never constructs Router sessions itself; the caller's
+    factory decides the model, the grammar, and the wiring (production:
+    `RoutedAgentSession` over `makeGuidedSession(grammar, instructions:)`). This keeps
+    the whole selection tier testable against scripted fakes and leaves grammar
+    ownership with the party that owns the id set's lifecycle.
+13. *(shipped refinement)* **One diagnostics channel, not per-event closures** —
+    `onDiagnostic: (MetadataDiagnostic) -> Void` with a typed case per event
+    (`.duplicateId`, `.embeddingUnavailable`, `.unknownSelectedId`, `.retrievalCut`,
+    `.embedCatchUp`), defaulting to an `os.Logger` sink. New diagnostics add a case,
+    not a parameter.
 
-## 12. Public API sketch (illustrative)
+## 12. Public API (as shipped)
 
 ```swift
 // Domain side — e.g. Skills:
@@ -307,16 +344,23 @@ extension SkillMetadata: SearchableMetadata {
   func renderBlock() -> String { /* YAML-ish id/description/params */ }
 }
 
-// Build a searcher (selection + retrieval, Router-backed):
-let searcher = MetadataSearcher(
+// Build a searcher (selection + retrieval, Router-backed). The `model`
+// parameter is a session factory (§6, decision #12): the caller vends
+// grammar-constrained sessions from the assembled prefix.
+let grammar = try SelectionTier.idEnumGrammar(ids: items.map(\.id))
+let searcher = await MetadataSearcher(
   items: registry.metadata().filter(\.isModelVisible),   // visibility = caller's job
-  selection: .init(model: profile.flash,                  // RoutedLLM → guided sessions
-                   preamble: .librarianDefault,           // "fewest that suffice…"
-                   capacityCharacterLimit: 32_000,
-                   candidateLimit: 24),
-  embedder: RoutedEmbedderAdapter(profile.embedding),     // omit → keyword-only
-  weights: .init(bm25: 1, trigram: 1, cosine: 1),
-  mode: .auto
+  mode: .auto,
+  weights: Weights(bm25: 1, trigram: 1, cosine: 1),
+  embedder: RoutedEmbedderAdapter(routedEmbedder: profile.embedding), // omit → keyword-only
+  selection: SelectionConfig(
+    model: { instructions in
+      RoutedAgentSession(session: profile.standard.makeGuidedSession(grammar, instructions: instructions))
+    },
+    preamble: .librarianDefault,                          // "fewest that suffice…"
+    capacityCharacterLimit: 32_000,
+    candidateLimit: 24),
+  onDiagnostic: { MetadataDiagnostic.log($0) }            // the default sink
 )
 
 // Search — intent in, verbatim blocks out:
@@ -327,11 +371,15 @@ let matches = try await searcher.search(intent: "commit my changes", limit: 5)
 // Hot reload — file watcher, MCP listChanged, rebuild — all the same call:
 registry.onReload { meta in Task { await searcher.update(items: meta) } }
 
-// Retrieval-only (no session, no tokens) — e.g. an MCP resource picker:
-let picker = MetadataSearcher(items: resources, mode: .retrieval,
-                              embedder: RoutedEmbedderAdapter(profile.embedding))
+// Retrieval-only (no session, no tokens, sync init) — e.g. an MCP resource picker:
+let picker = MetadataSearcher(items: resources, mode: .retrieval)
 let hits = try await picker.search(intent: "quarterly revenue spreadsheet", limit: 10)
 ```
+
+Three initializers ship: `init(items:...)` (sync, keyword-only index),
+`init(items:...embedder:...) async` (embeds the catalog up front), and
+`init(index:...)` over a prebuilt `MetadataIndex` for precise control.
+`.selection` mode without a `SelectionConfig` throws `SelectionTierUnavailable`.
 
 ## 13. Examples
 
@@ -340,7 +388,16 @@ target under `Examples/` (`swift run <Name>`), kept compiling in CI (the family
 convention, per the MCP plan). Retrieval-only examples run anywhere, GPU-free;
 Router-backed ones compile in CI and run locally against tiny `mlx-community`
 models (the M7 pattern). Together they are the living documentation of every
-capability in this plan:
+capability in this plan.
+
+*As shipped*, each example splits into a thin `<Name>` executable and a
+`<Name>Core` library target holding the demo's logic — the cores are exercised
+by the main unit-test target, so every example stays correct GPU-free, not just
+compiling. Two shared support targets round it out: `ExamplesSupport` (common
+fixture catalogs and printing helpers) and `LiveRouterSupport` (live Router
+profile resolution, `idEnumGrammar(ids:)` construction, and the
+`RoutedAgentSession` session-factory wiring used when an example runs against
+real models). The examples:
 
 1. **`CatalogSearch`** — the ~30-line hello world. A handful of fixture items
    conformed to `SearchableMetadata`, a keyword-only
@@ -360,7 +417,7 @@ capability in this plan:
    magnitude past expectation (~10³ entries, ids = URIs), the in-memory index
    answering retrieval in milliseconds with timings printed, then a selection
    query that overflows the budget → top-M candidates → one-off session, with
-   the `onRetrievalCut` diagnostic shown. ↔ M3 + decision #10.
+   the `.retrievalCut` diagnostic shown. ↔ M3 + decision #10.
 5. **`HotReload`** — churn under fire: `update(items:)` bursts (MCP-style
    add/remove), items keyword-searchable immediately, cosine catching up
    asynchronously (hash-guarded incremental re-embed, progress surfaced), root
@@ -372,32 +429,34 @@ Each example doubles as the acceptance demo for its milestone (`CatalogSearch`
 
 ## 14. Milestones
 
-- **M1 — Catalog + retrieval core.** `SearchableMetadata`, `MetadataIndex`, ported
+- ✅ **M1 — Catalog + retrieval core.** `SearchableMetadata`, `MetadataIndex`, ported
   `Tokenizer`/`BM25`/`Trigram`/`RRF`/`Hit`, two-field indexing, keyword-only
   `search(mode: .retrieval)`. Pure unit tests, no Router, no GPU.
-- **M2 — Embedding signal.** `TextEmbedding` seam + `RoutedEmbedderAdapter` port,
+- ✅ **M2 — Embedding signal.** `TextEmbedding` seam + `RoutedEmbedderAdapter` port,
   cosine signal, absent-signal degradation, incremental embed keyed by block hash.
   `FakeEmbedder` tests.
-- **M3 — Selection tier.** `AgentSession` seam (lifted), cached-root + fork-per-call,
+- ✅ **M3 — Selection tier.** `AgentSession` seam (lifted), cached-root + fork-per-call,
   capacity budget, ids-only `Selection` decoding, verbatim lookup, id-enum grammar
   construction. Scripted-fake session tests (fork counts, over/under-budget paths,
   grammar id sets).
-- **M4 — Hot reload.** `update(items:)` end-to-end: index rebuild, incremental
-  re-embed, root/grammar invalidation, `onRetrievalCut`/degradation diagnostics.
-- **M5 — Multitool migration.** `Librarian` re-based on `MetadataSearcher`;
+- ✅ **M4 — Hot reload.** `update(items:)` end-to-end: index rebuild, incremental
+  re-embed, root/grammar invalidation, `.retrievalCut`/degradation diagnostics.
+- ⬜ **M5 — Multitool migration.** `Librarian` re-based on `MetadataSearcher`;
   `AgentSession` moves here; `FoundAPIs` becomes `FindAPITool` formatting; Multitool's
-  existing librarian tests keep passing against the wrapper.
-- **M6 — Skills adoption.** `MetadataSearcher<SkillMetadata>` behind the `search skill`
+  existing librarian tests keep passing against the wrapper. *(Lands in the Multitool
+  repo — `AgentSession`/`RoutedAgentSession` already ship here, waiting to be
+  imported.)*
+- ⬜ **M6 — Skills adoption.** `MetadataSearcher<SkillMetadata>` behind the `search skill`
   op *(lands with Skills M4; updates Skills plan §7 + decision #12)*.
-- **M7 — Gated integration.** Router-backed suite (tiny `mlx-community` models, the
+- ✅ **M7 — Gated integration.** Router-backed suite (tiny `mlx-community` models, the
   Router test pattern): real fork-per-call prefix reuse, xgrammar id-enum enforcement,
   embed + RRF quality smoke over a fixture catalog, reload under churn (MCP-style
-  add/remove bursts).
-- **M8 — Examples.** Build the `Examples/` suite (§13): `CatalogSearch`,
+  add/remove bursts). Shipped as `Tests/.../Integration/RouterIntegrationTests.swift`.
+- ✅ **M8 — Examples.** The `Examples/` suite (§13): `CatalogSearch`,
   `SemanticSearch`, `Librarian`, `BigCatalog`, `HotReload` — each a runnable
-  executable target (`swift run <Name>`), compiled in CI; the Router-backed ones
-  run locally on the M7 tiny-model setup. `CatalogSearch` and `Librarian` double
-  as the human-facing E2E.
+  executable target (`swift run <Name>`) over a unit-tested `<Name>Core`, compiled
+  in CI; the Router-backed ones run locally on the M7 tiny-model setup.
+  `CatalogSearch` and `Librarian` double as the human-facing E2E.
 
 ## 15. Testing
 
