@@ -1,7 +1,6 @@
 import ExamplesSupport
 import Foundation
 import FoundationModelsMetadataRegistry
-import FoundationModelsRouter
 import LiveRouterSupport
 
 /// # `BigCatalog`'s entry logic (plan.md §13 M8): the headroom story.
@@ -26,30 +25,10 @@ import LiveRouterSupport
 
 // MARK: - Fixture catalog
 
-/// One synthetic catalog entry: a URI id (mirrors an MCP resource or a code
+/// This example's domain-flavored alias for `ExamplesSupport`'s shared
+/// `SearchableFixtureItem`: a URI id (mirrors an MCP resource or a code
 /// symbol's stable locator) and a short synthetic description.
-public struct BigCatalogItem: SearchableMetadata {
-    /// A URI-shaped id, e.g. `"https://example.com/modules/module-42"`.
-    public let id: String
-
-    /// The item's synthetic description -- also its search surface.
-    public let block: String
-
-    /// Creates one synthetic catalog entry.
-    ///
-    /// - Parameters:
-    ///   - id: a URI-shaped id.
-    ///   - block: the item's synthetic description.
-    public init(id: String, block: String) {
-        self.id = id
-        self.block = block
-    }
-
-    /// Renders this item to its search surface: its synthetic description.
-    ///
-    /// - Returns: the item's description.
-    public func renderBlock() -> String { block }
-}
+public typealias BigCatalogItem = SearchableFixtureItem
 
 /// The id of the one deterministic "needle" entry `makeBigCatalog(count:)`
 /// always appends, distinct from every generic filler entry so a query
@@ -162,16 +141,11 @@ public func runBigCatalogOverBudgetSelection(
     query: String,
     limit: Int = 10
 ) async throws -> [Match<BigCatalogItem>] {
-    let profile = try await resolveLiveProfile(
+    let config = try await buildSelectionConfig(
         demoLabel: "BigCatalog",
         name: "big-catalog-demo",
-        description: "Tiny co-resident models sized for a local demo run of the over-budget selection path."
-    )
-    let grammar = try idEnumGrammar(ids: catalog.map(\.id))
-    let config = SelectionConfig(
-        model: { instructions in
-            RoutedAgentSession(session: profile.standard.makeGuidedSession(grammar, instructions: instructions))
-        },
+        description: "Tiny co-resident models sized for a local demo run of the over-budget selection path.",
+        ids: catalog.map(\.id),
         // Deliberately tiny: ~1,000 items' assembled summary-block prefix is
         // always far larger than this, guaranteeing the over-budget path
         // runs rather than the cached-root one.
@@ -188,13 +162,10 @@ public func runBigCatalogOverBudgetSelection(
 ///
 /// - Parameter diagnostic: the diagnostic to print.
 public func printDiagnostic(_ diagnostic: MetadataDiagnostic) {
-    if case .retrievalCut(let considered, let kept) = diagnostic {
-        print(
-            "[diagnostic] retrievalCut: considered \(considered) candidates, kept the top \(kept) before seeding "
-                + "a one-off selection session (over budget)."
-        )
-    } else {
-        MetadataDiagnostic.log(diagnostic)
+    printExampleDiagnostic(diagnostic) { diagnostic in
+        guard case .retrievalCut(let considered, let kept) = diagnostic else { return nil }
+        return "retrievalCut: considered \(considered) candidates, kept the top \(kept) before seeding "
+            + "a one-off selection session (over budget)."
     }
 }
 

@@ -1,7 +1,6 @@
 import ExamplesSupport
 import Foundation
 import FoundationModelsMetadataRegistry
-import FoundationModelsRouter
 import LiveRouterSupport
 
 /// # `SemanticSearch`'s entry logic (plan.md §13 M2).
@@ -26,7 +25,7 @@ import LiveRouterSupport
 /// degradation indistinguishable from "found nothing at all."
 public let gitCommands: [GitCommand] =
     baseGitCommands + [
-        GitCommand(id: "status", summary: "Report the current state of the working tree.")
+        GitCommand(id: "status", block: "Report the current state of the working tree.")
     ]
 
 /// The paraphrased query this example is built around: it shares no keyword
@@ -80,20 +79,19 @@ public func runSemanticSearch(
 /// - Throws: whatever `Router.resolve(_:reporting:)` throws (unsatisfiable
 ///   profile, download/load failure).
 public func resolveLiveEmbedder() async throws -> any TextEmbedding {
-    // `LiveRouterSupport.resolveLiveProfile` builds a `Router` with a durable
-    // `recordingsDir` and a `LiveModelLoader` configured with a real
+    // `LiveRouterSupport.buildLiveEmbedder` resolves a `Router` with a
+    // durable `recordingsDir` and a `LiveModelLoader` configured with a real
     // `Downloader`/`TokenizerLoader` (mirrors FoundationModelsRouter's own
     // `Examples/MultiModelGeneration`), resolving the same tiny
     // `mlx-community` model triple every gated Examples target shares.
     // Router always resolves all three slots together; deliberately tiny,
     // co-resident models keep this demo cheap even though only `embedding`
     // is exercised below.
-    let profile = try await resolveLiveProfile(
+    try await buildLiveEmbedder(
         demoLabel: "SemanticSearch",
         name: "semantic-search-demo",
         description: "Tiny co-resident models sized for a local demo run of the cosine signal."
     )
-    return RoutedEmbedderAdapter(routedEmbedder: profile.embedding)
 }
 
 /// Prints every diagnostic this example's searches emit — `.embeddingUnavailable`
@@ -103,11 +101,8 @@ public func resolveLiveEmbedder() async throws -> any TextEmbedding {
 ///
 /// - Parameter diagnostic: the diagnostic to print.
 public func printDiagnostic(_ diagnostic: MetadataDiagnostic) {
-    if case .embeddingUnavailable = diagnostic {
-        print(
-            "[diagnostic] embeddingUnavailable: no embedder configured; degrading to keyword-only (BM25 + trigram)."
-        )
-    } else {
-        MetadataDiagnostic.log(diagnostic)
+    printExampleDiagnostic(diagnostic) { diagnostic in
+        guard case .embeddingUnavailable = diagnostic else { return nil }
+        return "embeddingUnavailable: no embedder configured; degrading to keyword-only (BM25 + trigram)."
     }
 }

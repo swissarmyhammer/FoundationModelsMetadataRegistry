@@ -1,7 +1,6 @@
 import ExamplesSupport
 import Foundation
 import FoundationModelsMetadataRegistry
-import FoundationModelsRouter
 import LiveRouterSupport
 
 /// # `HotReload`'s entry logic (plan.md §13 M8): `update(items:)` bursts.
@@ -31,29 +30,9 @@ import LiveRouterSupport
 
 // MARK: - Fixture catalog
 
-/// One hot-reloadable tool: an MCP-resource-shaped id and description.
-public struct HotReloadTool: SearchableMetadata {
-    /// The tool's id.
-    public let id: String
-
-    /// The tool's description -- also its search surface.
-    public let block: String
-
-    /// Creates one hot-reloadable tool fixture.
-    ///
-    /// - Parameters:
-    ///   - id: the tool's id.
-    ///   - block: the tool's description.
-    public init(id: String, block: String) {
-        self.id = id
-        self.block = block
-    }
-
-    /// Renders this tool to its search surface: its description.
-    ///
-    /// - Returns: the tool's description.
-    public func renderBlock() -> String { block }
-}
+/// This example's domain-flavored alias for `ExamplesSupport`'s shared
+/// `SearchableFixtureItem`: an MCP-resource-shaped id and description.
+public typealias HotReloadTool = SearchableFixtureItem
 
 /// The three tools this example's burst adds and removes, mirroring the
 /// gated integration suite's own churn scenario
@@ -85,6 +64,7 @@ public let hotReloadBurst: [[HotReloadTool]] = [
 /// ones -- enough to exercise real cosine scoring, incremental re-embedding,
 /// and embed catch-up deterministically, with no GPU, network, or model.
 public struct DeterministicEmbedder: TextEmbedding {
+    /// The length of every embedding vector this embedder produces.
     public let dimension: Int
 
     /// Creates a deterministic embedder.
@@ -95,6 +75,13 @@ public struct DeterministicEmbedder: TextEmbedding {
         self.dimension = dimension
     }
 
+    /// Embeds the given texts into deterministic vectors using a pure hash
+    /// function: the same text always embeds to the same vector, and
+    /// different texts (almost always) embed to different ones.
+    ///
+    /// - Parameter texts: the texts to embed.
+    /// - Returns: one unit-normalized, `dimension`-length vector per text, in
+    ///   the same order as `texts`.
     public func embed(_ texts: [String]) async throws -> [[Float]] {
         texts.map { Self.vector(for: $0, dimension: dimension) }
     }
@@ -324,10 +311,9 @@ private final class DemoCallCounter: @unchecked Sendable {
 ///   embedding model.
 /// - Throws: whatever `Router.resolve(_:reporting:)` throws.
 public func resolveLiveEmbedder() async throws -> any TextEmbedding {
-    let profile = try await resolveLiveProfile(
+    try await buildLiveEmbedder(
         demoLabel: "HotReload",
         name: "hot-reload-demo",
         description: "Tiny co-resident models sized for a local demo run of the hot-reload burst against a real embedder."
     )
-    return RoutedEmbedderAdapter(routedEmbedder: profile.embedding)
 }

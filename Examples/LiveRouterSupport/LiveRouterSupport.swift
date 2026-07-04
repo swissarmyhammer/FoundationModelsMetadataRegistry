@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsMetadataRegistry
 import FoundationModelsRouter
 import HuggingFace
 import MLXHuggingFace
@@ -95,4 +96,66 @@ public func idEnumGrammar(ids: [String]) throws -> Grammar {
     ]
     let data = try JSONSerialization.data(withJSONObject: schema)
     return .jsonSchema(String(decoding: data, as: UTF8.self))
+}
+
+/// Resolves a real, live-Router-backed model and builds a `SelectionConfig`
+/// whose session factory constrains every guided session to an id-enum
+/// grammar over `ids` -- the shared "resolve a profile, derive an id-enum
+/// grammar, build a `SelectionConfig` with an identical model factory"
+/// pattern `LibrarianCore` and `BigCatalogCore` each need for their gated
+/// real-model `.selection`-tier path, differing only in the profile
+/// parameters, the candidate id set, and (for `BigCatalogCore`) an
+/// over-budget `capacityCharacterLimit`.
+///
+/// - Parameters:
+///   - demoLabel: a short label identifying the calling demo, forwarded to
+///     `resolveLiveProfile(demoLabel:name:description:)`.
+///   - name: the resolved profile's name.
+///   - description: the resolved profile's description.
+///   - ids: the candidate id set every guided session is grammar-constrained
+///     to.
+///   - capacityCharacterLimit: the assembled prefix's character budget, or
+///     `nil` to use `SelectionConfig.defaultCapacityCharacterLimit`.
+/// - Returns: a `SelectionConfig` ready to drive a `.selection`-mode search.
+/// - Throws: whatever `resolveLiveProfile(demoLabel:name:description:)` or
+///   `idEnumGrammar(ids:)` throws.
+public func buildSelectionConfig(
+    demoLabel: String,
+    name: String,
+    description: String,
+    ids: [String],
+    capacityCharacterLimit: Int? = nil
+) async throws -> SelectionConfig {
+    let profile = try await resolveLiveProfile(demoLabel: demoLabel, name: name, description: description)
+    let grammar = try idEnumGrammar(ids: ids)
+    return SelectionConfig(
+        model: { instructions in
+            RoutedAgentSession(session: profile.standard.makeGuidedSession(grammar, instructions: instructions))
+        },
+        capacityCharacterLimit: capacityCharacterLimit ?? SelectionConfig.defaultCapacityCharacterLimit
+    )
+}
+
+/// Resolves a real, on-device embedding model through a live `Router` and
+/// wraps it as a `TextEmbedding` -- the shared "resolve a profile, adapt its
+/// embedding model" pattern `SemanticSearchCore` and `HotReloadCore` each
+/// need for their gated real-model path, differing only in the profile
+/// parameters.
+///
+/// - Parameters:
+///   - demoLabel: a short label identifying the calling demo, forwarded to
+///     `resolveLiveProfile(demoLabel:name:description:)`.
+///   - name: the resolved profile's name.
+///   - description: the resolved profile's description.
+/// - Returns: a `RoutedEmbedderAdapter` wrapping the resolved profile's
+///   embedding model.
+/// - Throws: whatever `resolveLiveProfile(demoLabel:name:description:)`
+///   throws.
+public func buildLiveEmbedder(
+    demoLabel: String,
+    name: String,
+    description: String
+) async throws -> any TextEmbedding {
+    let profile = try await resolveLiveProfile(demoLabel: demoLabel, name: name, description: description)
+    return RoutedEmbedderAdapter(routedEmbedder: profile.embedding)
 }

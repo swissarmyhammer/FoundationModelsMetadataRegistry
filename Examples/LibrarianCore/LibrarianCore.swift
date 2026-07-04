@@ -1,7 +1,6 @@
 import ExamplesSupport
 import Foundation
 import FoundationModelsMetadataRegistry
-import FoundationModelsRouter
 import LiveRouterSupport
 
 /// # `Librarian`'s entry logic (plan.md §13 M8): `.selection` mode end-to-end.
@@ -29,29 +28,10 @@ import LiveRouterSupport
 
 // MARK: - Fixture catalog
 
-/// One trip-planning tool: an id and a description of what it does.
-public struct TripPlanningTool: SearchableMetadata {
-    /// The tool's id.
-    public let id: String
-
-    /// The tool's description -- also its search surface.
-    public let block: String
-
-    /// Creates one trip-planning tool fixture.
-    ///
-    /// - Parameters:
-    ///   - id: the tool's id.
-    ///   - block: the tool's description.
-    public init(id: String, block: String) {
-        self.id = id
-        self.block = block
-    }
-
-    /// Renders this tool to its search surface: its description.
-    ///
-    /// - Returns: the tool's description.
-    public func renderBlock() -> String { block }
-}
+/// This example's domain-flavored alias for `ExamplesSupport`'s shared
+/// `SearchableFixtureItem`: a trip-planning tool's id and a description of
+/// what it does.
+public typealias TripPlanningTool = SearchableFixtureItem
 
 /// The trip-planning catalog `Librarian` selects over -- small enough that
 /// its assembled prefix always stays under `SelectionConfig`'s default
@@ -114,14 +94,11 @@ public func runLibrarianSelection(
 ///   error from `idEnumGrammar(ids:)` (not expected for a plain array of
 ///   strings).
 public func resolveLiveSelectionConfig() async throws -> SelectionConfig {
-    let profile = try await resolveLiveProfile(
+    try await buildSelectionConfig(
         demoLabel: "Librarian",
         name: "librarian-demo",
-        description: "Tiny co-resident models sized for a local demo run of the selection tier."
+        description: "Tiny co-resident models sized for a local demo run of the selection tier.",
+        ids: tripPlanningCatalog.map(\.id)
     )
-    let grammar = try idEnumGrammar(ids: tripPlanningCatalog.map(\.id))
-    return SelectionConfig(model: { instructions in
-        RoutedAgentSession(session: profile.standard.makeGuidedSession(grammar, instructions: instructions))
-    })
 }
 

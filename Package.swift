@@ -144,6 +144,7 @@ let package = Package(
         .target(
             name: "LiveRouterSupport",
             dependencies: [
+                .target(name: packageName),
                 .product(name: routerDependencyName, package: routerDependencyName),
                 .product(name: "MLXHuggingFace", package: mlxPackage),
                 .product(name: "MLXLMCommon", package: mlxPackage),
