@@ -3,9 +3,9 @@ import Foundation
 @testable import FoundationModelsMetadataRegistry
 
 /// A thread-safe recorder for `onDiagnostic` callbacks, shared by
-/// `CatalogTests` and `RetrievalSearchTests` so both suites assert on
-/// forwarded `MetadataDiagnostic` values without each maintaining its own
-/// copy of the same helper.
+/// `CatalogTests`, `RetrievalSearchTests`, and `ExamplesSmokeTests` so every
+/// suite asserts on forwarded `MetadataDiagnostic` values without each
+/// maintaining its own copy of the same helper.
 ///
 /// Synchronization: `recorded` is only ever read (via `diagnostics`) or
 /// mutated (via `record(_:)`) while holding `lock`, which is what makes the
