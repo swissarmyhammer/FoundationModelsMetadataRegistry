@@ -319,7 +319,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     ///   - onDiagnostic: called for every diagnostic emitted while ranking
     ///     (currently only `.embeddingUnavailable`).
     /// - Returns: exactly `index.count` matches, best-first.
-    static func rankEntireCatalog(
+    private static func rankEntireCatalog(
         intent: String,
         index: MetadataIndex<Item>,
         weights: Weights,
