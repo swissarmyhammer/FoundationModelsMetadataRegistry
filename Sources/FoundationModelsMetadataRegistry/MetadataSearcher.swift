@@ -374,7 +374,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         embedder: (any TextEmbedding)?,
         onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
     ) async -> RetrievalSignals {
-        let (bm25Ranking, bm25Scores) = computeBm25Ranking(intent: intent, index: index)
+        let (bm25Ranking, bm25Scores) = computeBM25Ranking(intent: intent, index: index)
         let (trigramRanking, trigramScores) = computeTrigramRanking(intent: intent, index: index)
         // Cosine only runs when configured to actually count: a zero weight
         // means the caller doesn't want the signal, so there's no reason to
@@ -476,7 +476,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// - Returns: the matching document indices (into `index.ids`) ranked
     ///   descending by score, and the full-length, positionally aligned raw
     ///   score for every document.
-    private static func computeBm25Ranking(intent: String, index: MetadataIndex<Item>) -> (ranking: [Int], scores: [Double]) {
+    private static func computeBM25Ranking(intent: String, index: MetadataIndex<Item>) -> (ranking: [Int], scores: [Double]) {
         let queryTokens = Tokenizer.tokenize(text: intent)
         guard !queryTokens.isEmpty else {
             return ([], zeroScoresArray(count: index.count))
