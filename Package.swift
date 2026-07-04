@@ -36,6 +36,12 @@ let mlxPackage = "mlx-swift-lm"
 /// manifest). Needed only by `SemanticSearchCore`'s live-Router path; the
 /// library target never imports these.
 let huggingFacePackage = "swift-huggingface"
+
+/// The Hugging Face Transformers package, whose `Tokenizers` product
+/// supplies `LiveModelLoader`'s `TokenizerLoader` alongside
+/// `huggingFacePackage`'s `Downloader`. Needed only by
+/// `SemanticSearchCore`'s live-Router path; the library target never
+/// imports it.
 let transformersPackage = "swift-transformers"
 
 /// The SwiftPM manifest for FoundationModelsMetadataRegistry (plan.md §10).
