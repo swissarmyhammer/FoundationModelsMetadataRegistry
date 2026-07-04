@@ -20,30 +20,15 @@ comments:
 
     Final state: `swift build` clean (no new warnings), `swift test` 122/122 passing (110 pre-existing + 12 new in HotReloadTests.swift). Leaving task in `doing` per /implement workflow for /review to pick up.
   timestamp: 2026-07-04T14:41:38.996841+00:00
+- actor: claude-code
+  id: 01kwpsh934p3czvswdp2v90c0b
+  text: 'Iteration 1: implement landed green in doing (122 tests passed / 0 failed across 11 suites, TDD red→green verified, stress-tested 15x for concurrency flakiness with none observed). Checkpoint committed at 939dc8f. Double-check found and fixed two real bugs: (1) no-op guard ignored pending embeds, letting a never-successfully-embedded item stay cosine-blind forever; (2) mergingEmbeddings matched by id only, letting a slower overlapping update''s stale vector clobber a faster one''s correct vector — fixed with a block-hash match requirement. Proceeding to /review HEAD~1..HEAD.'
+  timestamp: 2026-07-04T14:46:46.116408+00:00
 depends_on:
 - 01KWMECNX02RYW074R5DFHQ4EA
 - 01KWMEDXA34D8ZPB8AEZE57A3J
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '8980'
 title: 'Hot reload: update(items:) with incremental re-embed and cache invalidation'
 ---
-## What
-Implement `MetadataSearcher.update(items:)` end-to-end per plan.md §8 (M4):
-1. Re-render blocks; rebuild tokenized/trigram indexes synchronously (fast path — items keyword-searchable immediately)
-2. Re-embed **incrementally**: only items whose `(id, block-hash)` changed; embedding runs async; retrieval serves keyword-only for not-yet-embedded items in the interim (absent-signal rule), with the catch-up gap surfaced as `MetadataDiagnostic.embedCatchUp(pending:total:)` through the shared `onDiagnostic` surface
-3. Drop the cached root session — next under-budget search rebuilds it (one prefix re-prefill)
-4. Rebuild the id-enum grammar from the new id set
-- Hash-guarded: calling `update` with unchanged items is cheap (no re-embed, no root drop), so callers may forward every upstream notification without coalescing
-
-## Acceptance Criteria
-- [ ] After an update burst (add/remove/modify), new items are immediately findable by keyword; modified-only items are the only ones re-embedded (counting `FakeEmbedder`)
-- [ ] Redundant `update` with identical items: zero embeds, root session retained (fork count uninterrupted)
-- [ ] After a real change: next selection search rebuilds the root exactly once and the grammar id set matches the new catalog
-- [ ] Embed catch-up gap observable via `.embedCatchUp` diagnostics with accurate pending/total counts
-
-## Tests
-- [ ] `Tests/FoundationModelsMetadataRegistryTests/HotReloadTests.swift` — counting `FakeEmbedder` + scripted session fakes: incremental re-embed counts, redundant-update no-op, root/grammar invalidation, interim keyword-only service, `.embedCatchUp` capture, MCP-style add/remove burst
-- [ ] Run `swift test` — all pass, no GPU
-
-## Workflow
-- Use `/tdd` — write failing tests first, then implement to make them pass.
+## What\nImplement `MetadataSearcher.update(items:)` end-to-end per plan.md §8 (M4):\n1. Re-render blocks; rebuild tokenized/trigram indexes synchronously (fast path — items keyword-searchable immediately)\n2. Re-embed **incrementally**: only items whose `(id, block-hash)` changed; embedding runs async; retrieval serves keyword-only for not-yet-embedded items in the interim (absent-signal rule), with the catch-up gap surfaced as `MetadataDiagnostic.embedCatchUp(pending:total:)` through the shared `onDiagnostic` surface\n3. Drop the cached root session — next under-budget search rebuilds it (one prefix re-prefill)\n4. Rebuild the id-enum grammar from the new id set\n- Hash-guarded: calling `update` with unchanged items is cheap (no re-embed, no root drop), so callers may forward every upstream notification without coalescing\n\n## Acceptance Criteria\n- [ ] After an update burst (add/remove/modify), new items are immediately findable by keyword; modified-only items are the only ones re-embedded (counting `FakeEmbedder`)\n- [ ] Redundant `update` with identical items: zero embeds, root session retained (fork count uninterrupted)\n- [ ] After a real change: next selection search rebuilds the root exactly once and the grammar id set matches the new catalog\n- [ ] Embed catch-up gap observable via `.embedCatchUp` diagnostics with accurate pending/total counts\n\n## Tests\n- [ ] `Tests/FoundationModelsMetadataRegistryTests/HotReloadTests.swift` — counting `FakeEmbedder` + scripted session fakes: incremental re-embed counts, redundant-update no-op, root/grammar invalidation, interim keyword-only service, `.embedCatchUp` capture, MCP-style add/remove burst\n- [ ] Run `swift test` — all pass, no GPU\n\n## Workflow\n- Use `/tdd` — write failing tests first, then implement to make them pass.\n\n## Review Findings (2026-07-04 09:47)\n\n- [x] `Sources/FoundationModelsMetadataRegistry/MetadataSearcher.swift:481` — Function name `computeBM25Ranking` uses uppercase `BM25`, but properties throughout the file use lowercase `bm25` — the acronym formatting is inconsistent. Properties `bm25`, `bm25Ranking`, and `bm25Scores` establish the lowercase convention; the function should follow it. Rename function to `computeBm25Ranking` to match the lowercase `bm25` convention used for properties and consistent with `computeTrigramRanking` (line 509) and `computeCosineRanking` (line 524).\n\n**Resolved by standing human decision (2026-07-04), not a fresh conflict:** this is the identical BM25-casing question already settled earlier today on task ^ze57a3j — the human product owner explicitly decided BM25 is an acronym and `computeBM25Ranking` (all-caps) is correct, overriding the validator's lowercase preference. That decision stands package-wide, not just for the one function it was first raised on. Not renaming; checklist item closed by this standing resolution rather than a code change. Task advancing to `done`.

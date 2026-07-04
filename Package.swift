@@ -95,6 +95,18 @@ let package = Package(
                 .target(name: "ExamplesSupport"),
                 .target(name: "CatalogSearchCore"),
                 .target(name: "SemanticSearchCore"),
+                // The gated `Integration/RouterIntegrationTests.swift` suite (plan.md
+                // M7) builds a real, live `Router` + `LiveModelLoader` directly —
+                // mirroring FoundationModelsRouter's own gated
+                // `FoundationModelsRouterIntegrationTests` target and Multitool's
+                // `FoundationModelsMultitoolIntegrationTests` — so this test target
+                // needs the same product dependencies those targets link, even though
+                // every other test file here never imports them.
+                .product(name: routerDependencyName, package: routerDependencyName),
+                .product(name: "MLXHuggingFace", package: mlxPackage),
+                .product(name: "MLXLMCommon", package: mlxPackage),
+                .product(name: "HuggingFace", package: huggingFacePackage),
+                .product(name: "Tokenizers", package: transformersPackage),
             ],
             path: "Tests/\(packageName)Tests"
         ),
