@@ -43,8 +43,8 @@ public struct RoutedEmbedderAdapter: TextEmbedding {
     /// - Parameter texts: The strings to embed.
     /// - Returns: One `dimension`-length vector per input, in the same
     ///   order as `texts`.
-    /// - Throws: Whatever `RoutedEmbedder.embed(_:)` throws.
+    /// - Throws: Whatever `RoutedEmbedder.embed(texts:)` throws.
     public func embed(_ texts: [String]) async throws -> [[Float]] {
-        try await routedEmbedder.embed(texts)
+        try await routedEmbedder.embed(texts: texts)
     }
 }
