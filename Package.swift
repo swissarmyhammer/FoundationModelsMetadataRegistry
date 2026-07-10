@@ -172,7 +172,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/swissarmyhammer/\(routerDependencyName)", branch: "main"),
-        .package(url: "https://github.com/swissarmyhammer/\(mlxPackage)", branch: "mlx-foundationmodels"),
+        .package(url: "https://github.com/swissarmyhammer/\(mlxPackage)", branch: "foundationmodels-fixes"),
         .package(url: "https://github.com/huggingface/\(huggingFacePackage)", from: "0.9.0"),
         .package(url: "https://github.com/huggingface/\(transformersPackage)", from: "1.3.0"),
     ],
