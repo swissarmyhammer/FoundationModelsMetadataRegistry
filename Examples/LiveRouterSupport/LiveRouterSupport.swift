@@ -37,7 +37,7 @@ private enum LiveDemoModels {
 ///   - name: the resolved profile's name.
 ///   - description: the resolved profile's description.
 /// - Returns: the resolved profile.
-/// - Throws: whatever `Router.resolve(_:reporting:)` throws.
+/// - Throws: whatever `Router.resolve(profile:reporting:)` throws.
 public func resolveLiveProfile(
     demoLabel: String,
     name: String,
@@ -59,7 +59,7 @@ public func resolveLiveProfile(
         flash: [LiveDemoModels.generation],
         embedding: [LiveDemoModels.embedding]
     )
-    return try await router.resolve(profileDefinition, reporting: ResolutionProgress())
+    return try await router.resolve(profile: profileDefinition, reporting: ResolutionProgress())
 }
 
 /// Derives an xgrammar JSON Schema constraining a `{"ids": [...]}` selection
@@ -130,7 +130,7 @@ public func buildSelectionConfig(
     let grammar = try idEnumGrammar(ids: ids)
     return SelectionConfig(
         model: { instructions in
-            RoutedAgentSession(session: profile.standard.makeGuidedSession(grammar, instructions: instructions))
+            RoutedAgentSession(session: profile.standard.makeGuidedSession(grammar: grammar, instructions: instructions))
         },
         capacityCharacterLimit: capacityCharacterLimit ?? SelectionConfig.defaultCapacityCharacterLimit
     )

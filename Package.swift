@@ -175,6 +175,14 @@ let package = Package(
         .package(url: "https://github.com/swissarmyhammer/\(mlxPackage)", branch: "foundationmodels-fixes"),
         .package(url: "https://github.com/huggingface/\(huggingFacePackage)", from: "0.9.0"),
         .package(url: "https://github.com/huggingface/\(transformersPackage)", from: "1.3.0"),
+        // Pinned below swift-jinja 2.4.0: that release changed `Value.object`
+        // to key on `ObjectKey` instead of `String`, which the latest tagged
+        // swift-transformers (1.3.3, still HEAD as of this pin) never
+        // adopted -- `Sources/Hub/Config.swift` fails to compile against
+        // 2.4.0. transformersPackage only constrains jinja to `from: "2.0.0"`,
+        // so without this upper bound `swift package update` silently drifts
+        // onto the broken release.
+        .package(url: "https://github.com/huggingface/swift-jinja.git", "2.0.0"..<"2.4.0"),
     ],
     targets: [
         .target(

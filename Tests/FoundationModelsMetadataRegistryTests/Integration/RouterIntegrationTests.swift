@@ -77,7 +77,7 @@ private struct LiveRouterFixture: Sendable {
     /// `SemanticSearchCore.resolveLiveEmbedder()`.
     ///
     /// - Returns: the resolved fixture.
-    /// - Throws: whatever `Router.resolve(_:reporting:)` throws — including
+    /// - Throws: whatever `Router.resolve(profile:reporting:)` throws — including
     ///   `GenerationError.notWiredForLiveInference` if the live decode path
     ///   isn't wired up in this environment (every scenario below catches
     ///   this and skips cleanly, mirroring Multitool's `PrefixReuseTests`).
@@ -90,7 +90,7 @@ private struct LiveRouterFixture: Sendable {
             tokenizerLoader: #huggingFaceTokenizerLoader()
         )
         let router = Router(cacheDir: cacheDir, recordingsDir: recordingsDir, loader: loader)
-        let profile = try await router.resolve(tinyProfile, reporting: ResolutionProgress())
+        let profile = try await router.resolve(profile: tinyProfile, reporting: ResolutionProgress())
         return LiveRouterFixture(profile: profile)
     }
 
@@ -188,7 +188,7 @@ struct RouterIntegrationTests {
             let factoryCallCount = CallCounter()
             let config = SelectionConfig(model: { instructions in
                 factoryCallCount.increment()
-                let session = fixture.profile.standard.makeGuidedSession(grammar, instructions: instructions)
+                let session = fixture.profile.standard.makeGuidedSession(grammar: grammar, instructions: instructions)
                 return RoutedAgentSession(session: session)
             })
             let searcher = MetadataSearcher(items: toolCatalog, mode: .selection, selection: config)
@@ -268,7 +268,7 @@ struct RouterIntegrationTests {
                 index: MetadataIndex(items: toolCatalog)
             )
             let session = RoutedAgentSession(
-                session: fixture.profile.standard.makeGuidedSession(grammar, instructions: prefix)
+                session: fixture.profile.standard.makeGuidedSession(grammar: grammar, instructions: prefix)
             )
 
             // Adversarial prompts, each explicitly naming a function absent
