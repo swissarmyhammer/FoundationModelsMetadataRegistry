@@ -256,7 +256,7 @@ struct HotReloadTests {
         struct AlwaysFails: Error {}
         let a = FixtureItem(id: "a", block: "alpha block")
         let indexWithoutEmbedding = await MetadataIndex.build(items: [a], embedder: FakeEmbedder(dimension: 2, failure: AlwaysFails()))
-        #expect(indexWithoutEmbedding.embedding(forId: "a") == nil)
+        #expect(indexWithoutEmbedding.embedding(forID: "a") == nil)
 
         let recorder = DiagnosticRecorder()
         let workingEmbedder = FakeEmbedder(dimension: 2, vectorsByText: ["alpha block": [1, 0], "alpha": [1, 0]])

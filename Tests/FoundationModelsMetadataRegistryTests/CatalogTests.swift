@@ -84,7 +84,7 @@ struct CatalogTests {
         let item = FixtureMetadata(id: "deploy", block: "ships containers to production")
         let index = MetadataIndex(items: [item])
 
-        let weightedTermFrequency = try #require(index.weightedTermFrequency(forId: "deploy"))
+        let weightedTermFrequency = try #require(index.weightedTermFrequency(forID: "deploy"))
         #expect(weightedTermFrequency["deploy"] == BM25.primaryFieldWeight)
         #expect(weightedTermFrequency["ships"] == BM25.bodyFieldWeight)
         #expect(weightedTermFrequency["production"] == BM25.bodyFieldWeight)
@@ -98,7 +98,7 @@ struct CatalogTests {
         let item = FixtureMetadata(id: "deploy", block: "deploy ships containers to production")
         let index = MetadataIndex(items: [item])
 
-        let weightedTermFrequency = try #require(index.weightedTermFrequency(forId: "deploy"))
+        let weightedTermFrequency = try #require(index.weightedTermFrequency(forID: "deploy"))
         #expect(weightedTermFrequency["deploy"] == BM25.primaryFieldWeight + BM25.bodyFieldWeight)
     }
 
@@ -109,7 +109,7 @@ struct CatalogTests {
 
         let idTokenCount = Tokenizer.tokenize(text: item.id).count
         let blockTokenCount = Tokenizer.tokenize(text: item.block).count
-        #expect(index.documentLength(forId: "deploy-k8s") == idTokenCount + blockTokenCount)
+        #expect(index.documentLength(forID: "deploy-k8s") == idTokenCount + blockTokenCount)
     }
 
     @Test
@@ -117,9 +117,9 @@ struct CatalogTests {
         let item = FixtureMetadata(id: "deploy-k8s", block: "ships containers to production")
         let index = MetadataIndex(items: [item])
 
-        #expect(index.idTrigramSet(forId: "deploy-k8s") == Trigram.canonicalTrigramSet(text: "deploy-k8s"))
+        #expect(index.idTrigramSet(forID: "deploy-k8s") == Trigram.canonicalTrigramSet(text: "deploy-k8s"))
         #expect(
-            index.blockTrigramSet(forId: "deploy-k8s")
+            index.blockTrigramSet(forID: "deploy-k8s")
                 == Trigram.canonicalTrigramSet(text: "ships containers to production")
         )
     }
@@ -136,21 +136,21 @@ struct CatalogTests {
         #expect(index.count == 3)
         #expect(index.ids == ["deploy", "rollback", "status"])
         for item in items {
-            #expect(index.item(forId: item.id)?.id == item.id)
-            #expect(index.block(forId: item.id) == item.block)
+            #expect(index.item(forID: item.id)?.id == item.id)
+            #expect(index.block(forID: item.id) == item.block)
         }
     }
 
     @Test
     func indexLookupOfMissingIdReturnsNil() {
         let index = MetadataIndex(items: [FixtureMetadata(id: "deploy", block: "ships containers")])
-        #expect(index.item(forId: "missing") == nil)
-        #expect(index.block(forId: "missing") == nil)
-        #expect(index.weightedTermFrequency(forId: "missing") == nil)
-        #expect(index.termSet(forId: "missing") == nil)
-        #expect(index.documentLength(forId: "missing") == nil)
-        #expect(index.idTrigramSet(forId: "missing") == nil)
-        #expect(index.blockTrigramSet(forId: "missing") == nil)
+        #expect(index.item(forID: "missing") == nil)
+        #expect(index.block(forID: "missing") == nil)
+        #expect(index.weightedTermFrequency(forID: "missing") == nil)
+        #expect(index.termSet(forID: "missing") == nil)
+        #expect(index.documentLength(forID: "missing") == nil)
+        #expect(index.idTrigramSet(forID: "missing") == nil)
+        #expect(index.blockTrigramSet(forID: "missing") == nil)
     }
 
     // MARK: - Match.block is verbatim, never re-derived
@@ -161,9 +161,9 @@ struct CatalogTests {
         let item = CountingMetadata(id: "deploy", block: "ships containers", counter: counter)
         let index = MetadataIndex(items: [item])
 
-        #expect(index.block(forId: "deploy") == "ships containers")
-        #expect(index.block(forId: "deploy") == "ships containers")
-        #expect(index.item(forId: "deploy")?.id == "deploy")
+        #expect(index.block(forID: "deploy") == "ships containers")
+        #expect(index.block(forID: "deploy") == "ships containers")
+        #expect(index.item(forID: "deploy")?.id == "deploy")
         #expect(counter.count == 1)
     }
 
@@ -177,7 +177,7 @@ struct CatalogTests {
 
         #expect(index.count == 1)
         #expect(index.ids == ["deploy"])
-        #expect(index.block(forId: "deploy") == "first block")
+        #expect(index.block(forID: "deploy") == "first block")
     }
 
     @Test
@@ -212,7 +212,7 @@ struct CatalogTests {
         let index = MetadataIndex(items: items, onDiagnostic: { recorder.record($0) })
 
         #expect(index.count == 1)
-        #expect(index.block(forId: "deploy") == "first block")
+        #expect(index.block(forID: "deploy") == "first block")
         #expect(recorder.diagnostics == [.duplicateId(id: "deploy"), .duplicateId(id: "deploy")])
     }
 
@@ -224,7 +224,7 @@ struct CatalogTests {
 
         #expect(index.count == 0)
         #expect(index.ids.isEmpty)
-        #expect(index.item(forId: "anything") == nil)
+        #expect(index.item(forID: "anything") == nil)
     }
 
     // MARK: - Match
@@ -233,7 +233,7 @@ struct CatalogTests {
     func matchCarriesTheIndexsVerbatimBlockByIdentity() throws {
         let item = FixtureMetadata(id: "deploy", block: "ships containers")
         let index = MetadataIndex(items: [item])
-        let storedBlock = try #require(index.block(forId: "deploy"))
+        let storedBlock = try #require(index.block(forID: "deploy"))
 
         let match = Match(id: "deploy", block: storedBlock, score: 1.0, signals: nil, item: item)
 

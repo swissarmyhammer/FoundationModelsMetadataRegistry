@@ -123,7 +123,7 @@ struct EmbeddingTests {
         // succeeds -- it now carries a real, reusable embedding.
         let workingEmbedder = FakeEmbedder(dimension: 2, vectorsByText: [query: [1, 0], embeddedItem.block: [1, 0]])
         let priorIndex = await MetadataIndex.build(items: [embeddedItem], embedder: workingEmbedder)
-        #expect(priorIndex.embedding(forId: "commit") != nil)
+        #expect(priorIndex.embedding(forID: "commit") != nil)
 
         // Second build: `unembeddedItem` is new, and this build's embedder
         // fails for the whole batch -- `unembeddedItem` stays `nil`, while
@@ -137,8 +137,8 @@ struct EmbeddingTests {
             embedder: failingEmbedder,
             previous: priorIndex
         )
-        #expect(index.embedding(forId: "commit") != nil)
-        #expect(index.embedding(forId: "status") == nil)
+        #expect(index.embedding(forID: "commit") != nil)
+        #expect(index.embedding(forID: "status") == nil)
 
         let searcher = MetadataSearcher(index: index, embedder: workingEmbedder)
 
@@ -186,9 +186,9 @@ struct EmbeddingTests {
         // Only the one changed block is re-embedded -- the count grows by
         // exactly 1, not by 3 (a full re-embed of every item).
         #expect(embedder.embeddedTextCount == 4)
-        #expect(indexV2.embedding(forId: "a") == indexV1.embedding(forId: "a"))
-        #expect(indexV2.embedding(forId: "c") == indexV1.embedding(forId: "c"))
-        #expect(indexV2.embedding(forId: "b") != indexV1.embedding(forId: "b"))
+        #expect(indexV2.embedding(forID: "a") == indexV1.embedding(forID: "a"))
+        #expect(indexV2.embedding(forID: "c") == indexV1.embedding(forID: "c"))
+        #expect(indexV2.embedding(forID: "b") != indexV1.embedding(forID: "b"))
     }
 
     @Test
@@ -202,8 +202,8 @@ struct EmbeddingTests {
         let index = await MetadataIndex.build(items: items, embedder: embedder)
 
         #expect(embedder.embeddedTextCount == 2)
-        #expect(index.embedding(forId: "a") == [1, 0])
-        #expect(index.embedding(forId: "b") == [0, 1])
+        #expect(index.embedding(forID: "a") == [1, 0])
+        #expect(index.embedding(forID: "b") == [0, 1])
     }
 
     @Test
@@ -211,7 +211,7 @@ struct EmbeddingTests {
         let items = [FixtureItem(id: "a", block: "alpha block")]
         let index = await MetadataIndex.build(items: items, embedder: nil)
 
-        #expect(index.embedding(forId: "a") == nil)
+        #expect(index.embedding(forID: "a") == nil)
     }
 
     @Test
@@ -220,7 +220,7 @@ struct EmbeddingTests {
 
         // Built with no embedder at all: "a"'s embedding is nil.
         let indexWithoutEmbedder = await MetadataIndex.build(items: [item], embedder: nil)
-        #expect(indexWithoutEmbedder.embedding(forId: "a") == nil)
+        #expect(indexWithoutEmbedder.embedding(forID: "a") == nil)
 
         // Rebuilding with an embedder now configured, same unchanged block
         // text, must still embed it -- a hash match must never let a stored
@@ -230,7 +230,7 @@ struct EmbeddingTests {
         let embedder = FakeEmbedder(dimension: 2, vectorsByText: ["alpha block": [1, 0]])
         let indexWithEmbedder = await MetadataIndex.build(items: [item], embedder: embedder, previous: indexWithoutEmbedder)
 
-        #expect(indexWithEmbedder.embedding(forId: "a") == [1, 0])
+        #expect(indexWithEmbedder.embedding(forID: "a") == [1, 0])
         #expect(embedder.embeddedTextCount == 1)
     }
 }

@@ -19,7 +19,7 @@ import Foundation
 /// `MetadataIndex` never interprets a block's contents — it only tokenizes
 /// and trigrams the opaque text `renderBlock()` returns.
 public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
-    /// One catalog entry's precomputed search data, keyed by `id` in `entriesById`.
+    /// One catalog entry's precomputed search data, keyed by `id` in `entriesByID`.
     private struct Entry: Sendable {
         /// The catalog item itself.
         let item: Item
@@ -76,12 +76,12 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
 
     /// The indexed ids, in first-seen order, with duplicates already resolved per the first-wins policy.
     ///
-    /// Exactly the set of ids `item(forId:)`/`block(forId:)`/etc. can
+    /// Exactly the set of ids `item(forID:)`/`block(forID:)`/etc. can
     /// resolve.
     public let ids: [String]
 
     /// Precomputed search data, keyed by `id`.
-    private let entriesById: [String: Entry]
+    private let entriesByID: [String: Entry]
 
     /// The number of entries in this index after duplicate ids are dropped.
     public var count: Int { ids.count }
@@ -105,21 +105,21 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
         onDiagnostic: @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) }
     ) {
         var ids: [String] = []
-        var entriesById: [String: Entry] = [:]
+        var entriesByID: [String: Entry] = [:]
         ids.reserveCapacity(items.count)
-        entriesById.reserveCapacity(items.count)
+        entriesByID.reserveCapacity(items.count)
 
         for item in items {
-            guard entriesById[item.id] == nil else {
+            guard entriesByID[item.id] == nil else {
                 onDiagnostic(.duplicateId(id: item.id))
                 continue
             }
-            entriesById[item.id] = Self.buildEntry(item: item)
+            entriesByID[item.id] = Self.buildEntry(item: item)
             ids.append(item.id)
         }
 
         self.ids = ids
-        self.entriesById = entriesById
+        self.entriesByID = entriesByID
     }
 
     /// Precomputes one catalog item's search data.
@@ -163,15 +163,15 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
     /// Returns `nil` if `id` isn't indexed (never indexed, or dropped as a
     /// duplicate). Every public lookup method below is a one-line
     /// specialization of this accessor over a single `Entry` key path —
-    /// the copy-paste `entriesById[id]?.field` pattern lived here eight
+    /// the copy-paste `entriesByID[id]?.field` pattern lived here eight
     /// times before being unified.
     ///
     /// - Parameters:
-    ///   - forId: the id to look up.
+    ///   - forID: the id to look up.
     ///   - keyPath: the `Entry` field to project out.
     /// - Returns: the projected field, or `nil` if `id` isn't indexed.
-    private func value<T>(forId id: String, keyPath: KeyPath<Entry, T>) -> T? {
-        entriesById[id]?[keyPath: keyPath]
+    private func value<T>(forID id: String, keyPath: KeyPath<Entry, T>) -> T? {
+        entriesByID[id]?[keyPath: keyPath]
     }
 
     /// The catalog item stored under `id`.
@@ -179,64 +179,64 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
     /// Returns `nil` if `id` isn't indexed (never indexed, or dropped as a
     /// duplicate).
     ///
-    /// - Parameter forId: the id to look up.
+    /// - Parameter forID: the id to look up.
     /// - Returns: the catalog item, or `nil` if `id` isn't indexed.
-    public func item(forId id: String) -> Item? {
-        value(forId: id, keyPath: \.item)
+    public func item(forID id: String) -> Item? {
+        value(forID: id, keyPath: \.item)
     }
 
     /// The rendered block stored under `id`, verbatim from its build-time render.
     ///
     /// Returns `nil` if `id` isn't indexed.
     ///
-    /// - Parameter forId: the id to look up.
+    /// - Parameter forID: the id to look up.
     /// - Returns: the rendered block, or `nil` if `id` isn't indexed.
-    public func block(forId id: String) -> String? {
-        value(forId: id, keyPath: \.block)
+    public func block(forID id: String) -> String? {
+        value(forID: id, keyPath: \.block)
     }
 
     /// The field-weighted BM25 term frequency for `id`, or `nil` if `id` isn't indexed.
     ///
-    /// - Parameter forId: the id to look up.
+    /// - Parameter forID: the id to look up.
     /// - Returns: the field-weighted term frequency, or `nil` if `id`
     ///   isn't indexed.
-    public func weightedTermFrequency(forId id: String) -> [String: Double]? {
-        value(forId: id, keyPath: \.weightedTermFrequency)
+    public func weightedTermFrequency(forID id: String) -> [String: Double]? {
+        value(forID: id, keyPath: \.weightedTermFrequency)
     }
 
     /// The distinct term set for `id`, or `nil` if `id` isn't indexed.
     ///
-    /// - Parameter forId: the id to look up.
+    /// - Parameter forID: the id to look up.
     /// - Returns: the distinct term set, or `nil` if `id` isn't indexed.
-    public func termSet(forId id: String) -> Set<String>? {
-        value(forId: id, keyPath: \.termSet)
+    public func termSet(forID id: String) -> Set<String>? {
+        value(forID: id, keyPath: \.termSet)
     }
 
     /// The unweighted token count across both fields for `id`, or `nil` if `id` isn't indexed.
     ///
-    /// - Parameter forId: the id to look up.
+    /// - Parameter forID: the id to look up.
     /// - Returns: the unweighted token count, or `nil` if `id` isn't
     ///   indexed.
-    public func documentLength(forId id: String) -> Int? {
-        value(forId: id, keyPath: \.documentLength)
+    public func documentLength(forID id: String) -> Int? {
+        value(forID: id, keyPath: \.documentLength)
     }
 
     /// The canonical `id`-field trigram set for `id`, or `nil` if `id` isn't indexed.
     ///
-    /// - Parameter forId: the id to look up.
+    /// - Parameter forID: the id to look up.
     /// - Returns: the canonical `id`-field trigram set, or `nil` if `id`
     ///   isn't indexed.
-    public func idTrigramSet(forId id: String) -> Set<String>? {
-        value(forId: id, keyPath: \.idTrigramSet)
+    public func idTrigramSet(forID id: String) -> Set<String>? {
+        value(forID: id, keyPath: \.idTrigramSet)
     }
 
     /// The canonical block-field trigram set for `id`, or `nil` if `id` isn't indexed.
     ///
-    /// - Parameter forId: the id to look up.
+    /// - Parameter forID: the id to look up.
     /// - Returns: the canonical block-field trigram set, or `nil` if `id`
     ///   isn't indexed.
-    public func blockTrigramSet(forId id: String) -> Set<String>? {
-        value(forId: id, keyPath: \.blockTrigramSet)
+    public func blockTrigramSet(forID id: String) -> Set<String>? {
+        value(forID: id, keyPath: \.blockTrigramSet)
     }
 
     /// The embedding stored for `id`, or `nil` if `id` isn't indexed or not yet embedded.
@@ -244,11 +244,11 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
     /// `nil` until `MetadataIndex.build(items:embedder:previous:
     /// onDiagnostic:)` fills this storage slot.
     ///
-    /// - Parameter forId: the id to look up.
+    /// - Parameter forID: the id to look up.
     /// - Returns: the stored embedding, or `nil` if `id` isn't indexed or
     ///   not yet embedded.
-    public func embedding(forId id: String) -> [Float]? {
-        value(forId: id, keyPath: \.embedding) ?? nil
+    public func embedding(forID id: String) -> [Float]? {
+        value(forID: id, keyPath: \.embedding) ?? nil
     }
 
     // MARK: - Embedding at index-build/update time
@@ -340,12 +340,12 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
         onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
     ) -> (baseline: MetadataIndex<Item>, idsToEmbed: [String], textsToEmbed: [String]) {
         let baseline = MetadataIndex(items: items, onDiagnostic: onDiagnostic)
-        var entriesById = baseline.entriesById
+        var entriesByID = baseline.entriesByID
         var idsToEmbed: [String] = []
         var textsToEmbed: [String] = []
 
         for id in baseline.ids {
-            guard let entry = entriesById[id] else { continue }
+            guard let entry = entriesByID[id] else { continue }
             // Reusing `previousEntry.embedding` is only valid when there is
             // an actual embedding to reuse: a `nil` embedding (no embedder
             // configured, or a transient embed failure, at the prior build)
@@ -354,17 +354,17 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
             // embedder becomes available, defeating "embed catch-up"
             // (plan.md §8). A hash match with no prior embedding still
             // queues the item for embedding below, same as a brand-new item.
-            if let previousEntry = previous?.entriesById[id],
+            if let previousEntry = previous?.entriesByID[id],
                 previousEntry.blockHash == entry.blockHash,
                 let previousEmbedding = previousEntry.embedding {
-                entriesById[id] = Self.withEmbedding(previousEmbedding, replacing: entry)
+                entriesByID[id] = Self.withEmbedding(previousEmbedding, replacing: entry)
             } else {
                 idsToEmbed.append(id)
                 textsToEmbed.append(entry.block)
             }
         }
 
-        return (MetadataIndex(ids: baseline.ids, entriesById: entriesById), idsToEmbed, textsToEmbed)
+        return (MetadataIndex(ids: baseline.ids, entriesByID: entriesByID), idsToEmbed, textsToEmbed)
     }
 
     /// Returns a copy of `index` with `ids`' embeddings replaced by `vectors`
@@ -410,14 +410,14 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
         embeddedFrom source: MetadataIndex<Item>,
         into index: MetadataIndex<Item>
     ) -> MetadataIndex<Item> {
-        var entriesById = index.entriesById
+        var entriesByID = index.entriesByID
         for (id, vector) in zip(ids, vectors) {
-            guard let entry = entriesById[id], let sourceEntry = source.entriesById[id],
+            guard let entry = entriesByID[id], let sourceEntry = source.entriesByID[id],
                 entry.blockHash == sourceEntry.blockHash
             else { continue }
-            entriesById[id] = Self.withEmbedding(vector, replacing: entry)
+            entriesByID[id] = Self.withEmbedding(vector, replacing: entry)
         }
-        return MetadataIndex(ids: index.ids, entriesById: entriesById)
+        return MetadataIndex(ids: index.ids, entriesByID: entriesByID)
     }
 
     /// Whether `self` and `other` index the same ids, in the same order,
@@ -436,7 +436,7 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
     /// - Returns: whether both indexes are content-identical.
     func hasIdenticalContent(to other: MetadataIndex<Item>) -> Bool {
         guard ids == other.ids else { return false }
-        return ids.allSatisfy { entriesById[$0]?.blockHash == other.entriesById[$0]?.blockHash }
+        return ids.allSatisfy { entriesByID[$0]?.blockHash == other.entriesByID[$0]?.blockHash }
     }
 
     /// Returns a copy of `entry` with its `embedding` replaced by `embedding`.
@@ -464,7 +464,7 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
         )
     }
 
-    /// Reconstructs an index directly from already-precomputed `ids` and `entriesById`.
+    /// Reconstructs an index directly from already-precomputed `ids` and `entriesByID`.
     ///
     /// The internal counterpart to `init(items:onDiagnostic:)` that
     /// `build(items:embedder:previous:onDiagnostic:)` uses to return a new
@@ -473,9 +473,9 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
     ///
     /// - Parameters:
     ///   - ids: the precomputed ids, in first-seen order.
-    ///   - entriesById: the precomputed entries, keyed by id.
-    private init(ids: [String], entriesById: [String: Entry]) {
+    ///   - entriesByID: the precomputed entries, keyed by id.
+    private init(ids: [String], entriesByID: [String: Entry]) {
         self.ids = ids
-        self.entriesById = entriesById
+        self.entriesByID = entriesByID
     }
 }

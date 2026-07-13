@@ -390,7 +390,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     ///   - indices: the document indices to sort.
     ///   - normalized: doc index -> normalized `[0, 1]` fused score.
     /// - Returns: `indices`, ordered descending by score.
-    private static func sortByNormalizedScore(_ indices: [Int], using normalized: [Int: Double]) -> [Int] {
+    private static func sortByNormalizedScore(indices: [Int], using normalized: [Int: Double]) -> [Int] {
         indices.sorted { left, right in
             let leftScore = normalized[left] ?? 0.0
             let rightScore = normalized[right] ?? 0.0
@@ -415,7 +415,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         let signals = await Self.computeSignals(intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic)
         let normalized = Self.fuseAndNormalize(signals: signals, weights: weights)
 
-        let orderedDocumentIndices = Self.sortByNormalizedScore(Array(normalized.keys), using: normalized)
+        let orderedDocumentIndices = Self.sortByNormalizedScore(indices: Array(normalized.keys), using: normalized)
 
         return Self.buildMatches(
             documentIndices: Array(orderedDocumentIndices.prefix(limit)),
@@ -462,7 +462,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         let signals = await computeSignals(intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic)
         let normalized = fuseAndNormalize(signals: signals, weights: weights)
 
-        let rankedIndices = sortByNormalizedScore(Array(normalized.keys), using: normalized)
+        let rankedIndices = sortByNormalizedScore(indices: Array(normalized.keys), using: normalized)
         let unrankedIndices = index.ids.indices.filter { normalized[$0] == nil }
 
         return buildMatches(documentIndices: rankedIndices + unrankedIndices, index: index, normalized: normalized, signals: signals)
@@ -585,7 +585,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     ) -> [Match<Item>] {
         documentIndices.compactMap { documentIndex in
             let id = index.ids[documentIndex]
-            guard let item = index.item(forId: id), let block = index.block(forId: id) else { return nil }
+            guard let item = index.item(forID: id), let block = index.block(forID: id) else { return nil }
             return Match(
                 id: id,
                 block: block,
@@ -614,13 +614,13 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         }
 
         let documents = index.ids.map { id in
-            (index.documentLength(forId: id) ?? 0, index.termSet(forId: id) ?? [])
+            (index.documentLength(forID: id) ?? 0, index.termSet(forID: id) ?? [])
         }
         let corpus = BM25Corpus(queryTokens: queryTokens, documents: documents)
         let scores = index.ids.map { id in
             corpus.score(
-                weightedTermFrequency: index.weightedTermFrequency(forId: id) ?? [:],
-                documentLength: index.documentLength(forId: id) ?? 0,
+                weightedTermFrequency: index.weightedTermFrequency(forID: id) ?? [:],
+                documentLength: index.documentLength(forID: id) ?? 0,
                 queryTokens: queryTokens
             )
         }
@@ -640,8 +640,8 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     private static func computeTrigramRanking(intent: String, index: MetadataIndex<Item>) -> (ranking: [Int], scores: [Double]) {
         let querySet = Trigram.canonicalTrigramSet(text: intent)
         let scores = index.ids.map { id -> Double in
-            let idTrigramSet = index.idTrigramSet(forId: id) ?? []
-            let blockTrigramSet = index.blockTrigramSet(forId: id) ?? []
+            let idTrigramSet = index.idTrigramSet(forID: id) ?? []
+            let blockTrigramSet = index.blockTrigramSet(forID: id) ?? []
             return BM25.primaryFieldWeight * Trigram.dice(querySet: querySet, targetSet: idTrigramSet)
                 + BM25.bodyFieldWeight * Trigram.dice(querySet: querySet, targetSet: blockTrigramSet)
         }
@@ -671,7 +671,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         embedder: (any TextEmbedding)?,
         onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
     ) async -> (ranking: [Int], scores: [Double]) {
-        guard let embedder, index.ids.contains(where: { index.embedding(forId: $0) != nil }) else {
+        guard let embedder, index.ids.contains(where: { index.embedding(forID: $0) != nil }) else {
             return embeddingUnavailableRanking(count: index.count, onDiagnostic: onDiagnostic)
         }
 
@@ -691,8 +691,8 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         }
 
         let scores = index.ids.map { id -> Double in
-            guard let itemEmbedding = index.embedding(forId: id) else { return 0.0 }
-            return cosineSimilarity(queryEmbedding, itemEmbedding)
+            guard let itemEmbedding = index.embedding(forID: id) else { return 0.0 }
+            return cosineSimilarity(query: queryEmbedding, target: itemEmbedding)
         }
         return (rankingOfPositiveScores(scores: scores), scores)
     }
@@ -719,11 +719,14 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
 
     /// Cosine similarity between two equal-length vectors: `(a · b) / (|a| |b|)`.
     ///
+    /// - Parameters:
+    ///   - query: the query's embedding.
+    ///   - target: the catalog entry's stored block embedding.
     /// - Returns: the similarity in `[-1.0, 1.0]`, or `0.0` if the vectors
     ///   differ in length or either has zero magnitude (orthogonal-by-
     ///   convention, matching `Signals.cosine`'s documented `0.0` for "either
     ///   the query or the doc lacks an embedding").
-    private static func cosineSimilarity(_ query: [Float], _ target: [Float]) -> Double {
+    private static func cosineSimilarity(query: [Float], target: [Float]) -> Double {
         guard query.count == target.count, !query.isEmpty else { return 0.0 }
 
         var dotProduct: Float = 0.0

@@ -119,7 +119,7 @@ actor SelectionTier<Item: SearchableMetadata> {
 
         let child = try await cachedRootSession().fork()
         let selection = try await child.respond(to: intent, generating: Selection.self)
-        return matches(forIds: selection.ids, limit: limit)
+        return matches(forIDs: selection.ids, limit: limit)
     }
 
     /// Returns this tier's cached root session, creating and caching it on
@@ -168,9 +168,9 @@ actor SelectionTier<Item: SearchableMetadata> {
         let session = config.model(prefix)
         let selection = try await session.respond(to: intent, generating: Selection.self)
         return matches(
-            forIds: selection.ids,
+            forIDs: selection.ids,
             limit: limit,
-            allowedIds: Set(candidateIds),
+            allowedIDs: Set(candidateIds),
             retrievalMatches: Dictionary(uniqueKeysWithValues: candidates.map { ($0.id, $0) })
         )
     }
@@ -186,9 +186,9 @@ actor SelectionTier<Item: SearchableMetadata> {
     /// - Parameters:
     ///   - ids: the model-selected ids, in the order the model returned them.
     ///   - limit: the maximum number of matches to return.
-    ///   - allowedIds: restricts resolution to this id set (the over-budget
+    ///   - allowedIDs: restricts resolution to this id set (the over-budget
     ///     path's current candidates) in addition to the catalog itself; an
-    ///     id absent from `allowedIds` is treated exactly like an id absent
+    ///     id absent from `allowedIDs` is treated exactly like an id absent
     ///     from the catalog. `nil` (the under-budget default) allows any
     ///     catalog id.
     ///   - retrievalMatches: the retrieval `Match` (real fused `score` and
@@ -198,9 +198,9 @@ actor SelectionTier<Item: SearchableMetadata> {
     /// - Returns: the verbatim `Match`es for every known, allowed, first-seen
     ///   id, at most `limit`.
     private func matches(
-        forIds ids: [String],
+        forIDs ids: [String],
         limit: Int,
-        allowedIds: Set<String>? = nil,
+        allowedIDs: Set<String>? = nil,
         retrievalMatches: [String: Match<Item>] = [:]
     ) -> [Match<Item>] {
         var results: [Match<Item>] = []
@@ -209,9 +209,9 @@ actor SelectionTier<Item: SearchableMetadata> {
         for id in ids {
             guard results.count < limit else { break }
             guard seenIds.insert(id).inserted else { continue }
-            guard allowedIds?.contains(id) ?? true,
-                let item = index.item(forId: id),
-                let block = index.block(forId: id)
+            guard allowedIDs?.contains(id) ?? true,
+                let item = index.item(forID: id),
+                let block = index.block(forID: id)
             else {
                 onDiagnostic(.unknownSelectedId(id: id))
                 continue
@@ -259,7 +259,7 @@ actor SelectionTier<Item: SearchableMetadata> {
     ///   - index: the catalog index to look candidate blocks up in.
     /// - Returns: the assembled prefix text.
     static func assemblePrefix(preamble: String, ids: [String], index: MetadataIndex<Item>) -> String {
-        let summaryBlocks = ids.compactMap { index.item(forId: $0)?.renderSummaryBlock() }
+        let summaryBlocks = ids.compactMap { index.item(forID: $0)?.renderSummaryBlock() }
         return "\(preamble)\n\n# Candidates\n\(summaryBlocks.joined(separator: "\n\n"))"
     }
 

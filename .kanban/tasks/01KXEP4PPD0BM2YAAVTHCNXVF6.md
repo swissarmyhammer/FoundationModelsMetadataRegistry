@@ -30,6 +30,26 @@ comments:
 
     Discovery worth noting for the future selection-tier migration task: because local SelectionTier is internal, RankKit's public (non-generic) SelectionTier actor is now newly visible API surface to package clients — documented in RankKitReexport.swift.
   timestamp: 2026-07-13T22:46:08.786180+00:00
+- actor: claude-code
+  id: 01kxetp3qmdw0h1x2snhm92zmn
+  text: 'Iteration 1: implement + test green (97 tests / 9 suites, 0 failures; only the 3 known pre-existing warnings). Checkpoint committed locally as b163f08 "refactor(search): adopt RankKit, replacing ported search primitives" (20 files, +136/−959). Blanket @_exported import worked — no scoped-re-export fallback needed. Discovery for the future selection-tier migration: local SelectionTier is `internal`, so clients already resolve RankKit''s public SelectionTier through the re-export. Now sending to /review scoped HEAD~1..HEAD.'
+  timestamp: 2026-07-13T22:48:39.412334+00:00
+- actor: claude-code
+  id: 01kxevzpkr53dam14s9gfx2m7s
+  text: |-
+    Re-worked review findings (pulled review → doing). All 6 findings fixed and flipped to [x]:
+
+    - Findings 1-4: `forId` → `forID` across the WHOLE of MetadataIndex.swift — all 8 public accessors (item/block/weightedTermFrequency/termSet/documentLength/idTrigramSet/blockTrigramSet/embedding), the private `value(forID:keyPath:)` helper, and every doc comment. All call sites updated in MetadataSearcher.swift, SelectionTier.swift, CatalogTests.swift, EmbeddingTests.swift, HotReloadTests.swift. `grep -r forId Sources Tests Examples` → zero matches.
+    - Finding 5: `sortByNormalizedScore(indices:using:)` — first param labeled, both call sites updated.
+    - Finding 6: `cosineSimilarity(query:target:)` — both params labeled, call site updated, `- Parameters:` doc section added.
+    - Same-cause sweeps in forced-touch files: `entriesByID` (private property + private `init(ids:entriesByID:)` label, MetadataIndex.swift whole-file), `forIDs`/`allowedIDs` in SelectionTier's private `matches` signature + doc + call sites.
+
+    Deliberately NOT renamed (out of scope, public API in untouched files): `MetadataDiagnostic.duplicateId` / `.unknownSelectedId` enum cases; local vars like `seenIds`. Examples/: zero source changes — the card's compile-unchanged guarantee holds (Examples never call the renamed accessors).
+
+    Note: the renamed `forID` accessors ARE public API of this package, so external consumers (none known besides Examples) would see a source-breaking label change — exactly what the findings mandated.
+
+    Evidence: swift test (GPU-free, no METADATA_REGISTRY_INTEGRATION_TESTS) exit 0, 97 tests in 9 suites passed. Diff scoped to exactly 6 source/test files. Double-check agent verdict: PASS (pure rename, zero behavior change, zero stale doc refs; one non-blocking note: plan.md:199 prose mentions "allowedIds" — pre-existing planning doc, left alone). Task left in doing for /review.
+  timestamp: 2026-07-13T23:11:22.232796+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'Adopt RankKit: replace ported search primitives with the shared dependency'
@@ -67,3 +87,12 @@ First step of the migration onto `swissarmyhammer/RankKit` (the extraction this 
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. (Here the RED step is the compile/test failure after deleting the ported files; GREEN is the dependency + re-export restoring the suite.)
+
+## Review Findings (2026-07-13 17:49)
+
+- [x] `Sources/FoundationModelsMetadataRegistry/Catalog/MetadataIndex.swift:193` — Parameter label `forId` uses mixed-case acronym. Interior 'ID' must be uniformly uppercase: `forID`. Change parameter label to `forID`.
+- [x] `Sources/FoundationModelsMetadataRegistry/Catalog/MetadataIndex.swift:200` — Parameter label `forId` uses mixed-case acronym. Interior 'ID' must be uniformly uppercase: `forID`. Change parameter label to `forID`.
+- [x] `Sources/FoundationModelsMetadataRegistry/Catalog/MetadataIndex.swift:207` — Parameter label `forId` uses mixed-case acronym. Interior 'ID' must be uniformly uppercase: `forID`. Change parameter label to `forID`.
+- [x] `Sources/FoundationModelsMetadataRegistry/Catalog/MetadataIndex.swift:214` — Parameter label `forId` uses mixed-case acronym. Interior 'ID' must be uniformly uppercase: `forID`. Change parameter label to `forID`.
+- [x] `Sources/FoundationModelsMetadataRegistry/MetadataSearcher.swift:352` — First parameter `indices` on `sortByNormalizedScore` is unlabeled, violating 'Omit the first argument label only for value-preserving conversions.' Sorting is a transformation, not a value-preserving conversion, so the parameter should be labeled for fluent reading at the call site. Label the first parameter: `private static func sortByNormalizedScore(indices: [Int], using normalized: [Int: Double]) -> [Int]`.
+- [x] `Sources/FoundationModelsMetadataRegistry/MetadataSearcher.swift:486` — Both parameters on `cosineSimilarity` are unlabeled. Method and function names must form a grammatical phrase at the call site; `cosineSimilarity([...], [...])` does not read as a phrase. Parameters `query` and `target` carry salient semantic information and should be labeled. Label both parameters: `private static func cosineSimilarity(query: [Float], target: [Float]) -> Double`.
