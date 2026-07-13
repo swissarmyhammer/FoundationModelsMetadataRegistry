@@ -629,7 +629,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
 
     /// Computes the trigram fuzzy-ranking signal: `intent`'s canonical
     /// trigram set scored against each catalog entry's `id` (weighted
-    /// `BM25.idFieldWeight`) and block (weighted `BM25.blockFieldWeight`)
+    /// `BM25.primaryFieldWeight`) and block (weighted `BM25.bodyFieldWeight`)
     /// trigram sets — the same two-field weighting BM25 uses, applied to the
     /// trigram aggregate (`Signals.trigram`'s documented "field-weighted
     /// aggregate across several fields").
@@ -642,8 +642,8 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         let scores = index.ids.map { id -> Double in
             let idTrigramSet = index.idTrigramSet(forId: id) ?? []
             let blockTrigramSet = index.blockTrigramSet(forId: id) ?? []
-            return BM25.idFieldWeight * Trigram.dice(querySet: querySet, targetSet: idTrigramSet)
-                + BM25.blockFieldWeight * Trigram.dice(querySet: querySet, targetSet: blockTrigramSet)
+            return BM25.primaryFieldWeight * Trigram.dice(querySet: querySet, targetSet: idTrigramSet)
+                + BM25.bodyFieldWeight * Trigram.dice(querySet: querySet, targetSet: blockTrigramSet)
         }
         return (rankingOfPositiveScores(scores: scores), scores)
     }

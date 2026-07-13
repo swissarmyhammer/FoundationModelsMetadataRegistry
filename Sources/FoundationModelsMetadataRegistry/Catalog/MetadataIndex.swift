@@ -7,8 +7,8 @@ import Foundation
 /// everything lives in memory and is rebuilt wholesale from the caller's
 /// items). Each item's `id` and rendered `renderBlock()` are precomputed
 /// once at `init` into the data the retrieval tier scores against: a BM25
-/// field-weighted term frequency (`id` at `BM25.idFieldWeight`, block at
-/// `BM25.blockFieldWeight` — the `symbol_path`/body treatment
+/// field-weighted term frequency (`id` at `BM25.primaryFieldWeight`, block at
+/// `BM25.bodyFieldWeight` — the `symbol_path`/body treatment
 /// `CodeContextKit`'s `SearchCorpusSnapshot` established, ported here for
 /// the `id`/block fields plan.md §4 defines), a trigram set per field, and
 /// an embedding storage slot a future task fills at index-build/update time
@@ -33,8 +33,8 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
 
         /// The field-weighted term frequency across both fields.
         ///
-        /// `id`'s tokens are weighted `BM25.idFieldWeight`, `block`'s
-        /// tokens weighted `BM25.blockFieldWeight` — the `tf` term
+        /// `id`'s tokens are weighted `BM25.primaryFieldWeight`, `block`'s
+        /// tokens weighted `BM25.bodyFieldWeight` — the `tf` term
         /// `BM25Corpus.score` needs.
         let weightedTermFrequency: [String: Double]
 
@@ -137,10 +137,10 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
 
         var weightedTermFrequency: [String: Double] = [:]
         for token in idTokens {
-            weightedTermFrequency[token, default: 0.0] += BM25.idFieldWeight
+            weightedTermFrequency[token, default: 0.0] += BM25.primaryFieldWeight
         }
         for token in blockTokens {
-            weightedTermFrequency[token, default: 0.0] += BM25.blockFieldWeight
+            weightedTermFrequency[token, default: 0.0] += BM25.bodyFieldWeight
         }
 
         return Entry(

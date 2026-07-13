@@ -23,6 +23,19 @@ let packageName = "FoundationModelsMetadataRegistry"
 /// (fakes conform to the seams).
 let routerDependencyName = "FoundationModelsRouter"
 
+/// The name of the RankKit dependency package.
+///
+/// The shared search/ranking primitives library this package's ported
+/// copies were extracted into (plan.md decision #9). Supplies `BM25`,
+/// `BM25Corpus`, `Trigram`, `Tokenizer`, `RRF`, `Hit`, `Signals`,
+/// `TextEmbedding`, and `RoutedEmbedderAdapter`, re-exported to this
+/// package's consumers via `RankKitReexport.swift`. Wired as a remote
+/// dependency (`main` branch) rather than a local path dependency, for the
+/// same CI reason as `routerDependencyName` above. RankKit itself depends
+/// on FoundationModelsRouter `main`, so SwiftPM unifies it with the
+/// existing pin.
+let rankKitPackage = "RankKit"
+
 /// The `mlx-swift-lm` fork's package name.
 ///
 /// The same remote dependency FoundationModelsRouter itself declares;
@@ -172,6 +185,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/swissarmyhammer/\(routerDependencyName)", branch: "main"),
+        .package(url: "https://github.com/swissarmyhammer/\(rankKitPackage)", branch: "main"),
         .package(url: "https://github.com/swissarmyhammer/\(mlxPackage)", branch: "foundationmodels-fixes"),
         .package(url: "https://github.com/huggingface/\(huggingFacePackage)", from: "0.9.0"),
         .package(url: "https://github.com/huggingface/\(transformersPackage)", from: "1.3.0"),
@@ -188,7 +202,8 @@ let package = Package(
         .target(
             name: packageName,
             dependencies: [
-                .product(name: routerDependencyName, package: routerDependencyName)
+                .product(name: routerDependencyName, package: routerDependencyName),
+                .product(name: rankKitPackage, package: rankKitPackage),
             ],
             path: "Sources/\(packageName)"
         ),

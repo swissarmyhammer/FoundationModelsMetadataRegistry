@@ -85,9 +85,9 @@ struct CatalogTests {
         let index = MetadataIndex(items: [item])
 
         let weightedTermFrequency = try #require(index.weightedTermFrequency(forId: "deploy"))
-        #expect(weightedTermFrequency["deploy"] == BM25.idFieldWeight)
-        #expect(weightedTermFrequency["ships"] == BM25.blockFieldWeight)
-        #expect(weightedTermFrequency["production"] == BM25.blockFieldWeight)
+        #expect(weightedTermFrequency["deploy"] == BM25.primaryFieldWeight)
+        #expect(weightedTermFrequency["ships"] == BM25.bodyFieldWeight)
+        #expect(weightedTermFrequency["production"] == BM25.bodyFieldWeight)
     }
 
     @Test
@@ -99,7 +99,7 @@ struct CatalogTests {
         let index = MetadataIndex(items: [item])
 
         let weightedTermFrequency = try #require(index.weightedTermFrequency(forId: "deploy"))
-        #expect(weightedTermFrequency["deploy"] == BM25.idFieldWeight + BM25.blockFieldWeight)
+        #expect(weightedTermFrequency["deploy"] == BM25.primaryFieldWeight + BM25.bodyFieldWeight)
     }
 
     @Test
