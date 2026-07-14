@@ -69,8 +69,12 @@ comments:
 
     Evidence: swift test (GPU-free, no METADATA_REGISTRY_INTEGRATION_TESTS) exit 0, 97 tests in 9 suites passed. Double-check agent verdict: PASS (independently re-ran swift test 97/97, confirmed pure rename + zero residue + no stale docs). Task left in doing for /review.
   timestamp: 2026-07-14T10:40:52.662903+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01kxg3k1vhekqxzgf7a3b90cav
+  text: 'Iteration 3: round-2 findings fixed (idsToEmbed → pendingEmbedIDs, avoiding the uppercase-leading `IDsToEmbed` the engine literally suggested; candidateIds → candidateIDs; seenIds → seenIDs via root-cause sweep). Tests green 97/97, no new warnings. Checkpoint efe6d42 (5 files, +51/−22). Sending to /review HEAD~1..HEAD — round 3.'
+  timestamp: 2026-07-14T10:43:30.801610+00:00
+position_column: done
+position_ordinal: 8c80
 title: 'Adopt RankKit: replace ported search primitives with the shared dependency'
 ---
 ## What
