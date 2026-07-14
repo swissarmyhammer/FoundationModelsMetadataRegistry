@@ -311,14 +311,14 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     ///   policy).
     public func update(items: [Item]) async {
         let previous = index
-        let (baseline, idsToEmbed, textsToEmbed) = MetadataIndex.incrementalBaseline(
+        let (baseline, pendingEmbedIDs, textsToEmbed) = MetadataIndex.incrementalBaseline(
             items: items,
             previous: previous,
             onDiagnostic: onDiagnostic
         )
 
         let contentChanged = !baseline.hasIdenticalContent(to: previous)
-        guard contentChanged || !idsToEmbed.isEmpty else { return }
+        guard contentChanged || !pendingEmbedIDs.isEmpty else { return }
 
         index = baseline
         // Only a genuine content change warrants dropping the cached root
@@ -331,9 +331,9 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
             }
         }
 
-        guard !idsToEmbed.isEmpty, let embedder else { return }
+        guard !pendingEmbedIDs.isEmpty, let embedder else { return }
 
-        onDiagnostic(.embedCatchUp(pending: idsToEmbed.count, total: baseline.count))
+        onDiagnostic(.embedCatchUp(pending: pendingEmbedIDs.count, total: baseline.count))
         // Merges into `index` as it stands *after* this suspension -- not
         // into the stale `baseline` this re-embed started from -- and only
         // where `index`'s current entry still matches `baseline`'s block
@@ -344,8 +344,8 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         // by this call's now-stale vector finishing late -- including when
         // that concurrent call re-embedded the *same* id with different
         // content, not just when it removed the id outright.
-        if let vectors = try? await embedder.embed(textsToEmbed), vectors.count == idsToEmbed.count {
-            index = MetadataIndex.mergingEmbeddings(ids: idsToEmbed, vectors: vectors, embeddedFrom: baseline, into: index)
+        if let vectors = try? await embedder.embed(textsToEmbed), vectors.count == pendingEmbedIDs.count {
+            index = MetadataIndex.mergingEmbeddings(ids: pendingEmbedIDs, vectors: vectors, embeddedFrom: baseline, into: index)
         }
     }
 

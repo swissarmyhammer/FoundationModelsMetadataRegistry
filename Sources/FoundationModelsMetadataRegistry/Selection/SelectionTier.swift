@@ -163,14 +163,14 @@ actor SelectionTier<Item: SearchableMetadata> {
         // model to choose among -- when the catalog itself is empty.
         guard !candidates.isEmpty else { return [] }
 
-        let candidateIds = candidates.map(\.id)
-        let prefix = Self.assemblePrefix(preamble: config.preamble, ids: candidateIds, index: index)
+        let candidateIDs = candidates.map(\.id)
+        let prefix = Self.assemblePrefix(preamble: config.preamble, ids: candidateIDs, index: index)
         let session = config.model(prefix)
         let selection = try await session.respond(to: intent, generating: Selection.self)
         return matches(
             forIDs: selection.ids,
             limit: limit,
-            allowedIDs: Set(candidateIds),
+            allowedIDs: Set(candidateIDs),
             retrievalMatches: Dictionary(uniqueKeysWithValues: candidates.map { ($0.id, $0) })
         )
     }
@@ -205,10 +205,10 @@ actor SelectionTier<Item: SearchableMetadata> {
     ) -> [Match<Item>] {
         var results: [Match<Item>] = []
         results.reserveCapacity(min(ids.count, limit))
-        var seenIds: Set<String> = []
+        var seenIDs: Set<String> = []
         for id in ids {
             guard results.count < limit else { break }
-            guard seenIds.insert(id).inserted else { continue }
+            guard seenIDs.insert(id).inserted else { continue }
             guard allowedIDs?.contains(id) ?? true,
                 let item = index.item(forID: id),
                 let block = index.block(forID: id)

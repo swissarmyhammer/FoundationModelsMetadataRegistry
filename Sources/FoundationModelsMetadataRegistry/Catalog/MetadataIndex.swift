@@ -301,13 +301,13 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
         previous: MetadataIndex<Item>? = nil,
         onDiagnostic: @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) }
     ) async -> MetadataIndex<Item> {
-        let (baseline, idsToEmbed, textsToEmbed) = incrementalBaseline(items: items, previous: previous, onDiagnostic: onDiagnostic)
-        guard let embedder, !idsToEmbed.isEmpty,
-            let vectors = try? await embedder.embed(textsToEmbed), vectors.count == idsToEmbed.count
+        let (baseline, pendingEmbedIDs, textsToEmbed) = incrementalBaseline(items: items, previous: previous, onDiagnostic: onDiagnostic)
+        guard let embedder, !pendingEmbedIDs.isEmpty,
+            let vectors = try? await embedder.embed(textsToEmbed), vectors.count == pendingEmbedIDs.count
         else {
             return baseline
         }
-        return mergingEmbeddings(ids: idsToEmbed, vectors: vectors, embeddedFrom: baseline, into: baseline)
+        return mergingEmbeddings(ids: pendingEmbedIDs, vectors: vectors, embeddedFrom: baseline, into: baseline)
     }
 
     /// The synchronous, hash-guarded half of index-build/update: indexes
@@ -319,7 +319,7 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
     /// Factored out of `build(items:embedder:previous:onDiagnostic:)` so
     /// `MetadataSearcher.update(items:)` (plan.md §8, hot reload) can assign
     /// the returned baseline to its actor-isolated `index` *before* awaiting
-    /// an embedder call with the returned `idsToEmbed`/`textsToEmbed` —
+    /// an embedder call with the returned `pendingEmbedIDs`/`textsToEmbed` —
     /// actor reentrancy across that later `await` is what lets a concurrent
     /// `search(intent:limit:)` see this rebuilt baseline and serve
     /// keyword-only results for the still-pending items in the interim,
@@ -338,10 +338,10 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
         items: [Item],
         previous: MetadataIndex<Item>?,
         onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
-    ) -> (baseline: MetadataIndex<Item>, idsToEmbed: [String], textsToEmbed: [String]) {
+    ) -> (baseline: MetadataIndex<Item>, pendingEmbedIDs: [String], textsToEmbed: [String]) {
         let baseline = MetadataIndex(items: items, onDiagnostic: onDiagnostic)
         var entriesByID = baseline.entriesByID
-        var idsToEmbed: [String] = []
+        var pendingEmbedIDs: [String] = []
         var textsToEmbed: [String] = []
 
         for id in baseline.ids {
@@ -359,12 +359,12 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
                 let previousEmbedding = previousEntry.embedding {
                 entriesByID[id] = Self.withEmbedding(previousEmbedding, replacing: entry)
             } else {
-                idsToEmbed.append(id)
+                pendingEmbedIDs.append(id)
                 textsToEmbed.append(entry.block)
             }
         }
 
-        return (MetadataIndex(ids: baseline.ids, entriesByID: entriesByID), idsToEmbed, textsToEmbed)
+        return (MetadataIndex(ids: baseline.ids, entriesByID: entriesByID), pendingEmbedIDs, textsToEmbed)
     }
 
     /// Returns a copy of `index` with `ids`' embeddings replaced by `vectors`

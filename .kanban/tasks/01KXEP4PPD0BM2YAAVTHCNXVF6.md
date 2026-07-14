@@ -50,6 +50,25 @@ comments:
 
     Evidence: swift test (GPU-free, no METADATA_REGISTRY_INTEGRATION_TESTS) exit 0, 97 tests in 9 suites passed. Diff scoped to exactly 6 source/test files. Double-check agent verdict: PASS (pure rename, zero behavior change, zero stale doc refs; one non-blocking note: plan.md:199 prose mentions "allowedIds" — pre-existing planning doc, left alone). Task left in doing for /review.
   timestamp: 2026-07-13T23:11:22.232796+00:00
+- actor: claude-code
+  id: 01kxew5xsz3d68pqm5sy0gennm
+  text: 'Iteration 2: all 6 review findings fixed (forID rename applied across the whole file plus forced-touch call sites in MetadataSearcher/SelectionTier and 3 test files; sortByNormalizedScore(indices:using:); cosineSimilarity(query:target:)). Tests green 97/97, no new warnings. Checkpoint e1770d8 "refactor(naming): rename forId->forID and related identifier labels per review" (8 files, +146/−108). Note: the renamed MetadataIndex accessors are public API — label change is source-breaking for hypothetical external consumers, exactly as the findings mandated; Examples/ unchanged. Sending to /review HEAD~1..HEAD.'
+  timestamp: 2026-07-13T23:14:46.207978+00:00
+- actor: claude-code
+  id: 01kxg3e7dp2vastqx6jyg6e3pp
+  text: |-
+    Re-worked the 2026-07-14 05:26 review findings (pulled review → doing). Both flipped to [x]:
+
+    - Finding 1: `idsToEmbed` → `pendingEmbedIDs`. Chose to move the acronym off the front rather than write `IDsToEmbed` (which would start a variable uppercase, violating Swift lowerCamelCase); trailing position is where the project's uppercase-ID convention (`allowedIDs`, `entriesByID`, `forIDs`) applies unambiguously, and "pending" matches the existing `embedCatchUp(pending:total:)` vocabulary. Applied everywhere the identifier flows: local in `MetadataIndex.build`, tuple label + local + doc comment in `incrementalBaseline`, and the destructured local in `MetadataSearcher.update` — leaving the tuple label unchanged would have handed the next review an immediate recurrence.
+    - Finding 2: `candidateIds` → `candidateIDs` (SelectionTier.swift, all 3 uses).
+    - Root-cause sweep of the three touched files: `seenIds` → `seenIDs` (SelectionTier.swift). Only remaining lowercase-Id hits are references to the out-of-scope public enum cases `.duplicateId`/`.unknownSelectedId` (they name the actual cases in Diagnostics.swift, untouched) and leading-position acronyms (`ids`, `idTokens`, `idTrigramSet`, `idEnumGrammar`) where lowercase IS the correct Swift form.
+
+    Tooling note: the files tool's replace_all only replaced one occurrence per call (reported replacements_made: 1 despite replace_all: true); completed the rename via perl -pi and verified zero old-name residue with rg across Sources/Tests/Examples.
+
+    Files touched: Catalog/MetadataIndex.swift, MetadataSearcher.swift, Selection/SelectionTier.swift. Pure rename, zero behavior change, internal-only surface (`incrementalBaseline` is internal; the rest are locals).
+
+    Evidence: swift test (GPU-free, no METADATA_REGISTRY_INTEGRATION_TESTS) exit 0, 97 tests in 9 suites passed. Double-check agent verdict: PASS (independently re-ran swift test 97/97, confirmed pure rename + zero residue + no stale docs). Task left in doing for /review.
+  timestamp: 2026-07-14T10:40:52.662903+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'Adopt RankKit: replace ported search primitives with the shared dependency'
@@ -83,7 +102,6 @@ First step of the migration onto `swissarmyhammer/RankKit` (the extraction this 
 ## Tests
 - [x] Update `Tests/FoundationModelsMetadataRegistryTests/CatalogTests.swift` weighted-term-frequency expectations to the renamed `BM25.primaryFieldWeight`/`BM25.bodyFieldWeight` constants (same values, so assertions still prove the ×5/×1 weighting)
 - [x] No new tests required beyond that: the existing pipeline suites (`RetrievalSearchTests.swift`, `EmbeddingTests.swift`, `HotReloadTests.swift`, `SelectionTests.swift`, `OverBudgetTests.swift`, `ExamplesSmokeTests.swift`) exercise every re-exported primitive end-to-end and must pass unchanged
-- [x] `swift test` (GPU-free default path, no `METADATA_REGISTRY_INTEGRATION_TESTS`) exits 0 with all suites green
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. (Here the RED step is the compile/test failure after deleting the ported files; GREEN is the dependency + re-export restoring the suite.)
@@ -96,3 +114,8 @@ First step of the migration onto `swissarmyhammer/RankKit` (the extraction this 
 - [x] `Sources/FoundationModelsMetadataRegistry/Catalog/MetadataIndex.swift:214` — Parameter label `forId` uses mixed-case acronym. Interior 'ID' must be uniformly uppercase: `forID`. Change parameter label to `forID`.
 - [x] `Sources/FoundationModelsMetadataRegistry/MetadataSearcher.swift:352` — First parameter `indices` on `sortByNormalizedScore` is unlabeled, violating 'Omit the first argument label only for value-preserving conversions.' Sorting is a transformation, not a value-preserving conversion, so the parameter should be labeled for fluent reading at the call site. Label the first parameter: `private static func sortByNormalizedScore(indices: [Int], using normalized: [Int: Double]) -> [Int]`.
 - [x] `Sources/FoundationModelsMetadataRegistry/MetadataSearcher.swift:486` — Both parameters on `cosineSimilarity` are unlabeled. Method and function names must form a grammatical phrase at the call site; `cosineSimilarity([...], [...])` does not read as a phrase. Parameters `query` and `target` carry salient semantic information and should be labeled. Label both parameters: `private static func cosineSimilarity(query: [Float], target: [Float]) -> Double`.
+
+## Review Findings (2026-07-14 05:26)
+
+- [x] `Sources/FoundationModelsMetadataRegistry/Catalog/MetadataIndex.swift:305` — Local variable `idsToEmbed` stores identifiers and uses lowercase `ids`, but the refactor establishes an uppercase-`ID` convention throughout (`forID`, `allowedIDs`, `forIDs`, `entriesByID`) — this variable should follow the same invariant. Rename `idsToEmbed` to `IDsToEmbed` on line 305 (and its uses on lines 310–330) to match the identifier-naming invariant applied by this refactor. **Resolved as `pendingEmbedIDs`**: the literal `IDsToEmbed` would start a variable with an uppercase letter, violating Swift's lowerCamelCase rule; moving the acronym off the front puts `ID` in trailing position where the uppercase convention applies cleanly. Renamed consistently everywhere the identifier flows: `build`, `incrementalBaseline` (tuple label + local + doc comment), and `MetadataSearcher.update`.
+- [x] `Sources/FoundationModelsMetadataRegistry/Selection/SelectionTier.swift:179` — Variable `candidateIds` should be `candidateIDs` per the casing rule for acronyms. When the acronym "ID" appears in the interior or final position of a lowerCamelCase name, it must be up-cased. Rename `candidateIds` to `candidateIDs` on line 179, and update its uses on lines 180 and 183 where it appears in subsequent expressions.
