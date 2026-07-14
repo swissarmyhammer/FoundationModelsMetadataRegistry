@@ -272,7 +272,9 @@ actor SelectionTier<Item: SearchableMetadata> {
     /// schema in `Grammar.jsonSchema(_:)`), with an `enum` constraint
     /// injected into the `ids` array's `items` subschema so the model is
     /// structurally incapable of inventing an id outside the current
-    /// candidate set.
+    /// candidate set, and a `maxItems` cap of `ids.count` so the compiled
+    /// grammar bounds the array's length — the guard against runaway
+    /// generation on off-topic intents.
     ///
     /// - Parameter ids: the candidate id set to constrain output to — the
     ///   full catalog's ids under budget, the top-M ranked ids over budget.
@@ -298,6 +300,15 @@ actor SelectionTier<Item: SearchableMetadata> {
         // `enum` constraint above to make the *set* of ids structurally
         // exact, not just each individual element's membership.
         idsSchema["uniqueItems"] = true
+        // A hard structural cap on the array's length: a selection can never
+        // legitimately contain more ids than there are candidates. This is
+        // the constraint that actually stops runaway generation -- Router's
+        // grammar compiler (`RuntimeJSONSchemaConverter`) enforces
+        // `minItems`/`maxItems` but silently ignores `uniqueItems`, so
+        // without it the compiled grammar permits an unbounded-length array
+        // of repeated enum members (observed as a 6150-token runaway on an
+        // off-topic intent, task ^678h0ex).
+        idsSchema["maxItems"] = ids.count
         properties["ids"] = idsSchema
         root["properties"] = properties
 

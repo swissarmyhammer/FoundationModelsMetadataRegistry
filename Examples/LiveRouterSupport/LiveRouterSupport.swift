@@ -90,6 +90,12 @@ public func idEnumGrammar(ids: [String]) throws -> Grammar {
                 "type": "array",
                 "items": ["type": "string", "enum": ids],
                 "uniqueItems": true,
+                // A hard structural cap on the array's length, mirroring
+                // `SelectionTier.idEnumGrammar(ids:)`: the grammar compiler
+                // enforces `maxItems` but ignores `uniqueItems`, so without
+                // this bound an off-topic query can run away generating an
+                // unbounded array of repeated enum members (task ^678h0ex).
+                "maxItems": ids.count,
             ] as [String: Any]
         ],
         "required": ["ids"],
