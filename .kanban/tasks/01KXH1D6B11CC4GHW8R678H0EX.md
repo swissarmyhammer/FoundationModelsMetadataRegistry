@@ -19,8 +19,8 @@ comments:
 
     Remaining follow-up (out of scope for this repo): acceptance criterion 3 — re-run FoundationModelsMultitool's PrefixReuseTests on real hardware after bumping that repo's pinned resolution to pick up this fix, confirming the second findAPIs call on an off-topic task no longer runs away to thousands of tokens.
   timestamp: 2026-07-14T21:57:13.199835+00:00
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: 8d80
 title: Bound SelectionTier.idEnumGrammar's ids array with maxItems to prevent runaway guided-generation on off-topic findAPIs queries
 ---
 ## What
