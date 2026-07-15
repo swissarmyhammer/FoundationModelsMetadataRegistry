@@ -219,33 +219,34 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         self.onDiagnostic = onDiagnostic
         self.selectionConfig = selection
         self.selectionTier = selection.map { config in
-            (
-                tier: Self.makeSelectionTier(
-                    index: index,
-                    config: config,
-                    weights: weights,
-                    embedder: embedder,
-                    onDiagnostic: onDiagnostic
-                ),
-                snapshot: index
+            Self.buildSelectionTierPair(
+                index: index, config: config, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic
             )
         }
     }
 
     /// Builds FoundationModelsRanker's `SelectionTier` over `index` (its
-    /// `SelectionCatalog` conformance), mapping the tier's `RankDiagnostic`s
-    /// into the same-named `MetadataDiagnostic` cases and wiring its
-    /// `retrievalRanking` closure to `rankEntireCatalog(intent:index:
-    /// weights:embedder:onDiagnostic:)` (each `Match` reduced to the
-    /// item-less `SelectionMatch` the tier ranks with) — the one piece of
-    /// tier construction both the designated initializer and
-    /// `update(items:)` (plan.md §8, hot reload) need whenever the
-    /// underlying index changes: a fresh tier starts with no cached root
-    /// session and a prefix assembled from `index`.
+    /// `SelectionCatalog` conformance), paired with `index` itself as the
+    /// snapshot `selectionSearch(_:intent:limit:)` re-attaches typed items
+    /// from — the one piece of tier construction both the designated
+    /// initializer and `update(items:)` (plan.md §8, hot reload) need
+    /// whenever the underlying index changes: a fresh tier starts with no
+    /// cached root session and a prefix assembled from `index`. The tier's
+    /// `RankDiagnostic`s are mapped into the same-named `MetadataDiagnostic`
+    /// cases, and its `retrievalRanking` closure is wired to
+    /// `rankEntireCatalog(intent:index:weights:embedder:onDiagnostic:)`
+    /// (each `Match` reduced to the item-less `SelectionMatch` the tier
+    /// ranks with).
+    ///
+    /// `static`, not an instance method: the synchronous designated
+    /// initializer builds the pair from its own parameters, and SE-0327's
+    /// flow-sensitive actor-init isolation forbids writing `selectionTier`
+    /// after any method call on `self` — so an instance-method form could
+    /// never be shared with `init` at all.
     ///
     /// - Parameters:
     ///   - index: the catalog index the new tier answers `search(intent:
-    ///     limit:)` calls over.
+    ///     limit:)` calls over, and the snapshot it is paired with.
     ///   - config: the selection tier configuration to build against.
     ///   - weights: the per-signal fusion weights `retrievalRanking` scores
     ///     the over-budget candidate ranking with.
@@ -253,29 +254,33 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     ///     for the cosine signal.
     ///   - onDiagnostic: called for every diagnostic the new tier, and its
     ///     `retrievalRanking` closure, emit.
-    /// - Returns: a freshly constructed selection tier over `index`.
-    private static func makeSelectionTier(
+    /// - Returns: a freshly constructed selection tier over `index`, paired
+    ///   with `index` as the snapshot it was built over.
+    private static func buildSelectionTierPair(
         index: MetadataIndex<Item>,
         config: SelectionConfig,
         weights: Weights,
         embedder: (any TextEmbedding)?,
         onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void
-    ) -> SelectionTier {
-        SelectionTier(
-            catalog: index,
-            config: config,
-            onDiagnostic: { onDiagnostic(MetadataDiagnostic($0)) },
-            retrievalRanking: { intent in
-                await Self.rankEntireCatalog(
-                    intent: intent,
-                    index: index,
-                    weights: weights,
-                    embedder: embedder,
-                    onDiagnostic: onDiagnostic
-                ).map { match in
-                    SelectionMatch(id: match.id, block: match.block, score: match.score, signals: match.signals)
+    ) -> (tier: SelectionTier, snapshot: MetadataIndex<Item>) {
+        (
+            tier: SelectionTier(
+                catalog: index,
+                config: config,
+                onDiagnostic: { onDiagnostic(MetadataDiagnostic($0)) },
+                retrievalRanking: { intent in
+                    await Self.rankEntireCatalog(
+                        intent: intent,
+                        index: index,
+                        weights: weights,
+                        embedder: embedder,
+                        onDiagnostic: onDiagnostic
+                    ).map { match in
+                        SelectionMatch(id: match.id, block: match.block, score: match.score, signals: match.signals)
+                    }
                 }
-            }
+            ),
+            snapshot: index
         )
     }
 
@@ -336,11 +341,8 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         // all, so forcing a re-prefill for it would be pure waste.
         if contentChanged {
             selectionTier = selectionConfig.map { config in
-                (
-                    tier: Self.makeSelectionTier(
-                        index: baseline, config: config, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic
-                    ),
-                    snapshot: baseline
+                Self.buildSelectionTierPair(
+                    index: baseline, config: config, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic
                 )
             }
         }

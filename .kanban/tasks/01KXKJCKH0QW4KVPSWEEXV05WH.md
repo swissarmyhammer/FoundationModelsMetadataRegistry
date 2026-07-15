@@ -35,6 +35,17 @@ comments:
   id: 01kxkp5wmd32by0cp5pxycy1mq
   text: '/implement complete, task green in doing. Selection tier rebased on Ranker''s public SelectionTier (snapshot-paired for reentrancy-safe id→item lookup); local Selection/ + Session/ files deleted; re-export reduced to plain; LiveRouterSupport wires the tier-supplied Grammar; plan.md annotated. 99/99 tests green. Notable: Package.resolved had Ranker pinned one commit BEFORE the maxItems runaway fix — the new regression test caught it; pin bumped 1c1f302→b3ce6f5 via swift package update. Next: /test, /commit checkpoint, /review.'
   timestamp: 2026-07-15T20:06:05.709165+00:00
+- actor: claude-code
+  id: 01kxkqsrwy56nvrxdce2bzsyk1
+  text: |-
+    Review finding (duplicated selection-tier pair construction) fixed; checkbox flipped to [x]. Pulled the card review->doing, worked the finding, leaving in doing.
+
+    What changed (Sources/FoundationModelsMetadataRegistry/MetadataSearcher.swift only): folded `makeSelectionTier` and the two hand-built `(tier:snapshot:)` tuples into a single `private static func buildSelectionTierPair(index:config:weights:embedder:onDiagnostic:) -> (tier: SelectionTier, snapshot: MetadataIndex<Item>)`; both the designated init and `update(items:)` now call it, so tier construction and snapshot pairing have one source of truth and can never diverge.
+
+    Deviation from the reviewer's suggested shape, with evidence: the finding asked for a nonisolated *instance* method `buildSelectionTierPair(index:config:)` reusing stored properties with call sites `selection.map { buildSelectionTierPair(index: index, config: $0) }`. That shape is uncompilable on this actor: SE-0327 flow-sensitive actor-init isolation forbids writing the `selectionTier` stored property after any method call on `self` in the synchronous designated init — I implemented it first and the compiler rejected it with "Cannot access property 'selectionTier' here in nonisolated initializer". The static form is the only helper shape shareable by both init and update; the helper's doc comment records this rationale so the next agent doesn't retry the instance form. The finding's substance (single helper owning the pair construction, both sites calling it) is fully satisfied.
+
+    Verification (really-done): fresh `swift build` exit 0, all Examples targets; fresh `swift test` 99/99 in 9 suites green with the 4 gated skips intact. Adversarial double-check verdict: PASS — confirmed the helper body is character-identical to the replaced code at both sites, exactly one `SelectionTier(` construction site remains in the package, no stale `makeSelectionTier` references, pure refactor, no unrelated diff. Not committed — orchestrator handles commits.
+  timestamp: 2026-07-15T20:34:25.822381+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'Selection-tier migration: rebase MetadataSearcher on FoundationModelsRanker''s SelectionTier and delete the local shadowed copies'
@@ -75,3 +86,7 @@ Subtasks:
 - Use `/tdd` — write failing tests first, then implement to make them pass.
 
 Note on sizing: four of the touched files are straight deletions of dead shadowed duplicates and two are comment/doc edits; the substantive implementation is confined to `MetadataIndex.swift`, `MetadataSearcher.swift`, and `LiveRouterSupport.swift` — one concern (resolve the selection tier through Ranker), not several.
+
+## Review Findings (2026-07-15 15:12)
+
+- [x] `Sources/FoundationModelsMetadataRegistry/MetadataSearcher.swift:177` — Selection tier initialization is duplicated between the designated init and the update(items:) method. Both blocks construct an identical `(tier:snapshot:)` pair by calling `makeSelectionTier` with the same parameters, differing only in which index variable is passed. This duplication is a maintenance burden: changes to tier construction logic must be applied in both places or they will drift out of sync. Extract a helper instance method `private func buildSelectionTierPair(index: MetadataIndex<Item>, config: SelectionConfig) -> (tier: SelectionTier, snapshot: MetadataIndex<Item>)` that takes the index as a parameter and reuses the stored `weights`, `embedder`, and `onDiagnostic`. Then replace both call sites with `selection.map { buildSelectionTierPair(index: index, config: $0) }` and `selectionConfig.map { buildSelectionTierPair(index: baseline, config: $0) }` respectively.

@@ -231,6 +231,14 @@ let package = Package(
                 // `FoundationModelsMultitoolIntegrationTests` — so this test target
                 // needs the same product dependencies those targets link, even though
                 // every other test file here never imports them.
+                //
+                // `Jinja` is already linked transitively via `Tokenizers`;
+                // declaring it here marks the root-level swift-jinja pin
+                // (the `"2.0.0"..<"2.4.0"` upper bound above, which exists
+                // only to keep `swift package update` off the release that
+                // breaks swift-transformers) as used, so SwiftPM stops
+                // warning that the dependency is unused by any target.
+                .product(name: "Jinja", package: "swift-jinja"),
             ] + liveRouterProductDependencies,
             path: "Tests/\(packageName)Tests"
         ),
