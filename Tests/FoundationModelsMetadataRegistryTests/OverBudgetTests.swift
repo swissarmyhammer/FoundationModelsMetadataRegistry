@@ -80,7 +80,7 @@ struct OverBudgetTests {
     func overBudgetCreatesAFreshSessionPerCallWithoutCaching() async throws {
         let factoryCallCount = CallCounter()
         let config = SelectionConfig(
-            model: { _ in
+            model: { _, _ in
                 factoryCallCount.increment()
                 return ScriptedAgentSession([#"{"ids":["alpha"]}"#])
             },
@@ -100,7 +100,7 @@ struct OverBudgetTests {
     func overBudgetSessionIsNeverForked() async throws {
         let session = ScriptedAgentSession([#"{"ids":["alpha"]}"#])
         let config = SelectionConfig(
-            model: { _ in session },
+            model: { _, _ in session },
             capacityCharacterLimit: Self.forcedOverBudgetLimit,
             candidateLimit: 2
         )
@@ -185,7 +185,7 @@ struct OverBudgetTests {
         let recorder = DiagnosticRecorder()
         let factoryCallCount = CallCounter()
         let config = SelectionConfig(
-            model: { _ in
+            model: { _, _ in
                 factoryCallCount.increment()
                 return ScriptedAgentSession([#"{"ids":[]}"#])
             },
@@ -234,6 +234,43 @@ struct OverBudgetTests {
         #expect(recorder.diagnostics.contains(.unknownSelectedId(id: "charlie")))
     }
 
+    // MARK: - Grammar handed to the session factory (task ^678h0ex, via Ranker)
+
+    @Test
+    func factoryReceivesAGrammarEnumConstrainedToTheCandidateSetAndCappedAtItsCount() async throws {
+        // The runaway-generation fix (task ^678h0ex) now lives inside
+        // Ranker's `SelectionTier`, which derives the id-enum grammar itself
+        // and hands it to the session factory per call. Over budget with
+        // `candidateLimit: 2`, the grammar must enum-constrain ids to
+        // exactly this round's candidates (alpha, bravo -- never the wider
+        // catalog) and cap `maxItems` at the candidate count, the structural
+        // bound that actually stops runaway generation.
+        let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
+        let config = SelectionConfig(
+            model: factory.makeSession,
+            capacityCharacterLimit: Self.forcedOverBudgetLimit,
+            candidateLimit: 2
+        )
+        let searcher = MetadataSearcher(items: Self.catalog, mode: .selection, selection: config)
+
+        _ = try await searcher.search(intent: "alpha", limit: 5)
+
+        let grammar = try #require(factory.receivedGrammars.first)
+        guard case .jsonSchema(let source) = grammar else {
+            Issue.record("expected a .jsonSchema grammar")
+            return
+        }
+        let data = try #require(source.data(using: .utf8))
+        let root = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let properties = try #require(root["properties"] as? [String: Any])
+        let idsSchema = try #require(properties["ids"] as? [String: Any])
+        let itemsSchema = try #require(idsSchema["items"] as? [String: Any])
+        let enumValues = try #require(itemsSchema["enum"] as? [String])
+
+        #expect(Set(enumValues) == ["alpha", "bravo"])
+        #expect(idsSchema["maxItems"] as? Int == 2)
+    }
+
     // MARK: - Retrieval-tier signals attach to over-budget results
 
     @Test
@@ -262,10 +299,10 @@ struct OverBudgetTests {
 
     @Test
     func prefixExactlyAtTheCapacityLimitUsesTheCachedRootPath() async throws {
-        let expectedPrefix = SelectionTier<FixtureItem>.assemblePrefix(
+        let expectedPrefix = SelectionTier.assemblePrefix(
             preamble: .librarianDefault,
             ids: Self.catalog.map(\.id),
-            index: MetadataIndex(items: Self.catalog)
+            catalog: MetadataIndex(items: Self.catalog)
         )
         let factoryCallCount = CallCounter()
         let root = RootSessionRespondCalledDirectlySession(forkResponses: [
@@ -273,10 +310,11 @@ struct OverBudgetTests {
             #"{"ids":["alpha"]}"#,
         ])
         let config = SelectionConfig(
-            model: { _ in
+            model: { _, _ in
                 factoryCallCount.increment()
                 return root
             },
+            preamble: .librarianDefault,
             capacityCharacterLimit: expectedPrefix.count
         )
         let searcher = MetadataSearcher(items: Self.catalog, mode: .selection, selection: config)
@@ -294,17 +332,18 @@ struct OverBudgetTests {
 
     @Test
     func prefixOneCharacterOverTheCapacityLimitUsesTheOneOffPath() async throws {
-        let expectedPrefix = SelectionTier<FixtureItem>.assemblePrefix(
+        let expectedPrefix = SelectionTier.assemblePrefix(
             preamble: .librarianDefault,
             ids: Self.catalog.map(\.id),
-            index: MetadataIndex(items: Self.catalog)
+            catalog: MetadataIndex(items: Self.catalog)
         )
         let factoryCallCount = CallCounter()
         let config = SelectionConfig(
-            model: { _ in
+            model: { _, _ in
                 factoryCallCount.increment()
                 return ScriptedAgentSession([#"{"ids":["alpha"]}"#])
             },
+            preamble: .librarianDefault,
             capacityCharacterLimit: expectedPrefix.count - 1
         )
         let searcher = MetadataSearcher(items: Self.catalog, mode: .selection, selection: config)

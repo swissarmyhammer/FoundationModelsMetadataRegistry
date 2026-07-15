@@ -252,7 +252,7 @@ public struct SelectionRebuildDemoResult: Sendable {
 ///   against the scripted session below).
 public func runSelectionRootRebuildDemo() async throws -> SelectionRebuildDemoResult {
     let factoryCallCount = DemoCallCounter()
-    let config = SelectionConfig(model: { _ in
+    let config = SelectionConfig(model: { _, _ in
         factoryCallCount.increment()
         return ScriptedSelectionSession()
     })

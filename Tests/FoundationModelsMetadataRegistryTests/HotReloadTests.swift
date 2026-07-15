@@ -84,7 +84,7 @@ struct HotReloadTests {
             #"{"ids":["a"]}"#,
         ])
         let factoryCallCount = CallCounter()
-        let config = SelectionConfig(model: { _ in
+        let config = SelectionConfig(model: { _, _ in
             factoryCallCount.increment()
             return root
         })
@@ -155,7 +155,7 @@ struct HotReloadTests {
         // pins down the grammar itself for the *post-update* id set, so a
         // regression in either half is caught independently.
         let updatedIds = ["a", "b", "c"]
-        let grammar = try SelectionTier<FixtureItem>.idEnumGrammar(ids: updatedIds)
+        let grammar = try SelectionTier.idEnumGrammar(ids: updatedIds)
 
         guard case .jsonSchema(let source) = grammar else {
             Issue.record("expected a .jsonSchema grammar")

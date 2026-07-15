@@ -46,7 +46,7 @@ struct SelectionTests {
             #"{"ids":["rollback"]}"#,
         ])
         let factoryCallCount = CallCounter()
-        let config = SelectionConfig(model: { _ in
+        let config = SelectionConfig(model: { _, _ in
             factoryCallCount.increment()
             return root
         })
@@ -212,7 +212,7 @@ struct SelectionTests {
 
     @Test
     func idEnumGrammarContainsExactlyTheCatalogsCurrentIds() throws {
-        let grammar = try SelectionTier<FixtureItem>.idEnumGrammar(ids: Self.catalog.map(\.id))
+        let grammar = try SelectionTier.idEnumGrammar(ids: Self.catalog.map(\.id))
 
         guard case .jsonSchema(let source) = grammar else {
             Issue.record("expected a .jsonSchema grammar")
@@ -230,7 +230,7 @@ struct SelectionTests {
 
     @Test
     func idEnumGrammarMarksIdsAsUniqueItems() throws {
-        let grammar = try SelectionTier<FixtureItem>.idEnumGrammar(ids: Self.catalog.map(\.id))
+        let grammar = try SelectionTier.idEnumGrammar(ids: Self.catalog.map(\.id))
 
         guard case .jsonSchema(let source) = grammar else {
             Issue.record("expected a .jsonSchema grammar")
@@ -254,7 +254,7 @@ struct SelectionTests {
         // 6150-token runaway on an off-topic query (task ^678h0ex). A
         // selection can never legitimately exceed the candidate count, so
         // `ids.count` is the exact structural cap.
-        let grammar = try SelectionTier<FixtureItem>.idEnumGrammar(ids: Self.catalog.map(\.id))
+        let grammar = try SelectionTier.idEnumGrammar(ids: Self.catalog.map(\.id))
 
         guard case .jsonSchema(let source) = grammar else {
             Issue.record("expected a .jsonSchema grammar")
@@ -270,7 +270,7 @@ struct SelectionTests {
 
     @Test
     func idEnumGrammarReflectsAnEmptyCatalogAsAnEmptyEnum() throws {
-        let grammar = try SelectionTier<FixtureItem>.idEnumGrammar(ids: [])
+        let grammar = try SelectionTier.idEnumGrammar(ids: [])
 
         guard case .jsonSchema(let source) = grammar else {
             Issue.record("expected a .jsonSchema grammar")

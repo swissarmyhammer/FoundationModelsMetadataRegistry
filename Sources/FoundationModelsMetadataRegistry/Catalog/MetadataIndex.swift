@@ -479,3 +479,34 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
         self.entriesByID = entriesByID
     }
 }
+
+// MARK: - FoundationModelsRanker selection-catalog conformance
+
+/// Conforms `MetadataIndex` to FoundationModelsRanker's `SelectionCatalog` —
+/// the narrow contract Ranker's `SelectionTier` drives its assembled prefix
+/// and verbatim result lookup through (that protocol was written to
+/// generalize exactly this type). `ids` is satisfied by the stored property
+/// above; the two lookups forward to this index's existing accessors under
+/// the protocol's `forId` spelling.
+extension MetadataIndex: SelectionCatalog {
+    /// A (typically shorter) summary of `id`'s item — its
+    /// `SearchableMetadata.renderSummaryBlock()` — used to seed the
+    /// selection tier's assembled prefix instead of the full block
+    /// (plan.md §4).
+    ///
+    /// - Parameter forId: the id to look up.
+    /// - Returns: the id's summary text, or `nil` if `id` isn't indexed.
+    public func summaryBlock(forId id: String) -> String? {
+        item(forID: id)?.renderSummaryBlock()
+    }
+
+    /// `id`'s full, verbatim rendered block — `block(forID:)` under the
+    /// protocol's spelling; what a model-selected id resolves to in the
+    /// tier's returned results.
+    ///
+    /// - Parameter forId: the id to look up.
+    /// - Returns: the id's verbatim block, or `nil` if `id` isn't indexed.
+    public func block(forId id: String) -> String? {
+        block(forID: id)
+    }
+}

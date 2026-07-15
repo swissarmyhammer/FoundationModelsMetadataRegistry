@@ -85,20 +85,17 @@ public func runLibrarianSelection(
 
 /// Resolves a real, on-device model profile through a live `Router` and
 /// builds a `SelectionConfig` whose session factory constrains every guided
-/// session to `tripPlanningCatalog`'s id-enum grammar -- the only path in
-/// this example that touches the network/GPU.
+/// session to the id-enum grammar the selection tier derives per call --
+/// the only path in this example that touches the network/GPU.
 ///
 /// - Returns: a `SelectionConfig` ready to drive `runLibrarianSelection(
 ///   query:config:limit:)`.
-/// - Throws: whatever `Router.resolve(_:reporting:)` throws, or an encoding
-///   error from `idEnumGrammar(ids:)` (not expected for a plain array of
-///   strings).
+/// - Throws: whatever `Router.resolve(_:reporting:)` throws.
 public func resolveLiveSelectionConfig() async throws -> SelectionConfig {
     try await buildSelectionConfig(
         demoLabel: "Librarian",
         name: "librarian-demo",
-        description: "Tiny co-resident models sized for a local demo run of the selection tier.",
-        ids: tripPlanningCatalog.map(\.id)
+        description: "Tiny co-resident models sized for a local demo run of the selection tier."
     )
 }
 

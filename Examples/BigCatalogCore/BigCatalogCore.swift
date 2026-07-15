@@ -145,7 +145,6 @@ public func runBigCatalogOverBudgetSelection(
         demoLabel: "BigCatalog",
         name: "big-catalog-demo",
         description: "Tiny co-resident models sized for a local demo run of the over-budget selection path.",
-        ids: catalog.map(\.id),
         // Deliberately tiny: ~1,000 items' assembled summary-block prefix is
         // always far larger than this, guaranteeing the over-budget path
         // runs rather than the cached-root one.

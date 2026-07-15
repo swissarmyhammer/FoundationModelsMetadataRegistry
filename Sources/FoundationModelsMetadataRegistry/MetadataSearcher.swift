@@ -37,15 +37,6 @@ public struct Weights: Sendable, Equatable {
     }
 }
 
-/// Thrown by `MetadataSearcher.search(intent:limit:)` when `mode ==
-/// .selection` and no selection tier is configured (`init(..., selection:)`)
-/// — requesting `.selection` explicitly without one fails loudly rather than
-/// silently substituting retrieval.
-public struct SelectionTierUnavailable: Error, Sendable, Equatable {
-    /// Creates an error indicating that the selection tier is unavailable.
-    public init() {}
-}
-
 /// Searches a catalog of `SearchableMetadata` on behalf of a Foundation
 /// Models session (plan.md §3): an in-memory `MetadataIndex` plus the
 /// per-signal `Weights` retrieval fuses by, exposed through one
@@ -59,10 +50,14 @@ public struct SelectionTierUnavailable: Error, Sendable, Equatable {
 /// the same "no embedding available" value `Signals.cosine` documents, not a
 /// crash or a special case (plan.md §5 "absent-signal rule") — and
 /// `.embeddingUnavailable` is reported via `onDiagnostic` on every such
-/// search, never silently. `.selection` (plan.md §6) drives a
-/// `SelectionTier` when one is configured (`init(..., selection:)`);
-/// otherwise it throws `SelectionTierUnavailable` rather than silently doing
-/// something the caller didn't ask for. `.auto` resolves to `.selection`
+/// search, never silently. `.selection` (plan.md §6) drives
+/// FoundationModelsRanker's `SelectionTier` when one is configured
+/// (`init(..., selection:)`), re-attaching each `SelectionMatch`'s typed
+/// `item` by id lookup and mapping its `RankDiagnostic`s into the same-named
+/// `MetadataDiagnostic` cases; otherwise it throws
+/// `SelectionTierUnavailable` (FoundationModelsRanker's error, re-exported)
+/// rather than silently doing something the caller didn't ask for. `.auto`
+/// resolves to `.selection`
 /// when a selection tier is configured, `.retrieval` otherwise (plan.md §7
 /// "selection when a model is configured, else retrieval").
 public actor MetadataSearcher<Item: SearchableMetadata> {
@@ -100,16 +95,21 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// tier from the same configuration whenever the index changes.
     private let selectionConfig: SelectionConfig?
 
-    /// This searcher's selection tier (plan.md §6), or `nil` when no
-    /// `SelectionConfig` was supplied at `init` — `.selection` throws
-    /// `SelectionTierUnavailable` in that case, exactly as it did before a
-    /// selection tier existed at all. Rebuilt by `update(items:)` on every
-    /// real catalog change (plan.md §8): a fresh `SelectionTier` starts with
-    /// no cached root session and a prefix assembled from the new index, so
-    /// the next under-budget search re-prefills against the new catalog and
-    /// any grammar a caller derives from its candidate ids reflects the new
-    /// id set.
-    private var selectionTier: SelectionTier<Item>?
+    /// This searcher's selection tier (plan.md §6) — FoundationModelsRanker's
+    /// `SelectionTier` over this searcher's index (its `SelectionCatalog`
+    /// conformance), paired with the index snapshot it was built over — or
+    /// `nil` when no `SelectionConfig` was supplied at `init`; `.selection`
+    /// throws `SelectionTierUnavailable` in that case, exactly as it did
+    /// before a selection tier existed at all. The snapshot is what
+    /// `selectionSearch(_:intent:limit:)` re-attaches each returned id's
+    /// typed `item` from: the tier answers over that exact catalog, so
+    /// looking ids up in the same snapshot keeps `Match.item`/`Match.block`
+    /// consistent even if a concurrent `update(items:)` swaps `index` while
+    /// a search is suspended in the tier. Rebuilt by `update(items:)` on
+    /// every real catalog change (plan.md §8): a fresh `SelectionTier`
+    /// starts with no cached root session, a prefix assembled from the new
+    /// index, and an id-enum grammar derived from the new id set.
+    private var selectionTier: (tier: SelectionTier, snapshot: MetadataIndex<Item>)?
 
     /// Builds a searcher over `items`, indexing them once at `init` with no
     /// embedder — cosine never ranks anything and every search degrades to
@@ -219,22 +219,29 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         self.onDiagnostic = onDiagnostic
         self.selectionConfig = selection
         self.selectionTier = selection.map { config in
-            Self.makeSelectionTier(
-                index: index,
-                config: config,
-                weights: weights,
-                embedder: embedder,
-                onDiagnostic: onDiagnostic
+            (
+                tier: Self.makeSelectionTier(
+                    index: index,
+                    config: config,
+                    weights: weights,
+                    embedder: embedder,
+                    onDiagnostic: onDiagnostic
+                ),
+                snapshot: index
             )
         }
     }
 
-    /// Builds a `SelectionTier` over `index`, wiring its `retrievalRanking`
-    /// closure to `rankEntireCatalog(intent:index:weights:embedder:
-    /// onDiagnostic:)` — the one piece of tier construction both the
-    /// designated initializer and `update(items:)` (plan.md §8, hot reload)
-    /// need whenever the underlying index changes: a fresh tier starts with
-    /// no cached root session and a prefix assembled from `index`.
+    /// Builds FoundationModelsRanker's `SelectionTier` over `index` (its
+    /// `SelectionCatalog` conformance), mapping the tier's `RankDiagnostic`s
+    /// into the same-named `MetadataDiagnostic` cases and wiring its
+    /// `retrievalRanking` closure to `rankEntireCatalog(intent:index:
+    /// weights:embedder:onDiagnostic:)` (each `Match` reduced to the
+    /// item-less `SelectionMatch` the tier ranks with) — the one piece of
+    /// tier construction both the designated initializer and
+    /// `update(items:)` (plan.md §8, hot reload) need whenever the
+    /// underlying index changes: a fresh tier starts with no cached root
+    /// session and a prefix assembled from `index`.
     ///
     /// - Parameters:
     ///   - index: the catalog index the new tier answers `search(intent:
@@ -253,11 +260,11 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         weights: Weights,
         embedder: (any TextEmbedding)?,
         onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void
-    ) -> SelectionTier<Item> {
+    ) -> SelectionTier {
         SelectionTier(
-            index: index,
+            catalog: index,
             config: config,
-            onDiagnostic: onDiagnostic,
+            onDiagnostic: { onDiagnostic(MetadataDiagnostic($0)) },
             retrievalRanking: { intent in
                 await Self.rankEntireCatalog(
                     intent: intent,
@@ -265,7 +272,9 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
                     weights: weights,
                     embedder: embedder,
                     onDiagnostic: onDiagnostic
-                )
+                ).map { match in
+                    SelectionMatch(id: match.id, block: match.block, score: match.score, signals: match.signals)
+                }
             }
         )
     }
@@ -327,7 +336,12 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         // all, so forcing a re-prefill for it would be pure waste.
         if contentChanged {
             selectionTier = selectionConfig.map { config in
-                Self.makeSelectionTier(index: baseline, config: config, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic)
+                (
+                    tier: Self.makeSelectionTier(
+                        index: baseline, config: config, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic
+                    ),
+                    snapshot: baseline
+                )
             }
         }
 
@@ -369,12 +383,45 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
             return await retrievalSearch(intent: intent, limit: limit)
         case .selection:
             guard let selectionTier else { throw SelectionTierUnavailable() }
-            return try await selectionTier.search(intent: intent, limit: limit)
+            return try await Self.selectionSearch(selectionTier, intent: intent, limit: limit)
         case .auto:
             if let selectionTier {
-                return try await selectionTier.search(intent: intent, limit: limit)
+                return try await Self.selectionSearch(selectionTier, intent: intent, limit: limit)
             }
             return await retrievalSearch(intent: intent, limit: limit)
+        }
+    }
+
+    // MARK: - Selection tier (plan.md §6, via FoundationModelsRanker)
+
+    /// Answers one `.selection`/`.auto` search through FoundationModelsRanker's
+    /// `SelectionTier`, then maps each returned `SelectionMatch` into this
+    /// package's typed `Match<Item>` by looking its id up in the index
+    /// snapshot the tier was built over — the tier's `SelectionCatalog`
+    /// carries no item type, so the typed `item` is re-attached here. The
+    /// lookup is against `selection.snapshot` (not the actor's live `index`)
+    /// so `Match.item` always pairs with the same catalog generation that
+    /// produced `Match.block`, even if a concurrent `update(items:)` swapped
+    /// the live index while this call was suspended in the tier. Every id
+    /// the tier returns resolves in that snapshot by construction (the tier
+    /// filters unknown ids itself); the `compactMap` is defensive.
+    ///
+    /// - Parameters:
+    ///   - selection: the tier to search, paired with the index snapshot it
+    ///     was built over.
+    ///   - intent: the plain-language search intent.
+    ///   - limit: the maximum number of matches to return.
+    /// - Returns: the selected items' verbatim `Match`es, at most `limit`.
+    /// - Throws: whatever the tier's underlying session throws.
+    private static func selectionSearch(
+        _ selection: (tier: SelectionTier, snapshot: MetadataIndex<Item>),
+        intent: String,
+        limit: Int
+    ) async throws -> [Match<Item>] {
+        let selectionMatches = try await selection.tier.search(intent: intent, limit: limit)
+        return selectionMatches.compactMap { match in
+            guard let item = selection.snapshot.item(forID: match.id) else { return nil }
+            return Match(id: match.id, block: match.block, score: match.score, signals: match.signals, item: item)
         }
     }
 

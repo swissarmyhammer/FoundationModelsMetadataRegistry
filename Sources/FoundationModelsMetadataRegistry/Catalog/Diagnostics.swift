@@ -9,6 +9,24 @@ import os
 /// tasks add cases here rather than inventing parallel diagnostic
 /// mechanisms.
 public enum MetadataDiagnostic: Sendable, Equatable {
+    /// Maps one of FoundationModelsRanker's neutral `RankDiagnostic` cases
+    /// into the same-named case of this channel — how `MetadataSearcher`
+    /// forwards the selection tier's diagnostics (now emitted by Ranker's
+    /// `SelectionTier`) through its existing `onDiagnostic` callback
+    /// unchanged for consumers.
+    ///
+    /// - Parameter diagnostic: the Ranker diagnostic to map.
+    init(_ diagnostic: RankDiagnostic) {
+        switch diagnostic {
+        case .retrievalCut(let considered, let kept):
+            self = .retrievalCut(considered: considered, kept: kept)
+        case .unknownSelectedId(let id):
+            self = .unknownSelectedId(id: id)
+        case .embeddingUnavailable:
+            self = .embeddingUnavailable
+        }
+    }
+
     /// A catalog item's `id` collided with one already indexed. The
     /// duplicate is dropped and the first-seen item is kept —
     /// `MetadataIndex`'s duplicate-id policy: never a crash, never silent.

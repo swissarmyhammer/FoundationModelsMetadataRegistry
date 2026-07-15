@@ -150,8 +150,16 @@ score(item) = Σ_signal  weight_signal / (K + rank_signal(item))      K = 60, ra
 `Hit.swift`, `TextEmbedding.swift`, `RoutedEmbedderAdapter.swift` are small,
 self-contained files (themselves ports of the Rust `swissarmyhammer-search` crate);
 CodeContextKit's remaining mass (tree-sitter, LSP, chunking) is dead weight here. Copy
-them with attribution. *(If a third copy ever appears, extract a shared
-`SwiftRankFusion` micro-package — noted, not done.)*
+them with attribution. *(Superseded as shipped: the third copy appeared and the escape
+hatch was exercised — the ported files were replaced by a dependency on the shared
+[`FoundationModelsRanker`](../FoundationModelsRanker) package (the "SwiftRankFusion"
+micro-package under its real name), re-exported via
+`FoundationModelsRankerReexport.swift` so `RRF`/`BM25`/`Trigram`/`Tokenizer`/`Hit`/
+`Signals`/`TextEmbedding`/`RoutedEmbedderAdapter` remain visible to this package's
+consumers unchanged. Ranker also ships the selection tier: the selection-tier
+migration is complete — this package's local `Selection`/`SelectionTier`/
+`SelectionConfig`/`AgentSession` copies are deleted, `MetadataIndex` conforms to
+Ranker's `SelectionCatalog`, and §6's tier resolves through the same re-export.)*
 
 **Scale.** Everything lives **in memory** — no database, no vector store, no ANN, no
 persistence. Expected catalogs are 10¹–10³ items (we are not designing for 10⁴+), so
@@ -184,16 +192,22 @@ Mechanics, lifted from the shipped `Librarian` and generalized:
 - **Ids only, grammar-enforced.** The guided output type is
   `@Generable struct Selection { var ids: [String] }`;
   `SelectionTier.idEnumGrammar(ids:)` derives the xgrammar JSON Schema constraining
-  `ids` to an **enum of the candidate ids** (per-element `enum` + `uniqueItems`).
+  `ids` to an **enum of the candidate ids** (per-element `enum` + `uniqueItems`, plus —
+  *as shipped* — a `maxItems` cap of the candidate count: the xgrammar pipeline
+  enforces `minItems`/`maxItems` but silently ignores `uniqueItems`, so without the
+  cap the compiled grammar permits an unbounded array of repeated enum members —
+  observed as a ~6,150-token runaway on an off-topic intent).
   Router's xgrammar enforcement is real (unlike Apple's built-in enum path, per Skills
   decision #22), so the selector is structurally incapable of inventing an id.
-  *As shipped*, the grammar reaches the session through the caller: `SelectionConfig
-  .model` is a **session factory** `(instructions) -> any AgentSession`, and the
-  production factory bakes the grammar into the guided sessions it vends
-  (`RoutedAgentSession(session: llm.makeGuidedSession(grammar, instructions:))` — the
-  `LiveRouterSupport.buildSelectionConfig` pattern). Over budget, membership in the
-  top-M candidate set is enforced by the verbatim-lookup filter rather than a per-call
-  grammar.
+  *As shipped (post-migration)*, the **tier owns the grammar**: Ranker's
+  `SelectionTier` derives `idEnumGrammar(ids:)` itself — over the whole catalog under
+  budget, over this round's top-M candidates over budget — and hands it to the session
+  factory per call: `SelectionConfig.model` is `(instructions, grammar) -> any
+  AgentSession`, and the production factory just wires it through
+  (`RoutedAgentSession(session: llm.makeGuidedSession(grammar: grammar,
+  instructions:))` — the `LiveRouterSupport.buildSelectionConfig` pattern). Over
+  budget the grammar is therefore scoped per call to exactly the candidate ids, with
+  the verbatim-lookup filter as the defensive backstop.
 - **Verbatim lookup.** Returned ids map back through the catalog to produce `Match`es
   carrying the catalog's own blocks. Unknown ids from the model are impossible by
   grammar; a defensive `allowedIds` filter + `.unknownSelectedId` diagnostic backstops
@@ -240,8 +254,8 @@ notifications, a Multitool rebuild. Semantics:
 3. Drop the cached root session; the next under-budget `search()` rebuilds it (one
    prefix re-prefill — the accepted reload cost, stated in Skills §7 already).
 4. Rebuild the id-enum grammar with the new id set — `idEnumGrammar(ids:)` is a pure
-   function of the ids, so the rebuilt selection tier assembles a fresh prefix and a
-   caller whose session factory bakes in the grammar (§6) refreshes that factory
+   function of the ids, and (post-migration, §6) the rebuilt selection tier derives it
+   itself and hands it to the session factory per call, so callers refresh nothing
    alongside `update(items:)`.
 5. Surface the interim gap: `.embedCatchUp(pending:total:)` diagnostics report how many
    items are still serving keyword-only while embedding catches up.
@@ -286,8 +300,13 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
   signals, RRF, both seams — compiles and unit-tests with no Router at runtime (fakes
   conform to the seams); Router is exercised only by production conformers and the
   gated integration suite.
+- **Depends on `FoundationModelsRanker`** *(shipped refinement — supersedes §5's
+  "port, don't depend"; decision #9)* for the retrieval primitives (`BM25`, `Trigram`,
+  `Tokenizer`, `RRF`, `Hit`/`Signals`) and the embedding seam (`TextEmbedding`,
+  `RoutedEmbedderAdapter`), re-exported so the public surface is unchanged.
 - **No dependency on** Skills, Multitool, Agents, MCP, or CodeContextKit (consumers
-  depend on us; CodeContextKit files are ported, §5).
+  depend on us; the CodeContextKit-derived search files now arrive via
+  `FoundationModelsRanker`, §5).
 - **Naming note:** in the sibling plans "Registry" means a *file-backed source of
   truth* (`SkillsRegistry`, `AgentRegistry`). This package holds a **derived index over
   someone else's registry** — hence the central types are `MetadataSearcher` /
@@ -321,7 +340,9 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
 8. **Seams → `AgentSession` + `TextEmbedding`**, production conformers wrap Router;
    both lifted from the shipped implementations (Multitool, CodeContextKit).
 9. **Port, don't depend** for the CodeContextKit search files; extract a shared
-   micro-package only if a third copy appears.
+   micro-package only if a third copy appears. *(Superseded as shipped: the third copy
+   appeared — the ports are replaced by the shared `FoundationModelsRanker`
+   dependency, re-exported to keep the public surface unchanged; §5.)*
 10. **In-memory index, no DB** — the whole index (tokenized fields, trigram sets,
     embeddings) is rebuilt in memory from the caller's items; nothing is persisted.
     Expected scale is 10¹–10³ items, where brute-force scoring is exact and
@@ -329,13 +350,16 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
     shipped contiguous-matrix/vDSP design if a catalog ever demands it.
 11. **Agents stays opted out** — their baked-in-descriptions decision is respected;
     this package is their future option, not a requirement.
-12. *(shipped refinement)* **`SelectionConfig.model` is a session factory** —
-    `@Sendable (String) -> any AgentSession`, called with the assembled prefix as
-    instructions. The library never constructs Router sessions itself; the caller's
-    factory decides the model, the grammar, and the wiring (production:
-    `RoutedAgentSession` over `makeGuidedSession(grammar, instructions:)`). This keeps
-    the whole selection tier testable against scripted fakes and leaves grammar
-    ownership with the party that owns the id set's lifecycle.
+12. *(shipped refinement, updated by the selection-tier migration)*
+    **`SelectionConfig.model` is a session factory** —
+    `@Sendable (String, Grammar) -> any AgentSession`, called with the assembled
+    prefix as instructions and the id-enum grammar the tier derived for that call
+    (the whole catalog under budget, the round's top-M candidates over budget). The
+    library never constructs Router sessions itself; the caller's factory decides the
+    model and the wiring (production: `RoutedAgentSession` over
+    `makeGuidedSession(grammar: grammar, instructions:)`), while grammar ownership
+    now lives with the tier — the party that owns the id set's lifecycle across
+    over-budget cuts and `update(items:)` rebuilds.
 13. *(shipped refinement)* **One diagnostics channel, not per-event closures** —
     `onDiagnostic: (MetadataDiagnostic) -> Void` with a typed case per event
     (`.duplicateId`, `.embeddingUnavailable`, `.unknownSelectedId`, `.retrievalCut`,
@@ -352,17 +376,17 @@ extension SkillMetadata: SearchableMetadata {
 }
 
 // Build a searcher (selection + retrieval, Router-backed). The `model`
-// parameter is a session factory (§6, decision #12): the caller vends
-// grammar-constrained sessions from the assembled prefix.
-let grammar = try SelectionTier.idEnumGrammar(ids: items.map(\.id))
+// parameter is a session factory (§6, decision #12): the tier hands it the
+// assembled prefix and the id-enum grammar it derived for this call; the
+// caller just wires them into a guided session.
 let searcher = await MetadataSearcher(
   items: registry.metadata().filter(\.isModelVisible),   // visibility = caller's job
   mode: .auto,
   weights: Weights(bm25: 1, trigram: 1, cosine: 1),
   embedder: RoutedEmbedderAdapter(routedEmbedder: profile.embedding), // omit → keyword-only
   selection: SelectionConfig(
-    model: { instructions in
-      RoutedAgentSession(session: profile.standard.makeGuidedSession(grammar, instructions: instructions))
+    model: { instructions, grammar in
+      RoutedAgentSession(session: profile.standard.makeGuidedSession(grammar: grammar, instructions: instructions))
     },
     preamble: .librarianDefault,                          // "fewest that suffice…"
     capacityCharacterLimit: 32_000,
@@ -402,9 +426,8 @@ capability in this plan.
 by the main unit-test target, so every example stays correct GPU-free, not just
 compiling. Two shared support targets round it out: `ExamplesSupport` (common
 fixture catalogs and printing helpers) and `LiveRouterSupport` (live Router
-profile resolution, `idEnumGrammar(ids:)` construction, and the
-`RoutedAgentSession` session-factory wiring used when an example runs against
-real models). The examples:
+profile resolution and the `RoutedAgentSession` session-factory wiring used
+when an example runs against real models). The examples:
 
 1. **`CatalogSearch`** — the ~30-line hello world. A handful of fixture items
    conformed to `SearchableMetadata`, a keyword-only
@@ -437,11 +460,13 @@ Each example doubles as the acceptance demo for its milestone (`CatalogSearch`
 ## 14. Milestones
 
 - ✅ **M1 — Catalog + retrieval core.** `SearchableMetadata`, `MetadataIndex`, ported
-  `Tokenizer`/`BM25`/`Trigram`/`RRF`/`Hit`, two-field indexing, keyword-only
+  `Tokenizer`/`BM25`/`Trigram`/`RRF`/`Hit` *(the ports were later replaced by the
+  `FoundationModelsRanker` dependency, §5)*, two-field indexing, keyword-only
   `search(mode: .retrieval)`. Pure unit tests, no Router, no GPU.
-- ✅ **M2 — Embedding signal.** `TextEmbedding` seam + `RoutedEmbedderAdapter` port,
-  cosine signal, absent-signal degradation, incremental embed keyed by block hash.
-  `FakeEmbedder` tests.
+- ✅ **M2 — Embedding signal.** `TextEmbedding` seam + `RoutedEmbedderAdapter` port
+  *(likewise now supplied by `FoundationModelsRanker`, §5)*, cosine signal,
+  absent-signal degradation, incremental embed keyed by block hash. `FakeEmbedder`
+  tests.
 - ✅ **M3 — Selection tier.** `AgentSession` seam (lifted), cached-root + fork-per-call,
   capacity budget, ids-only `Selection` decoding, verbatim lookup, id-enum grammar
   construction. Scripted-fake session tests (fork counts, over/under-budget paths,

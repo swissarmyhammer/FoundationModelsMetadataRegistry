@@ -184,9 +184,8 @@ struct RouterIntegrationTests {
         }
 
         do {
-            let grammar = try SelectionTier<ToolItem>.idEnumGrammar(ids: toolCatalogIds)
             let factoryCallCount = CallCounter()
-            let config = SelectionConfig(model: { instructions in
+            let config = SelectionConfig(model: { instructions, grammar in
                 factoryCallCount.increment()
                 let session = fixture.profile.standard.makeGuidedSession(grammar: grammar, instructions: instructions)
                 return RoutedAgentSession(session: session)
@@ -262,10 +261,10 @@ struct RouterIntegrationTests {
 
         do {
             let candidateSet = Set(toolCatalogIds)
-            let grammar = try SelectionTier<ToolItem>.idEnumGrammar(ids: toolCatalogIds)
-            let prefix = SelectionTier<ToolItem>.assemblePrefix(
+            let grammar = try SelectionTier.idEnumGrammar(ids: toolCatalogIds)
+            let prefix = SelectionTier.assemblePrefix(
                 preamble: .librarianDefault,
-                index: MetadataIndex(items: toolCatalog)
+                catalog: MetadataIndex(items: toolCatalog)
             )
             let session = RoutedAgentSession(
                 session: fixture.profile.standard.makeGuidedSession(grammar: grammar, instructions: prefix)
