@@ -31,6 +31,11 @@ struct HotReloadTests {
         func renderSummaryBlock() -> String { summary ?? block }
     }
 
+    /// The transient embed failure the catch-up tests hand `FakeEmbedder` to
+    /// build an index whose items carry real content but no stored
+    /// embeddings (plan.md §8 "embed catch-up").
+    struct AlwaysFails: Error {}
+
     // MARK: - Incremental re-embed counts
 
     @Test
@@ -253,7 +258,6 @@ struct HotReloadTests {
         // Simulates a prior build/update whose embed call failed
         // transiently (plan.md §8 "embed catch-up"): "a" is indexed with
         // its real content but carries no stored embedding.
-        struct AlwaysFails: Error {}
         let a = FixtureItem(id: "a", block: "alpha block")
         let indexWithoutEmbedding = await MetadataIndex.build(items: [a], embedder: FakeEmbedder(dimension: 2, failure: AlwaysFails()))
         #expect(indexWithoutEmbedding.embedding(forID: "a") == nil)
@@ -284,7 +288,6 @@ struct HotReloadTests {
 
     @Test
     func contentUnchangedEmbedCatchUpMakesMergedEmbeddingsVisibleToOverBudgetCandidateRanking() async throws {
-        struct AlwaysFails: Error {}
         // Three items with no lexical/fuzzy overlap with the "snapshot"
         // intent, indexed with real content but no stored embeddings (a
         // prior embed failed transiently) -- keyword signals alone rank all
@@ -347,7 +350,6 @@ struct HotReloadTests {
 
     @Test
     func contentIdenticalEmbedCatchUpRetainsTheCachedRootSession() async throws {
-        struct AlwaysFails: Error {}
         let a = FixtureItem(id: "a", block: "alpha block")
         let indexWithoutEmbedding = await MetadataIndex.build(
             items: [a],

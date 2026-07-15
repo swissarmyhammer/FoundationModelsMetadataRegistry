@@ -473,9 +473,9 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
 
     /// Sorts document indices by descending normalized fused score, breaking
     /// ties by ascending catalog index for deterministic, first-seen-order
-    /// output — the shared ordering both `retrievalSearch(intent:limit:)` and
-    /// `rankEntireCatalog(intent:index:weights:embedder:onDiagnostic:)` apply
-    /// to `normalized`'s keys.
+    /// output — the ordering `computeRanking(intent:index:weights:embedder:
+    /// onDiagnostic:)` applies to `normalized`'s keys on behalf of both
+    /// retrieval callers.
     ///
     /// - Parameters:
     ///   - indices: the document indices to sort.
@@ -493,6 +493,38 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         }
     }
 
+    /// Computes the fused ranking for `intent` over `index`: the raw
+    /// per-signal `RetrievalSignals`, the normalized `[0, 1]` fused scores,
+    /// and the ranked indices of every document at least one signal ranked
+    /// (descending score, catalog-order tie-break) — the ranking computation
+    /// `retrievalSearch(intent:limit:)` and `rankEntireCatalog(intent:index:
+    /// weights:embedder:onDiagnostic:)` share; each caller applies only its
+    /// own document-selection step (limit-truncated prefix vs. ranked +
+    /// unranked-tail concatenation).
+    ///
+    /// - Parameters:
+    ///   - intent: the search query.
+    ///   - index: the catalog index to rank.
+    ///   - weights: the per-signal fusion weights.
+    ///   - embedder: the embedder to embed `intent` with for the cosine
+    ///     signal, or `nil` to skip it.
+    ///   - onDiagnostic: called for every diagnostic emitted while ranking
+    ///     (currently only `.embeddingUnavailable`).
+    /// - Returns: the raw signals, the normalized fused scores, and the
+    ///   ranked document indices.
+    private static func computeRanking(
+        intent: String,
+        index: MetadataIndex<Item>,
+        weights: Weights,
+        embedder: (any TextEmbedding)?,
+        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
+    ) async -> (signals: RetrievalSignals, normalized: [Int: Double], rankedIndices: [Int]) {
+        let signals = await computeSignals(intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic)
+        let normalized = fuseAndNormalize(signals: signals, weights: weights)
+        let rankedIndices = sortByNormalizedScore(indices: Array(normalized.keys), using: normalized)
+        return (signals, normalized, rankedIndices)
+    }
+
     /// Runs the `.retrieval` tier: BM25 + trigram + cosine rankings fused by
     /// `RRF.fuse(k: 60)`, normalized to `[0, 1]`, mapped back through the
     /// catalog to verbatim `Match`es (plan.md §5). Only ever returns
@@ -503,16 +535,13 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     private func retrievalSearch(intent: String, limit: Int) async -> [Match<Item>] {
         guard limit > 0, index.count > 0 else { return [] }
 
-        let signals = await Self.computeSignals(intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic)
-        let normalized = Self.fuseAndNormalize(signals: signals, weights: weights)
-
-        let orderedDocumentIndices = Self.sortByNormalizedScore(indices: Array(normalized.keys), using: normalized)
+        let ranking = await Self.computeRanking(intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic)
 
         return Self.buildMatches(
-            documentIndices: Array(orderedDocumentIndices.prefix(limit)),
+            documentIndices: Array(ranking.rankedIndices.prefix(limit)),
             index: index,
-            normalized: normalized,
-            signals: signals
+            normalized: ranking.normalized,
+            signals: ranking.signals
         )
     }
 
@@ -550,20 +579,16 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     ) async -> [Match<Item>] {
         guard index.count > 0 else { return [] }
 
-        let signals = await computeSignals(intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic)
-        let normalized = fuseAndNormalize(signals: signals, weights: weights)
+        let ranking = await computeRanking(intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic)
+        let unrankedIndices = index.ids.indices.filter { ranking.normalized[$0] == nil }
 
-        let rankedIndices = sortByNormalizedScore(indices: Array(normalized.keys), using: normalized)
-        let unrankedIndices = index.ids.indices.filter { normalized[$0] == nil }
-
-        return buildMatches(documentIndices: rankedIndices + unrankedIndices, index: index, normalized: normalized, signals: signals)
+        return buildMatches(documentIndices: ranking.rankedIndices + unrankedIndices, index: index, normalized: ranking.normalized, signals: ranking.signals)
     }
 
     /// One (ranking, weight, raw scores) tuple per retrieval signal, as
     /// computed by `computeSignals(intent:index:weights:embedder:
-    /// onDiagnostic:)` — the shared input both `retrievalSearch(intent:
-    /// limit:)` and `rankEntireCatalog(intent:index:weights:embedder:
-    /// onDiagnostic:)` fuse and order differently.
+    /// onDiagnostic:)` — the raw input `computeRanking(intent:index:weights:
+    /// embedder:onDiagnostic:)` fuses and orders for both retrieval callers.
     private struct RetrievalSignals {
         let bm25Ranking: [Int]
         let bm25Scores: [Double]
@@ -574,9 +599,8 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     }
 
     /// Computes the BM25, trigram, and cosine signals for `intent` over
-    /// `index` — the one piece of per-signal computation
-    /// `retrievalSearch(intent:limit:)` and `rankEntireCatalog(intent:index:
-    /// weights:embedder:onDiagnostic:)` share.
+    /// `index` — the per-signal computation step of
+    /// `computeRanking(intent:index:weights:embedder:onDiagnostic:)`.
     ///
     /// - Parameters:
     ///   - intent: the search query.
