@@ -1,3 +1,5 @@
+import os
+
 /// Per-signal fusion weights for `MetadataSearcher`'s retrieval tier (plan.md
 /// §5): the relative weight `RRF.fuse(rankedLists:weights:k:)` gives each of
 /// the BM25, trigram, and cosine rankings.
@@ -95,21 +97,40 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// tier from the same configuration whenever the index changes.
     private let selectionConfig: SelectionConfig?
 
+    /// A selection tier paired with the refreshable index snapshot it ranks
+    /// over: the tier's `retrievalRanking` closure reads `snapshot` at call
+    /// time, and `selectionSearch(_:intent:limit:)` re-attaches each
+    /// returned id's typed `item` from it. Boxed in an
+    /// `OSAllocatedUnfairLock` (rather than captured as a plain value) so
+    /// `update(items:)` can refresh it in place after an embed catch-up
+    /// merges new vectors into the live index — the freshened embeddings
+    /// reach the tier's over-budget candidate ranking without rebuilding
+    /// the tier (and needlessly dropping its cached root session).
+    ///
+    /// Invariant: a pair's snapshot always has content (ids, blocks)
+    /// identical to its tier's own catalog. Every real content change
+    /// replaces the whole pair, and
+    /// `MetadataIndex.mergingEmbeddings(ids:vectors:embeddedFrom:into:)`
+    /// only ever changes stored vectors (hash-guarded), never content — so
+    /// refreshing the snapshot after a merge can never make the ranking or
+    /// the `item` lookups disagree with the catalog generation the tier
+    /// answers over.
+    private typealias ConfiguredSelectionTier = (tier: SelectionTier, snapshot: OSAllocatedUnfairLock<MetadataIndex<Item>>)
+
     /// This searcher's selection tier (plan.md §6) — FoundationModelsRanker's
     /// `SelectionTier` over this searcher's index (its `SelectionCatalog`
-    /// conformance), paired with the index snapshot it was built over — or
-    /// `nil` when no `SelectionConfig` was supplied at `init`; `.selection`
-    /// throws `SelectionTierUnavailable` in that case, exactly as it did
-    /// before a selection tier existed at all. The snapshot is what
-    /// `selectionSearch(_:intent:limit:)` re-attaches each returned id's
-    /// typed `item` from: the tier answers over that exact catalog, so
-    /// looking ids up in the same snapshot keeps `Match.item`/`Match.block`
-    /// consistent even if a concurrent `update(items:)` swaps `index` while
-    /// a search is suspended in the tier. Rebuilt by `update(items:)` on
-    /// every real catalog change (plan.md §8): a fresh `SelectionTier`
-    /// starts with no cached root session, a prefix assembled from the new
-    /// index, and an id-enum grammar derived from the new id set.
-    private var selectionTier: (tier: SelectionTier, snapshot: MetadataIndex<Item>)?
+    /// conformance), paired with the refreshable index snapshot it ranks
+    /// over (see `ConfiguredSelectionTier`) — or `nil` when no
+    /// `SelectionConfig` was supplied at `init`; `.selection` throws
+    /// `SelectionTierUnavailable` in that case, exactly as it did before a
+    /// selection tier existed at all. The snapshot keeps
+    /// `Match.item`/`Match.block` consistent even if a concurrent
+    /// `update(items:)` swaps `index` while a search is suspended in the
+    /// tier. Rebuilt by `update(items:)` on every real catalog change
+    /// (plan.md §8): a fresh `SelectionTier` starts with no cached root
+    /// session, a prefix assembled from the new index, and an id-enum
+    /// grammar derived from the new id set.
+    private var selectionTier: ConfiguredSelectionTier?
 
     /// Builds a searcher over `items`, indexing them once at `init` with no
     /// embedder — cosine never ranks anything and every search degrades to
@@ -218,25 +239,25 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         self.embedder = embedder
         self.onDiagnostic = onDiagnostic
         self.selectionConfig = selection
-        self.selectionTier = selection.map { config in
-            Self.buildSelectionTierPair(
-                index: index, config: config, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic
-            )
-        }
+        self.selectionTier = Self.buildSelectionTierIfConfigured(
+            config: selection, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic
+        )
     }
 
     /// Builds FoundationModelsRanker's `SelectionTier` over `index` (its
-    /// `SelectionCatalog` conformance), paired with `index` itself as the
-    /// snapshot `selectionSearch(_:intent:limit:)` re-attaches typed items
-    /// from — the one piece of tier construction both the designated
-    /// initializer and `update(items:)` (plan.md §8, hot reload) need
-    /// whenever the underlying index changes: a fresh tier starts with no
-    /// cached root session and a prefix assembled from `index`. The tier's
-    /// `RankDiagnostic`s are mapped into the same-named `MetadataDiagnostic`
-    /// cases, and its `retrievalRanking` closure is wired to
-    /// `rankEntireCatalog(intent:index:weights:embedder:onDiagnostic:)`
-    /// (each `Match` reduced to the item-less `SelectionMatch` the tier
-    /// ranks with).
+    /// `SelectionCatalog` conformance) when `config` is non-`nil`, paired
+    /// with `index` boxed as the refreshable snapshot the tier's
+    /// `retrievalRanking` reads at call time and
+    /// `selectionSearch(_:intent:limit:)` re-attaches typed items from
+    /// (see `ConfiguredSelectionTier`) — the one piece of tier construction
+    /// both the designated initializer and `update(items:)` (plan.md §8,
+    /// hot reload) need whenever the underlying index changes: a fresh tier
+    /// starts with no cached root session and a prefix assembled from
+    /// `index`. The tier's `RankDiagnostic`s are mapped into the same-named
+    /// `MetadataDiagnostic` cases, and its `retrievalRanking` closure is
+    /// wired to `rankEntireCatalog(intent:index:weights:embedder:
+    /// onDiagnostic:)` over the snapshot's current value (each `Match`
+    /// reduced to the item-less `SelectionMatch` the tier ranks with).
     ///
     /// `static`, not an instance method: the synchronous designated
     /// initializer builds the pair from its own parameters, and SE-0327's
@@ -245,9 +266,10 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// never be shared with `init` at all.
     ///
     /// - Parameters:
+    ///   - config: the selection tier configuration to build against, or
+    ///     `nil` when this searcher has no selection tier.
     ///   - index: the catalog index the new tier answers `search(intent:
-    ///     limit:)` calls over, and the snapshot it is paired with.
-    ///   - config: the selection tier configuration to build against.
+    ///     limit:)` calls over, and the snapshot's initial value.
     ///   - weights: the per-signal fusion weights `retrievalRanking` scores
     ///     the over-budget candidate ranking with.
     ///   - embedder: the embedder `retrievalRanking` embeds the intent with
@@ -255,15 +277,17 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     ///   - onDiagnostic: called for every diagnostic the new tier, and its
     ///     `retrievalRanking` closure, emit.
     /// - Returns: a freshly constructed selection tier over `index`, paired
-    ///   with `index` as the snapshot it was built over.
-    private static func buildSelectionTierPair(
+    ///   with its refreshable snapshot — or `nil` when `config` is `nil`.
+    private static func buildSelectionTierIfConfigured(
+        config: SelectionConfig?,
         index: MetadataIndex<Item>,
-        config: SelectionConfig,
         weights: Weights,
         embedder: (any TextEmbedding)?,
         onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void
-    ) -> (tier: SelectionTier, snapshot: MetadataIndex<Item>) {
-        (
+    ) -> ConfiguredSelectionTier? {
+        guard let config else { return nil }
+        let snapshot = OSAllocatedUnfairLock(initialState: index)
+        return (
             tier: SelectionTier(
                 catalog: index,
                 config: config,
@@ -271,7 +295,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
                 retrievalRanking: { intent in
                     await Self.rankEntireCatalog(
                         intent: intent,
-                        index: index,
+                        index: snapshot.withLock { $0 },
                         weights: weights,
                         embedder: embedder,
                         onDiagnostic: onDiagnostic
@@ -280,7 +304,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
                     }
                 }
             ),
-            snapshot: index
+            snapshot: snapshot
         )
     }
 
@@ -306,7 +330,11 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     ///    whole tier over the new index: the next under-budget `.selection`/
     ///    `.auto` search re-prefills against the new catalog (one prefix
     ///    re-prefill), and any id-enum grammar a caller derives from the
-    ///    tier's candidate ids reflects the new id set.
+    ///    tier's candidate ids reflects the new id set. Once the re-embed's
+    ///    vectors merge in, the tier's refreshable ranking snapshot is
+    ///    updated in place (see `ConfiguredSelectionTier`), so the caught-up
+    ///    embeddings reach the over-budget candidate ranking immediately —
+    ///    not only after the next content change.
     ///
     /// Hash-guarded: if `items` renders to content identical to what's
     /// already indexed (same ids, same block hashes) *and* nothing is
@@ -318,7 +346,9 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// up (e.g. a prior embed call failed transiently) still re-embeds, just
     /// without rebuilding the selection tier — nothing keyword/selection-
     /// relevant changed, only the still-missing embedding is worth
-    /// finishing.
+    /// finishing, and it reaches the tier through the snapshot refresh
+    /// above rather than a rebuild that would pointlessly drop the cached
+    /// root session.
     ///
     /// - Parameter items: the catalog's new/refreshed items, in first-seen-
     ///   wins duplicate-id order (forwarded to `MetadataIndex`'s duplicate-id
@@ -340,11 +370,9 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         // content doesn't affect keyword search or the selection prefix at
         // all, so forcing a re-prefill for it would be pure waste.
         if contentChanged {
-            selectionTier = selectionConfig.map { config in
-                Self.buildSelectionTierPair(
-                    index: baseline, config: config, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic
-                )
-            }
+            selectionTier = Self.buildSelectionTierIfConfigured(
+                config: selectionConfig, index: baseline, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic
+            )
         }
 
         guard !pendingEmbedIDs.isEmpty, let embedder else { return }
@@ -361,7 +389,18 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         // that concurrent call re-embedded the *same* id with different
         // content, not just when it removed the id outright.
         if let vectors = try? await embedder.embed(textsToEmbed), vectors.count == pendingEmbedIDs.count {
-            index = MetadataIndex.mergingEmbeddings(ids: pendingEmbedIDs, vectors: vectors, embeddedFrom: baseline, into: index)
+            let merged = MetadataIndex.mergingEmbeddings(ids: pendingEmbedIDs, vectors: vectors, embeddedFrom: baseline, into: index)
+            index = merged
+            // Refresh the tier's ranking snapshot in place so the freshly
+            // merged embeddings reach the over-budget candidate ranking
+            // now, not only after the next content change -- without
+            // rebuilding the tier, which would drop its cached root session
+            // for no reason (nothing content-relevant changed). Safe across
+            // the reentrancy above for the same reason the merge is: the
+            // merge never changes content, so `merged` always matches the
+            // *current* tier's own catalog generation, whichever `update`
+            // call installed it.
+            selectionTier?.snapshot.withLock { $0 = merged }
         }
     }
 
@@ -398,31 +437,34 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
 
     /// Answers one `.selection`/`.auto` search through FoundationModelsRanker's
     /// `SelectionTier`, then maps each returned `SelectionMatch` into this
-    /// package's typed `Match<Item>` by looking its id up in the index
-    /// snapshot the tier was built over — the tier's `SelectionCatalog`
-    /// carries no item type, so the typed `item` is re-attached here. The
-    /// lookup is against `selection.snapshot` (not the actor's live `index`)
-    /// so `Match.item` always pairs with the same catalog generation that
-    /// produced `Match.block`, even if a concurrent `update(items:)` swapped
-    /// the live index while this call was suspended in the tier. Every id
-    /// the tier returns resolves in that snapshot by construction (the tier
-    /// filters unknown ids itself); the `compactMap` is defensive.
+    /// package's typed `Match<Item>` by looking its id up in the tier's
+    /// paired index snapshot — the tier's `SelectionCatalog` carries no item
+    /// type, so the typed `item` is re-attached here. The lookup is against
+    /// `selection.snapshot` (not the actor's live `index`) so `Match.item`
+    /// always pairs with the same catalog generation that produced
+    /// `Match.block`, even if a concurrent `update(items:)` swapped the
+    /// live index while this call was suspended in the tier (the snapshot's
+    /// content always matches the tier's own catalog — see
+    /// `ConfiguredSelectionTier`'s invariant). Every id the tier returns
+    /// resolves in that snapshot by construction (the tier filters unknown
+    /// ids itself); the `compactMap` is defensive.
     ///
     /// - Parameters:
-    ///   - selection: the tier to search, paired with the index snapshot it
-    ///     was built over.
+    ///   - selection: the tier to search, paired with the refreshable index
+    ///     snapshot it ranks over.
     ///   - intent: the plain-language search intent.
     ///   - limit: the maximum number of matches to return.
     /// - Returns: the selected items' verbatim `Match`es, at most `limit`.
     /// - Throws: whatever the tier's underlying session throws.
     private static func selectionSearch(
-        _ selection: (tier: SelectionTier, snapshot: MetadataIndex<Item>),
+        _ selection: ConfiguredSelectionTier,
         intent: String,
         limit: Int
     ) async throws -> [Match<Item>] {
         let selectionMatches = try await selection.tier.search(intent: intent, limit: limit)
+        let snapshot = selection.snapshot.withLock { $0 }
         return selectionMatches.compactMap { match in
-            guard let item = selection.snapshot.item(forID: match.id) else { return nil }
+            guard let item = snapshot.item(forID: match.id) else { return nil }
             return Match(id: match.id, block: match.block, score: match.score, signals: match.signals, item: item)
         }
     }

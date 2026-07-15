@@ -280,6 +280,112 @@ struct HotReloadTests {
         #expect(matches.first?.signals?.cosine != 0.0)
     }
 
+    // MARK: - Caught-up embeddings reach the selection tier's candidate ranking
+
+    @Test
+    func contentUnchangedEmbedCatchUpMakesMergedEmbeddingsVisibleToOverBudgetCandidateRanking() async throws {
+        struct AlwaysFails: Error {}
+        // Three items with no lexical/fuzzy overlap with the "snapshot"
+        // intent, indexed with real content but no stored embeddings (a
+        // prior embed failed transiently) -- keyword signals alone rank all
+        // of them 0.0, so the over-budget candidate cut falls back to
+        // catalog order (x, y).
+        let x = FixtureItem(id: "x", block: "first unrelated block text", summary: "SUMMARY_x")
+        let y = FixtureItem(id: "y", block: "second unrelated block text", summary: "SUMMARY_y")
+        let z = FixtureItem(id: "z", block: "third unrelated block text", summary: "SUMMARY_z")
+        let indexWithoutEmbeddings = await MetadataIndex.build(
+            items: [x, y, z],
+            embedder: FakeEmbedder(dimension: 2, failure: AlwaysFails())
+        )
+
+        // Once caught up, only "z"'s block lines up with the "snapshot"
+        // intent's embedding -- cosine is the only signal that can promote
+        // it into the top-2 candidate cut.
+        let workingEmbedder = FakeEmbedder(
+            dimension: 2,
+            vectorsByText: [z.block: [1, 0], "snapshot": [1, 0]]
+        )
+        let factory = RecordingSessionFactory(responses: [#"{"ids":["z"]}"#])
+        let config = SelectionConfig(
+            model: factory.makeSession,
+            capacityCharacterLimit: 1,
+            candidateLimit: 2
+        )
+        let searcher = MetadataSearcher(
+            index: indexWithoutEmbeddings,
+            mode: .selection,
+            embedder: workingEmbedder,
+            selection: config
+        )
+
+        // Content-identical forward: nothing keyword/prefix relevant
+        // changes, but the embeddings that never succeeded catch up and
+        // merge into the live index.
+        await searcher.update(items: [x, y, z])
+
+        _ = try await searcher.search(intent: "snapshot", limit: 5)
+
+        // The caught-up embeddings must influence the over-budget candidate
+        // ranking without waiting for the next content change: "z" outranks
+        // the zero-signal tail, so this round's candidate set (seeded
+        // summaries + grammar id enum) is (z, x), not catalog-order (x, y).
+        let instructions = try #require(factory.receivedInstructions.first)
+        #expect(instructions.contains("SUMMARY_z"))
+        let grammar = try #require(factory.receivedGrammars.first)
+        guard case .jsonSchema(let source) = grammar else {
+            Issue.record("expected a .jsonSchema grammar")
+            return
+        }
+        let data = try #require(source.data(using: .utf8))
+        let root = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let properties = try #require(root["properties"] as? [String: Any])
+        let idsSchema = try #require(properties["ids"] as? [String: Any])
+        let itemsSchema = try #require(idsSchema["items"] as? [String: Any])
+        let enumValues = try #require(itemsSchema["enum"] as? [String])
+        #expect(Set(enumValues) == ["z", "x"])
+    }
+
+    @Test
+    func contentIdenticalEmbedCatchUpRetainsTheCachedRootSession() async throws {
+        struct AlwaysFails: Error {}
+        let a = FixtureItem(id: "a", block: "alpha block")
+        let indexWithoutEmbedding = await MetadataIndex.build(
+            items: [a],
+            embedder: FakeEmbedder(dimension: 2, failure: AlwaysFails())
+        )
+        let workingEmbedder = FakeEmbedder(dimension: 2, vectorsByText: ["alpha block": [1, 0]])
+        let root = RootSessionRespondCalledDirectlySession(forkResponses: [
+            #"{"ids":["a"]}"#,
+            #"{"ids":["a"]}"#,
+        ])
+        let factoryCallCount = CallCounter()
+        let config = SelectionConfig(model: { _, _ in
+            factoryCallCount.increment()
+            return root
+        })
+        let searcher = MetadataSearcher(
+            index: indexWithoutEmbedding,
+            mode: .selection,
+            embedder: workingEmbedder,
+            selection: config
+        )
+
+        _ = try await searcher.search(intent: "task", limit: 5)
+        #expect(factoryCallCount.count == 1)
+
+        // Content-identical catch-up: the embedding that never succeeded
+        // merges in, but nothing keyword/prefix relevant changed -- the
+        // cached root must survive (no re-prefill), unlike a real content
+        // change. Guards the catch-up fix above against regressing into a
+        // wholesale tier rebuild.
+        await searcher.update(items: [a])
+
+        _ = try await searcher.search(intent: "task", limit: 5)
+
+        #expect(factoryCallCount.count == 1)
+        #expect(root.forkCount == 2)
+    }
+
     // MARK: - Overlapping update(items:) calls on the same id
 
     @Test

@@ -64,6 +64,18 @@ let huggingFacePackage = "swift-huggingface"
 /// imports it.
 let transformersPackage = "swift-transformers"
 
+/// The GitHub organization URL base the swissarmyhammer-family dependencies
+/// (`routerDependencyName`, `foundationModelsRankerPackage`, `mlxPackage`)
+/// resolve under — extracted so the org lives in one place instead of three
+/// dependency entries that could silently drift.
+let swissArmyHammerOrg = "https://github.com/swissarmyhammer/"
+
+/// The GitHub organization URL base the Hugging Face dependencies
+/// (`huggingFacePackage`, `transformersPackage`, swift-jinja) resolve
+/// under — extracted for the same single-source-of-truth reason as
+/// `swissArmyHammerOrg`.
+let huggingFaceOrg = "https://github.com/huggingface/"
+
 /// The name of the shared `Examples/ExamplesSupport` library target.
 ///
 /// Referenced verbatim by every example's dependency list (`CatalogSearchCore`
@@ -184,11 +196,11 @@ let package = Package(
         )
     ],
     dependencies: [
-        .package(url: "https://github.com/swissarmyhammer/\(routerDependencyName)", branch: "main"),
-        .package(url: "https://github.com/swissarmyhammer/\(foundationModelsRankerPackage)", branch: "main"),
-        .package(url: "https://github.com/swissarmyhammer/\(mlxPackage)", branch: "foundationmodels-fixes"),
-        .package(url: "https://github.com/huggingface/\(huggingFacePackage)", from: "0.9.0"),
-        .package(url: "https://github.com/huggingface/\(transformersPackage)", from: "1.3.0"),
+        .package(url: "\(swissArmyHammerOrg)\(routerDependencyName)", branch: "main"),
+        .package(url: "\(swissArmyHammerOrg)\(foundationModelsRankerPackage)", branch: "main"),
+        .package(url: "\(swissArmyHammerOrg)\(mlxPackage)", branch: "foundationmodels-fixes"),
+        .package(url: "\(huggingFaceOrg)\(huggingFacePackage)", from: "0.9.0"),
+        .package(url: "\(huggingFaceOrg)\(transformersPackage)", from: "1.3.0"),
         // Pinned below swift-jinja 2.4.0: that release changed `Value.object`
         // to key on `ObjectKey` instead of `String`, which the latest tagged
         // swift-transformers (1.3.3, still HEAD as of this pin) never
@@ -196,7 +208,7 @@ let package = Package(
         // 2.4.0. transformersPackage only constrains jinja to `from: "2.0.0"`,
         // so without this upper bound `swift package update` silently drifts
         // onto the broken release.
-        .package(url: "https://github.com/huggingface/swift-jinja.git", "2.0.0"..<"2.4.0"),
+        .package(url: "\(huggingFaceOrg)swift-jinja.git", "2.0.0"..<"2.4.0"),
     ],
     targets: [
         .target(
