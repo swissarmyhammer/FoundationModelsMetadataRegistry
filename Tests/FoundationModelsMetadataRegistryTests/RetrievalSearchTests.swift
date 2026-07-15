@@ -246,4 +246,31 @@ struct RetrievalSearchTests {
 
         #expect(defaultedMatches.map(\.id) == autoMatches.map(\.id))
     }
+
+    // MARK: - Hit -> Match mapping parity (via FoundationModelsRanker)
+
+    @Test
+    func matchSignalsEqualTheHitSignalsRankerComputesForTheSameQuery() async throws {
+        // The searcher's `.retrieval` results must be exactly Ranker's own
+        // `HybridRanker.topMatches` hits with the typed `item` re-attached:
+        // same ids, same fused scores, and -- the point of this test -- the
+        // same raw per-signal `Signals`, guarding the Hit -> Match mapping.
+        let searcher = MetadataSearcher(items: Self.catalog)
+        let matches = try await searcher.search(intent: "deploy", limit: 5)
+
+        let index = MetadataIndex(items: Self.catalog)
+        let hits = HybridRanker.topMatches(
+            ids: index.ids,
+            documents: index.ids.compactMap { index.rankedDocument(forID: $0) },
+            query: "deploy",
+            cosineScores: nil,
+            weights: Weights(),
+            limit: 5
+        )
+
+        #expect(!hits.isEmpty)
+        #expect(matches.map(\.id) == hits.map(\.id))
+        #expect(matches.map(\.score) == hits.map(\.score))
+        #expect(matches.map(\.signals) == hits.map { Optional($0.signals) })
+    }
 }

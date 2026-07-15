@@ -72,7 +72,7 @@ struct EmbeddingTests {
 
     /// A `TextEmbedding` conformer that violates the documented "one vector
     /// per input" contract by always returning an empty array without
-    /// throwing -- exercises `computeCosineRanking`'s defense-in-depth
+    /// throwing -- exercises `computeCosineScores`'s defense-in-depth
     /// diagnostic for that specific misbehavior, distinct from the
     /// `FakeEmbedder`-throwing path `searchWithNoEmbedderConfigured...`
     /// and friends already cover.

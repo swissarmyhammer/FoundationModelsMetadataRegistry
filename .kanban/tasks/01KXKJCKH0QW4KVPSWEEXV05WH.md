@@ -91,8 +91,8 @@ comments:
   id: 01kxkwjbp00cwgc0f0hb5tnggv
   text: 'really-done complete for the 16:25 findings; leaving in doing for /review. Fresh verification: swift build exit 0 (all Examples targets), swift test 101 tests in 9 suites all passing, 4 gated skips intact. Adversarial double-check verdict: PASS — it independently re-ran swift test (same 101/9 green, gated suite skipped), confirmed the extracted computeRanking body is step-for-step identical to both replaced blocks (same parameter passthrough, ordering/tie-break/normalized/signals unchanged), both guards survived, computeSignals/fuseAndNormalize/sortByNormalizedScore each have exactly one call site now (no residual duplication, no stale orderedDocumentIndices references), exactly one AlwaysFails declaration repo-wide with three resolving usages, and the diff scope is only the two fix targets plus kanban record files. Both 16:25 checkboxes are [x] on the card. Not committed — orchestrator handles commits.'
   timestamp: 2026-07-15T21:57:45.792204+00:00
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '8e80'
 title: 'Selection-tier migration: rebase MetadataSearcher on FoundationModelsRanker''s SelectionTier and delete the local shadowed copies'
 ---
 ## What

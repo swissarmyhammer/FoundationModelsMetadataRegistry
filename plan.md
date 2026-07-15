@@ -159,7 +159,15 @@ micro-package under its real name), re-exported via
 consumers unchanged. Ranker also ships the selection tier: the selection-tier
 migration is complete — this package's local `Selection`/`SelectionTier`/
 `SelectionConfig`/`AgentSession` copies are deleted, `MetadataIndex` conforms to
-Ranker's `SelectionCatalog`, and §6's tier resolves through the same re-export.)*
+Ranker's `SelectionCatalog`, and §6's tier resolves through the same re-export.
+The retrieval tier is migrated too: `MetadataIndex` stores one Ranker
+`RankedDocument` per item (the per-document BM25/trigram precompute) and
+`MetadataSearcher` delegates this section's per-signal scoring, RRF fusion, and
+normalization to Ranker's `HybridRanker` (`topMatches` for `search`, `fullOrdering`
+for the over-budget candidate ranking); only cosine scoring against the stored
+embeddings (`CosineScoring.cosineSimilarity`) and the `.embeddingUnavailable`/
+zero-weight gating stay local, with `Weights` now a typealias of Ranker's
+`SignalWeights`.)*
 
 **Scale.** Everything lives **in memory** — no database, no vector store, no ANN, no
 persistence. Expected catalogs are 10¹–10³ items (we are not designing for 10⁴+), so

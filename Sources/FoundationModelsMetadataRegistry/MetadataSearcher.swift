@@ -1,43 +1,20 @@
 import os
 
 /// Per-signal fusion weights for `MetadataSearcher`'s retrieval tier (plan.md
-/// §5): the relative weight `RRF.fuse(rankedLists:weights:k:)` gives each of
-/// the BM25, trigram, and cosine rankings.
+/// §5) — FoundationModelsRanker's `SignalWeights` under this package's
+/// established name: the relative weight `HybridRanker` gives each of the
+/// BM25, trigram, and cosine rankings when fusing them.
 ///
 /// A weight of `0.0` excludes that signal from the fused ranking entirely —
-/// its ranked list (and weight) are left out of `RRF.fuse`/`RRF.normalize`'s
-/// inputs altogether, rather than included at zero, so the normalization
-/// ceiling never counts a signal that couldn't have scored anything (plan.md
-/// §5 "absent-signal rule", generalized from CodeContextKit's
-/// `SearchWeights`/`SearchCode.fuseRankings`).
-public struct Weights: Sendable, Equatable {
-    /// The weight applied to the BM25 keyword-ranking signal.
-    public var bm25: Double
-
-    /// The weight applied to the trigram fuzzy-ranking signal.
-    public var trigram: Double
-
-    /// The weight applied to the cosine semantic-ranking signal. Only takes
-    /// effect when the searcher is configured with an embedder (`init(items:
-    /// mode:weights:embedder:onDiagnostic:)` or `init(index:mode:weights:
-    /// embedder:onDiagnostic:)`) — without one, cosine never ranks anything
-    /// regardless of this weight.
-    public var cosine: Double
-
-    /// Creates a set of per-signal fusion weights.
-    ///
-    /// - Parameters:
-    ///   - bm25: the weight applied to the BM25 signal. Defaults to `1.0`.
-    ///   - trigram: the weight applied to the trigram signal. Defaults to
-    ///     `1.0`.
-    ///   - cosine: the weight applied to the cosine signal. Defaults to
-    ///     `1.0`.
-    public init(bm25: Double = 1.0, trigram: Double = 1.0, cosine: Double = 1.0) {
-        self.bm25 = bm25
-        self.trigram = trigram
-        self.cosine = cosine
-    }
-}
+/// left out of the fusion and the normalization ceiling altogether, rather
+/// than included at zero, so the ceiling never counts a signal that couldn't
+/// have scored anything (plan.md §5 "absent-signal rule"). `cosine` only
+/// takes effect when the searcher is configured with an embedder
+/// (`init(items:mode:weights:embedder:onDiagnostic:)` or `init(index:mode:
+/// weights:embedder:onDiagnostic:)`) — without one, cosine never ranks
+/// anything regardless of this weight — and a zero `cosine` weight skips the
+/// cosine computation without an `.embeddingUnavailable` diagnostic.
+public typealias Weights = SignalWeights
 
 /// Searches a catalog of `SearchableMetadata` on behalf of a Foundation
 /// Models session (plan.md §3): an in-memory `MetadataIndex` plus the
@@ -45,8 +22,9 @@ public struct Weights: Sendable, Equatable {
 /// `search(intent:limit:)` entry point.
 ///
 /// `.retrieval` (BM25 (two fields) + character-trigram Dice + cosine, when an
-/// embedder is configured, fused by `RRF.fuse(k: 60)` and normalized to
-/// `[0, 1]`, plan.md §5) answers with no session, no tokens. Without an
+/// embedder is configured, fused and normalized to `[0, 1]` by
+/// FoundationModelsRanker's `HybridRanker`, plan.md §5) answers with no
+/// session, no tokens. Without an
 /// `embedder` (or before any catalog item has been embedded), the cosine
 /// signal never ranks anything and every `Match.signals.cosine` is `0.0` —
 /// the same "no embedding available" value `Signals.cosine` documents, not a
@@ -469,97 +447,49 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         }
     }
 
-    // MARK: - Retrieval tier
+    // MARK: - Retrieval tier (plan.md §5, via FoundationModelsRanker)
 
-    /// Sorts document indices by descending normalized fused score, breaking
-    /// ties by ascending catalog index for deterministic, first-seen-order
-    /// output — the ordering `computeRanking(intent:index:weights:embedder:
-    /// onDiagnostic:)` applies to `normalized`'s keys on behalf of both
-    /// retrieval callers.
-    ///
-    /// - Parameters:
-    ///   - indices: the document indices to sort.
-    ///   - normalized: doc index -> normalized `[0, 1]` fused score.
-    /// - Returns: `indices`, ordered descending by score.
-    private static func sortByNormalizedScore(indices: [Int], using normalized: [Int: Double]) -> [Int] {
-        indices.sorted { left, right in
-            let leftScore = normalized[left] ?? 0.0
-            let rightScore = normalized[right] ?? 0.0
-            guard leftScore != rightScore else {
-                // Deterministic tie-break: first-seen catalog order.
-                return left < right
-            }
-            return leftScore > rightScore
-        }
-    }
-
-    /// Computes the fused ranking for `intent` over `index`: the raw
-    /// per-signal `RetrievalSignals`, the normalized `[0, 1]` fused scores,
-    /// and the ranked indices of every document at least one signal ranked
-    /// (descending score, catalog-order tie-break) — the ranking computation
-    /// `retrievalSearch(intent:limit:)` and `rankEntireCatalog(intent:index:
-    /// weights:embedder:onDiagnostic:)` share; each caller applies only its
-    /// own document-selection step (limit-truncated prefix vs. ranked +
-    /// unranked-tail concatenation).
-    ///
-    /// - Parameters:
-    ///   - intent: the search query.
-    ///   - index: the catalog index to rank.
-    ///   - weights: the per-signal fusion weights.
-    ///   - embedder: the embedder to embed `intent` with for the cosine
-    ///     signal, or `nil` to skip it.
-    ///   - onDiagnostic: called for every diagnostic emitted while ranking
-    ///     (currently only `.embeddingUnavailable`).
-    /// - Returns: the raw signals, the normalized fused scores, and the
-    ///   ranked document indices.
-    private static func computeRanking(
-        intent: String,
-        index: MetadataIndex<Item>,
-        weights: Weights,
-        embedder: (any TextEmbedding)?,
-        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
-    ) async -> (signals: RetrievalSignals, normalized: [Int: Double], rankedIndices: [Int]) {
-        let signals = await computeSignals(intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic)
-        let normalized = fuseAndNormalize(signals: signals, weights: weights)
-        let rankedIndices = sortByNormalizedScore(indices: Array(normalized.keys), using: normalized)
-        return (signals, normalized, rankedIndices)
-    }
-
-    /// Runs the `.retrieval` tier: BM25 + trigram + cosine rankings fused by
-    /// `RRF.fuse(k: 60)`, normalized to `[0, 1]`, mapped back through the
-    /// catalog to verbatim `Match`es (plan.md §5). Only ever returns
-    /// documents at least one signal actually ranked — contrast
-    /// `rankEntireCatalog(intent:index:weights:embedder:onDiagnostic:)`,
-    /// which the over-budget selection path needs a full, always-
-    /// `index.count`-long ordering from.
+    /// Runs the `.retrieval` tier through FoundationModelsRanker's
+    /// `HybridRanker.topMatches(ids:documents:query:cosineScores:weights:
+    /// limit:)`: BM25 + trigram + cosine rankings fused and normalized to
+    /// `[0, 1]`, mapped back through the catalog to verbatim `Match`es
+    /// (plan.md §5). Only ever returns documents at least one signal
+    /// actually ranked — contrast `rankEntireCatalog(intent:index:weights:
+    /// embedder:onDiagnostic:)`, which the over-budget selection path needs
+    /// a full, always-`index.count`-long ordering from.
     private func retrievalSearch(intent: String, limit: Int) async -> [Match<Item>] {
         guard limit > 0, index.count > 0 else { return [] }
 
-        let ranking = await Self.computeRanking(intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic)
-
-        return Self.buildMatches(
-            documentIndices: Array(ranking.rankedIndices.prefix(limit)),
-            index: index,
-            normalized: ranking.normalized,
-            signals: ranking.signals
+        let cosineScores = await Self.computeCosineScores(
+            intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic
         )
+        let hits = HybridRanker.topMatches(
+            ids: index.ids,
+            documents: Self.rankedDocuments(in: index),
+            query: intent,
+            cosineScores: cosineScores,
+            weights: weights,
+            limit: limit
+        )
+        return Self.matches(fromHits: hits, in: index)
     }
 
     // MARK: - Over-budget candidate ranking (plan.md §6)
 
     /// Ranks the entire catalog for `intent`, best-first, always returning
-    /// exactly `index.count` matches: documents any signal actually ranked
-    /// come first, ordered exactly like `retrievalSearch(intent:limit:)`'s
-    /// own fused/normalized ranking; every other document follows in
-    /// catalog order, scored `0.0` with all-absent `Signals` (the
-    /// absent-signal rule, plan.md §5, extended to "no signal ranked this
-    /// document at all"). This is `SelectionTier`'s over-budget top-M
-    /// candidate source (`SelectionTier.init(index:config:onDiagnostic:
-    /// retrievalRanking:)`) — unlike `retrievalSearch(intent:limit:)`, which
-    /// only ever returns real matches, the over-budget path needs a full
-    /// ordering so its top-M candidate count is always `min(candidateLimit,
-    /// index.count)`, never fewer just because a query's signal overlap with
-    /// the catalog happens to be sparse.
+    /// exactly `index.count` matches through FoundationModelsRanker's
+    /// `HybridRanker.fullOrdering(ids:documents:query:cosineScores:weights:)`:
+    /// documents any signal actually ranked come first, ordered exactly like
+    /// `retrievalSearch(intent:limit:)`'s own fused/normalized ranking;
+    /// every other document follows in catalog order, scored `0.0` with
+    /// all-absent `Signals` (the absent-signal rule, plan.md §5, extended to
+    /// "no signal ranked this document at all"). This is `SelectionTier`'s
+    /// over-budget top-M candidate source (`SelectionTier.init(index:config:
+    /// onDiagnostic:retrievalRanking:)`) — unlike `retrievalSearch(intent:
+    /// limit:)`, which only ever returns real matches, the over-budget path
+    /// needs a full ordering so its top-M candidate count is always
+    /// `min(candidateLimit, index.count)`, never fewer just because a
+    /// query's signal overlap with the catalog happens to be sparse.
     ///
     /// - Parameters:
     ///   - intent: the search query.
@@ -579,298 +509,108 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     ) async -> [Match<Item>] {
         guard index.count > 0 else { return [] }
 
-        let ranking = await computeRanking(intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic)
-        let unrankedIndices = index.ids.indices.filter { ranking.normalized[$0] == nil }
-
-        return buildMatches(documentIndices: ranking.rankedIndices + unrankedIndices, index: index, normalized: ranking.normalized, signals: ranking.signals)
+        let cosineScores = await computeCosineScores(
+            intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic
+        )
+        let hits = HybridRanker.fullOrdering(
+            ids: index.ids,
+            documents: rankedDocuments(in: index),
+            query: intent,
+            cosineScores: cosineScores,
+            weights: weights
+        )
+        return matches(fromHits: hits, in: index)
     }
 
-    /// One (ranking, weight, raw scores) tuple per retrieval signal, as
-    /// computed by `computeSignals(intent:index:weights:embedder:
-    /// onDiagnostic:)` — the raw input `computeRanking(intent:index:weights:
-    /// embedder:onDiagnostic:)` fuses and orders for both retrieval callers.
-    private struct RetrievalSignals {
-        let bm25Ranking: [Int]
-        let bm25Scores: [Double]
-        let trigramRanking: [Int]
-        let trigramScores: [Double]
-        let cosineRanking: [Int]
-        let cosineScores: [Double]
+    // MARK: - Shared ranking inputs and Hit -> Match mapping
+
+    /// Every indexed entry's precomputed `RankedDocument`, positionally
+    /// aligned with `index.ids` — the `documents` array both `HybridRanker`
+    /// entry points score. Every id in `index.ids` resolves by construction
+    /// (`ids` is exactly the set `rankedDocument(forID:)` can answer for),
+    /// so the `compactMap` never drops anything; `HybridRanker`'s own
+    /// `ids.count == documents.count` precondition would trap if that
+    /// invariant ever broke.
+    ///
+    /// - Parameter index: the catalog index to gather documents from.
+    /// - Returns: one `RankedDocument` per indexed id, in `ids` order.
+    private static func rankedDocuments(in index: MetadataIndex<Item>) -> [RankedDocument] {
+        index.ids.compactMap { index.rankedDocument(forID: $0) }
     }
 
-    /// Computes the BM25, trigram, and cosine signals for `intent` over
-    /// `index` — the per-signal computation step of
-    /// `computeRanking(intent:index:weights:embedder:onDiagnostic:)`.
+    /// Computes the raw per-document cosine scores `HybridRanker` fuses as
+    /// its cosine signal — `intent` embedded through `embedder`, scored
+    /// against each catalog entry's stored block embedding via
+    /// `CosineScoring.cosineSimilarity(_:_:)` (plan.md §5 "brute-force
+    /// scoring — plain per-row dot products for cosine — is exact and
+    /// effectively instant" at metadata scale; decision #10, no vector
+    /// store) — or `nil` to skip the signal entirely.
+    ///
+    /// Degrades to keyword-only (`nil`) and reports `.embeddingUnavailable`
+    /// via `onDiagnostic` — exactly once per search — whenever cosine can't
+    /// contribute: no `embedder` is configured, none of the catalog's items
+    /// carry an embedding yet, or embedding the query itself fails
+    /// (including a misbehaving embedder returning no vector at all for a
+    /// one-element input — a degradation worth reporting, not a silent
+    /// skip; plan.md §1 "every degradation is reported, never silent").
+    /// A zero `weights.cosine` also returns `nil`, but *without* the
+    /// diagnostic: the caller doesn't want the signal, so there's no reason
+    /// to embed the query or warn about a missing embedder for it. An item
+    /// with no stored embedding scores `0.0` — the absent-signal rule
+    /// (plan.md §5): it contributes nothing to cosine but still ranks via
+    /// BM25 + trigram.
     ///
     /// - Parameters:
     ///   - intent: the search query.
-    ///   - index: the catalog index to score.
+    ///   - index: the catalog index whose stored embeddings are scored.
     ///   - weights: the per-signal fusion weights (cosine is only computed
     ///     when `weights.cosine > 0.0`).
-    ///   - embedder: the embedder to embed `intent` with for the cosine
-    ///     signal, or `nil` to skip it.
-    ///   - onDiagnostic: called for every diagnostic emitted while computing
-    ///     the cosine signal (currently only `.embeddingUnavailable`).
-    /// - Returns: every signal's ranking and full-length, positionally
-    ///   aligned raw scores.
-    private static func computeSignals(
+    ///   - embedder: the embedder to embed `intent` with, or `nil` to
+    ///     degrade to keyword-only.
+    ///   - onDiagnostic: called with `.embeddingUnavailable` when cosine
+    ///     was wanted but can't contribute.
+    /// - Returns: one raw cosine score per document, positionally aligned
+    ///   with `index.ids`, or `nil` to skip the cosine signal.
+    private static func computeCosineScores(
         intent: String,
         index: MetadataIndex<Item>,
         weights: Weights,
         embedder: (any TextEmbedding)?,
         onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
-    ) async -> RetrievalSignals {
-        let (bm25Ranking, bm25Scores) = computeBM25Ranking(intent: intent, index: index)
-        let (trigramRanking, trigramScores) = computeTrigramRanking(intent: intent, index: index)
+    ) async -> [Double]? {
         // Cosine only runs when configured to actually count: a zero weight
         // means the caller doesn't want the signal, so there's no reason to
         // embed the query or warn about a missing embedder for it.
-        let (cosineRanking, cosineScores): ([Int], [Double])
-        if weights.cosine > 0.0 {
-            (cosineRanking, cosineScores) = await computeCosineRanking(
-                intent: intent, index: index, embedder: embedder, onDiagnostic: onDiagnostic
-            )
-        } else {
-            (cosineRanking, cosineScores) = ([], zeroScoresArray(count: index.count))
-        }
-        return RetrievalSignals(
-            bm25Ranking: bm25Ranking,
-            bm25Scores: bm25Scores,
-            trigramRanking: trigramRanking,
-            trigramScores: trigramScores,
-            cosineRanking: cosineRanking,
-            cosineScores: cosineScores
-        )
-    }
-
-    /// Fuses `signals` via `RRF.fuse(k: 60)` and normalizes to `[0, 1]`
-    /// (plan.md §5), excluding any signal whose weight is `0.0` or whose
-    /// ranking is empty from both the fusion and the normalization ceiling
-    /// (the "absent-signal rule").
-    ///
-    /// - Parameters:
-    ///   - signals: the per-signal rankings to fuse.
-    ///   - weights: the per-signal fusion weights.
-    /// - Returns: doc index -> normalized `[0, 1]` fused score, for every
-    ///   document any included signal ranked.
-    private static func fuseAndNormalize(signals: RetrievalSignals, weights: Weights) -> [Int: Double] {
-        let rankedSignals: [(ranking: [Int], weight: Double)] = [
-            (signals.bm25Ranking, weights.bm25),
-            (signals.trigramRanking, weights.trigram),
-            (signals.cosineRanking, weights.cosine),
-        ]
-
-        var rankedLists: [[Int]] = []
-        var listWeights: [Double] = []
-        // Only signals with a positive configured weight AND at least one
-        // matching document enter RRF's inputs: an empty ranking would
-        // contribute nothing to `fuse` regardless, but leaving its weight out
-        // of `normalize`'s ceiling too keeps a perfect single-signal match
-        // normalizing to 1.0 instead of being capped below it by an
-        // unreachable share (plan.md §5 "absent-signal rule").
-        for (ranking, weight) in rankedSignals where weight > 0.0 && !ranking.isEmpty {
-            rankedLists.append(ranking)
-            listWeights.append(weight)
+        guard weights.cosine > 0.0 else { return nil }
+        guard let embedder, index.ids.contains(where: { index.embedding(forID: $0) != nil }),
+            let queryEmbedding = try? await embedder.embed([intent]).first
+        else {
+            onDiagnostic(.embeddingUnavailable)
+            return nil
         }
 
-        let fused = RRF.fuse(rankedLists: rankedLists, weights: listWeights)
-        return RRF.normalize(fused: fused, weights: listWeights)
-    }
-
-    /// Maps document indices back through the catalog to verbatim
-    /// `Match`es, carrying `normalized`'s fused score (`0.0` if absent) and
-    /// `signals`' raw per-signal breakdown for each — the shared "build a
-    /// `Match`" step `retrievalSearch(intent:limit:)` and
-    /// `rankEntireCatalog(intent:index:weights:embedder:onDiagnostic:)`
-    /// apply to differently-ordered/truncated `documentIndices`.
-    ///
-    /// - Parameters:
-    ///   - documentIndices: the document indices (into `index.ids`) to map,
-    ///     in the order the result should preserve.
-    ///   - index: the catalog index to look items/blocks up in.
-    ///   - normalized: doc index -> normalized `[0, 1]` fused score.
-    ///   - signals: the raw per-signal scores every document was computed
-    ///     against.
-    /// - Returns: one `Match` per resolvable document index, in order.
-    private static func buildMatches(
-        documentIndices: [Int],
-        index: MetadataIndex<Item>,
-        normalized: [Int: Double],
-        signals: RetrievalSignals
-    ) -> [Match<Item>] {
-        documentIndices.compactMap { documentIndex in
-            let id = index.ids[documentIndex]
-            guard let item = index.item(forID: id), let block = index.block(forID: id) else { return nil }
-            return Match(
-                id: id,
-                block: block,
-                score: normalized[documentIndex] ?? 0.0,
-                signals: Signals(
-                    bm25: signals.bm25Scores[documentIndex],
-                    trigram: signals.trigramScores[documentIndex],
-                    cosine: signals.cosineScores[documentIndex]
-                ),
-                item: item
-            )
-        }
-    }
-
-    /// Computes the BM25 keyword-ranking signal: `intent`'s tokens scored
-    /// against every catalog entry's precomputed field-weighted term
-    /// frequency (`id` ×5, block ×1 — `MetadataIndex`'s two-field indexing).
-    ///
-    /// - Returns: the matching document indices (into `index.ids`) ranked
-    ///   descending by score, and the full-length, positionally aligned raw
-    ///   score for every document.
-    private static func computeBM25Ranking(intent: String, index: MetadataIndex<Item>) -> (ranking: [Int], scores: [Double]) {
-        let queryTokens = Tokenizer.tokenize(text: intent)
-        guard !queryTokens.isEmpty else {
-            return ([], zeroScoresArray(count: index.count))
-        }
-
-        let documents = index.ids.map { id in
-            (index.documentLength(forID: id) ?? 0, index.termSet(forID: id) ?? [])
-        }
-        let corpus = BM25Corpus(queryTokens: queryTokens, documents: documents)
-        let scores = index.ids.map { id in
-            corpus.score(
-                weightedTermFrequency: index.weightedTermFrequency(forID: id) ?? [:],
-                documentLength: index.documentLength(forID: id) ?? 0,
-                queryTokens: queryTokens
-            )
-        }
-        return (rankingOfPositiveScores(scores: scores), scores)
-    }
-
-    /// Computes the trigram fuzzy-ranking signal: `intent`'s canonical
-    /// trigram set scored against each catalog entry's `id` (weighted
-    /// `BM25.primaryFieldWeight`) and block (weighted `BM25.bodyFieldWeight`)
-    /// trigram sets — the same two-field weighting BM25 uses, applied to the
-    /// trigram aggregate (`Signals.trigram`'s documented "field-weighted
-    /// aggregate across several fields").
-    ///
-    /// - Returns: the matching document indices (into `index.ids`) ranked
-    ///   descending by score, and the full-length, positionally aligned raw
-    ///   score for every document.
-    private static func computeTrigramRanking(intent: String, index: MetadataIndex<Item>) -> (ranking: [Int], scores: [Double]) {
-        let querySet = Trigram.canonicalTrigramSet(text: intent)
-        let scores = index.ids.map { id -> Double in
-            let idTrigramSet = index.idTrigramSet(forID: id) ?? []
-            let blockTrigramSet = index.blockTrigramSet(forID: id) ?? []
-            return BM25.primaryFieldWeight * Trigram.dice(querySet: querySet, targetSet: idTrigramSet)
-                + BM25.bodyFieldWeight * Trigram.dice(querySet: querySet, targetSet: blockTrigramSet)
-        }
-        return (rankingOfPositiveScores(scores: scores), scores)
-    }
-
-    /// Computes the cosine semantic-ranking signal: `intent` embedded
-    /// through `embedder`, scored against each catalog entry's precomputed
-    /// block embedding via a brute-force per-row dot product (plan.md §5
-    /// "brute-force scoring — plain per-row dot products for cosine — is
-    /// exact and effectively instant" at metadata scale; decision #10, no
-    /// vector store).
-    ///
-    /// Degrades to keyword-only and reports `.embeddingUnavailable` via
-    /// `onDiagnostic` whenever cosine can't contribute: no `embedder` is
-    /// configured, none of the catalog's items carry an embedding yet, or
-    /// embedding the query itself fails. An item with no stored embedding
-    /// scores `0.0` here regardless — the absent-signal rule (plan.md §5):
-    /// it contributes nothing to cosine but still ranks via BM25 + trigram.
-    ///
-    /// - Returns: the matching document indices (into `index.ids`) ranked
-    ///   descending by score, and the full-length, positionally aligned raw
-    ///   score for every document.
-    private static func computeCosineRanking(
-        intent: String,
-        index: MetadataIndex<Item>,
-        embedder: (any TextEmbedding)?,
-        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
-    ) async -> (ranking: [Int], scores: [Double]) {
-        guard let embedder, index.ids.contains(where: { index.embedding(forID: $0) != nil }) else {
-            return embeddingUnavailableRanking(count: index.count, onDiagnostic: onDiagnostic)
-        }
-
-        let queryEmbedding: [Float]
-        do {
-            guard let firstVector = try await embedder.embed([intent]).first else {
-                // A well-behaved `TextEmbedding` conformer returns exactly
-                // one vector per input; an empty result for a one-element
-                // input is itself a degradation worth reporting, not a
-                // silent empty ranking (plan.md §1 "every degradation is
-                // reported, never silent").
-                return embeddingUnavailableRanking(count: index.count, onDiagnostic: onDiagnostic)
-            }
-            queryEmbedding = firstVector
-        } catch {
-            return embeddingUnavailableRanking(count: index.count, onDiagnostic: onDiagnostic)
-        }
-
-        let scores = index.ids.map { id -> Double in
+        return index.ids.map { id in
             guard let itemEmbedding = index.embedding(forID: id) else { return 0.0 }
-            return cosineSimilarity(query: queryEmbedding, target: itemEmbedding)
+            return CosineScoring.cosineSimilarity(queryEmbedding, itemEmbedding)
         }
-        return (rankingOfPositiveScores(scores: scores), scores)
     }
 
-    /// Reports `.embeddingUnavailable` and returns the zero-filled ranking
-    /// every guard in `computeCosineRanking(intent:index:embedder:
-    /// onDiagnostic:)` falls back to when cosine can't contribute: no
-    /// `embedder` is configured, none of the catalog's items carry an
-    /// embedding yet, or embedding the query itself fails — the shared
-    /// "degrade to keyword-only, report it, never silently" response
-    /// (plan.md §1, §5).
+    /// Maps FoundationModelsRanker's `Hit`s back into this package's typed
+    /// `Match<Item>`es by looking each hit's id up in `index` — the id,
+    /// fused score, and raw per-signal `Signals` carry over verbatim, and
+    /// the catalog's stored block and typed `item` are re-attached here (a
+    /// `Hit` carries neither). Every id a hit carries resolves in `index`
+    /// by construction (the hits were ranked over `index.ids`); the
+    /// `compactMap` is defensive.
     ///
     /// - Parameters:
-    ///   - count: the number of documents to zero-fill scores for.
-    ///   - onDiagnostic: called with `.embeddingUnavailable`.
-    /// - Returns: an empty ranking and `count` zero-filled scores.
-    private static func embeddingUnavailableRanking(
-        count: Int,
-        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
-    ) -> (ranking: [Int], scores: [Double]) {
-        onDiagnostic(.embeddingUnavailable)
-        return ([], zeroScoresArray(count: count))
-    }
-
-    /// Cosine similarity between two equal-length vectors: `(a · b) / (|a| |b|)`.
-    ///
-    /// - Parameters:
-    ///   - query: the query's embedding.
-    ///   - target: the catalog entry's stored block embedding.
-    /// - Returns: the similarity in `[-1.0, 1.0]`, or `0.0` if the vectors
-    ///   differ in length or either has zero magnitude (orthogonal-by-
-    ///   convention, matching `Signals.cosine`'s documented `0.0` for "either
-    ///   the query or the doc lacks an embedding").
-    private static func cosineSimilarity(query: [Float], target: [Float]) -> Double {
-        guard query.count == target.count, !query.isEmpty else { return 0.0 }
-
-        var dotProduct: Float = 0.0
-        var queryMagnitudeSquared: Float = 0.0
-        var targetMagnitudeSquared: Float = 0.0
-        for index in query.indices {
-            dotProduct += query[index] * target[index]
-            queryMagnitudeSquared += query[index] * query[index]
-            targetMagnitudeSquared += target[index] * target[index]
+    ///   - hits: the ranked hits to map, in the order the result preserves.
+    ///   - index: the catalog index to look items/blocks up in.
+    /// - Returns: one `Match` per resolvable hit, in order.
+    private static func matches(fromHits hits: [Hit], in index: MetadataIndex<Item>) -> [Match<Item>] {
+        hits.compactMap { hit in
+            guard let item = index.item(forID: hit.id), let block = index.block(forID: hit.id) else { return nil }
+            return Match(id: hit.id, block: block, score: hit.score, signals: hit.signals, item: item)
         }
-
-        guard queryMagnitudeSquared > 0.0, targetMagnitudeSquared > 0.0 else { return 0.0 }
-        return Double(dotProduct / (queryMagnitudeSquared.squareRoot() * targetMagnitudeSquared.squareRoot()))
-    }
-
-    /// The indices of every positive score, descending by score — the
-    /// "graceful degradation, no zero-fill" ranked-list shape
-    /// `RRF.fuse(rankedLists:weights:k:)` expects: a document that scored
-    /// `0.0` (no match at all for this signal) is simply absent from the
-    /// list, exactly as if it weren't in the catalog for this signal.
-    private static func rankingOfPositiveScores(scores: [Double]) -> [Int] {
-        scores.indices.filter { scores[$0] > 0.0 }.sorted { scores[$0] > scores[$1] }
-    }
-
-    /// A `count`-long array of `0.0` scores — the "signal couldn't be
-    /// computed" placeholder every signal-ranking function returns alongside
-    /// an empty ranking when its guard fails (empty query, disabled weight,
-    /// missing embedder).
-    private static func zeroScoresArray(count: Int) -> [Double] {
-        [Double](repeating: 0.0, count: count)
     }
 }

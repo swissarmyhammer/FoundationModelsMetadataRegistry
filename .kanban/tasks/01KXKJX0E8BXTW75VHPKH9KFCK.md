@@ -1,10 +1,27 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01kxkx5hgm397mznmcw9tddj9c
+  text: 'Picked up by /finish after ^exv05wh landed in done (4 iterations). Note for implementation: the card was written before ^exv05wh''s review rounds — MetadataSearcher now has a shared computeRanking(intent:index:weights:embedder:onDiagnostic:) helper feeding both retrievalSearch and rankEntireCatalog (this is the block HybridRanker replaces — one call site now, not two), and the selection tier pairs with a lock-guarded refreshable index snapshot (ConfiguredSelectionTier). Baseline suite is now 101 tests in 9 suites (4 gated skips), not the 99 on the card.'
+  timestamp: 2026-07-15T22:08:14.356151+00:00
+- actor: claude-code
+  id: 01kxkxfeva86g8vwh6m0tqtpm7
+  text: 'Picked up ^kh9kfck. Research done: verified Ranker API (HybridRanker.topMatches/fullOrdering, RankedDocument(primaryText:bodyText:), SignalWeights, CosineScoring.cosineSimilarity, Hit/Signals both Equatable) matches the local pipeline field-for-field. Plan: (1) RED — move CatalogTests term/trigram assertions to rankedDocument(forID:) and add the Hit.signals==Match.signals parity test in RetrievalSearchTests (fails to compile until the accessor exists); (2) GREEN — MetadataIndex.Entry stores one RankedDocument (item/block/blockHash/embedding stay), five per-field lookups deleted, rankedDocument(forID:) added; MetadataSearcher''s computeRanking + 11 callees replaced by computeCosineScores (keeps .embeddingUnavailable exactly-once + zero-weight silent skip) feeding HybridRanker, plus a Hit->Match mapper; Weights becomes typealias of SignalWeights; (3) doc refresh: actor header, reexport comment (mentions BM25Corpus literally — grep criterion applies to comments too), plan.md §5 superseded note. Note: EmbeddingTests has a comment naming computeCosineRanking — will refresh to the new helper name.'
+  timestamp: 2026-07-15T22:13:39.306745+00:00
+- actor: claude-code
+  id: 01kxkz5ngt9c0dpfer41qrwgm0
+  text: 'Implementation landed. TDD: moved CatalogTests internals to rankedDocument(forID:) and added matchSignalsEqualTheHitSignalsRankerComputesForTheSameQuery first — watched swift build fail on the missing accessor (RED), then implemented. Changes: MetadataIndex.Entry now stores one RankedDocument(primaryText: item.id, bodyText: block) (five per-field lookups deleted, rankedDocument(forID:) added, withEmbedding/buildEntry simplified); MetadataSearcher''s computeRanking + RetrievalSignals + 11 private callees deleted, replaced by HybridRanker.topMatches (retrievalSearch) / HybridRanker.fullOrdering (rankEntireCatalog) plus three small helpers: rankedDocuments(in:), computeCosineScores (keeps zero-weight silent skip + exactly-one .embeddingUnavailable via CosineScoring.cosineSimilarity), matches(fromHits:in:); Weights is now public typealias Weights = SignalWeights; reexport comment reworded (it literally named BM25Corpus — grep criterion covers comments); plan.md §5 superseded note extended; EmbeddingTests comment naming computeCosineRanking refreshed. Results: swift build green (all Examples targets), swift test 102 tests in 9 suites passed (baseline 101 + new parity test), 4 gated skips unchanged, golden RetrievalSearchTests expectations untouched, acceptance grep over Sources/ returns no hits. Net -430 lines of duplicated pipeline.'
+  timestamp: 2026-07-15T22:43:15.610752+00:00
+- actor: claude-code
+  id: 01kxkzfqa7gcrzkcbx8qycwj72
+  text: 'really-done complete: verification commands green (swift build exit 0 incl. all Examples targets; swift test 102 tests in 9 suites passed, 4 gated skips; acceptance grep over Sources/ exit 1 / no hits) and adversarial double-check returned PASS with zero findings — it independently re-ran swift test and verified parity line-by-line against Ranker source (CosineScoring.cosineSimilarity byte-identical to the deleted local function; nil cosineScores behaviorally identical to the old zero-fill; RetrievalSearchTests diff purely additive; hot reload/selection wiring untouched per git diff -U0). One out-of-scope observation logged by the reviewer: HybridRanker.fullOrdering''s doc comment in the FoundationModelsRanker repo claims the unranked tail carries all-absent Signals while buildHits reports raw scores — a pre-existing doc/impl mismatch in the DEPENDENCY repo (and the raw-score behavior is exactly what the old local pipeline did, i.e. what parity required); worth a card in that repo, not this one. All subtask/acceptance checkboxes marked. Leaving in doing for /review.'
+  timestamp: 2026-07-15T22:48:45.127374+00:00
 depends_on:
 - 01KXKJCKH0QW4KVPSWEEXV05WH
-position_column: todo
-position_ordinal: '8180'
+position_column: doing
+position_ordinal: '80'
 title: 'Retrieval-tier migration: rebase MetadataSearcher/MetadataIndex on FoundationModelsRanker''s HybridRanker + RankedDocument and delete the local fusion pipeline'
 ---
 ## What
@@ -21,25 +38,25 @@ Ranker's API (verified in `../FoundationModelsRanker/Sources/FoundationModelsRan
 What stays local (deliberately — Ranker's `Searcher` does NOT replace `MetadataSearcher`): the typed `SearchableMetadata`/`Match<Item>` surface, hot reload with hash-guarded incremental re-embedding and overlapping-update merge (`incrementalBaseline`/`mergingEmbeddings` — Ranker's `Searcher` embeds only at init), and the `MetadataDiagnostic` channel. Cosine gating also stays local: `HybridRanker` skips cosine silently when `cosineScores` is nil, so the `.embeddingUnavailable` reporting and the zero-weight skip remain `MetadataSearcher`'s job.
 
 Subtasks:
-- [ ] `MetadataIndex.Entry`: store one `RankedDocument(primaryText: item.id, bodyText: block)` instead of the five hand-rolled fields; expose `rankedDocument(forID:)` (or an `ids`-aligned array accessor) and delete the now-redundant public lookups `weightedTermFrequency(forID:)`, `termSet(forID:)`, `documentLength(forID:)`, `idTrigramSet(forID:)`, `blockTrigramSet(forID:)`
-- [ ] `MetadataSearcher.retrievalSearch(intent:limit:)` → `HybridRanker.topMatches`, and `rankEntireCatalog(...)` → `HybridRanker.fullOrdering`, mapping each `Hit` to `Match<Item>` via `index.item(forID:)`/`block(forID:)`
-- [ ] Cosine path: embed the query, compute per-document scores with `CosineScoring.cosineSimilarity`, pass as `cosineScores:` — keeping the existing guards (`nil` embedder / no embedded items / embed failure → `cosineScores: nil` + `.embeddingUnavailable`; `weights.cosine == 0` → skip without diagnostic)
-- [ ] Replace the local `Weights` struct with `public typealias Weights = SignalWeights` (identical shape) so the three public initializers keep their signatures
-- [ ] Delete the dead private machinery in `MetadataSearcher.swift` — `RetrievalSignals`, `computeSignals`, `computeBM25Ranking`, `computeTrigramRanking`, `computeCosineRanking`, `cosineSimilarity`, `fuseAndNormalize`, `sortByNormalizedScore`, `rankingOfPositiveScores`, `zeroScoresArray`, `buildMatches`, `embeddingUnavailableRanking` — refresh the doc comments that described the deleted pipeline (e.g. the `MetadataSearcher` actor header's "fused by `RRF.fuse(k: 60)`" and `MetadataIndex.Entry`'s `BM25Corpus` field docs) to describe the `HybridRanker` delegation instead, and update `plan.md` §5's superseded note to record that fusion now runs through `HybridRanker`
+- [x] `MetadataIndex.Entry`: store one `RankedDocument(primaryText: item.id, bodyText: block)` instead of the five hand-rolled fields; expose `rankedDocument(forID:)` (or an `ids`-aligned array accessor) and delete the now-redundant public lookups `weightedTermFrequency(forID:)`, `termSet(forID:)`, `documentLength(forID:)`, `idTrigramSet(forID:)`, `blockTrigramSet(forID:)`
+- [x] `MetadataSearcher.retrievalSearch(intent:limit:)` → `HybridRanker.topMatches`, and `rankEntireCatalog(...)` → `HybridRanker.fullOrdering`, mapping each `Hit` to `Match<Item>` via `index.item(forID:)`/`block(forID:)`
+- [x] Cosine path: embed the query, compute per-document scores with `CosineScoring.cosineSimilarity`, pass as `cosineScores:` — keeping the existing guards (`nil` embedder / no embedded items / embed failure → `cosineScores: nil` + `.embeddingUnavailable`; `weights.cosine == 0` → skip without diagnostic)
+- [x] Replace the local `Weights` struct with `public typealias Weights = SignalWeights` (identical shape) so the three public initializers keep their signatures
+- [x] Delete the dead private machinery in `MetadataSearcher.swift` — `RetrievalSignals`, `computeSignals`, `computeBM25Ranking`, `computeTrigramRanking`, `computeCosineRanking`, `cosineSimilarity`, `fuseAndNormalize`, `sortByNormalizedScore`, `rankingOfPositiveScores`, `zeroScoresArray`, `buildMatches`, `embeddingUnavailableRanking` — refresh the doc comments that described the deleted pipeline (e.g. the `MetadataSearcher` actor header's "fused by `RRF.fuse(k: 60)`" and `MetadataIndex.Entry`'s `BM25Corpus` field docs) to describe the `HybridRanker` delegation instead, and update plan.md §5's superseded note to record that fusion now runs through `HybridRanker`
 
 ## Acceptance Criteria
-- [ ] `grep -n "RRF.fuse\|BM25Corpus\|Trigram.dice\|canonicalTrigramSet" Sources/FoundationModelsMetadataRegistry/` returns no hits (code OR comments) — no local signal computation or fusion remains and no doc comment still describes the deleted pipeline; the only ranking entry points called are `HybridRanker.topMatches`/`HybridRanker.fullOrdering`
-- [ ] The golden rankings in `Tests/FoundationModelsMetadataRegistryTests/RetrievalSearchTests.swift` pass UNCHANGED (no expected-value edits) — behavior parity, including id-field weighting, `[0,1]` normalization, zero-weight signal exclusion, and deterministic tie-breaks
-- [ ] Cosine degradation parity: `--no-embedder`-style searches still emit `.embeddingUnavailable` exactly once per search and rank keyword-only (existing `EmbeddingTests`/`ExamplesSmokeTests` assertions pass unchanged)
-- [ ] `rankEntireCatalog` parity for the over-budget selection path: `OverBudgetTests` assertions on candidate count (`min(candidateLimit, index.count)`) and ordering pass unchanged
-- [ ] Public API is source-compatible: the three `MetadataSearcher` initializers and `Match<Item>` are unchanged; `Weights(bm25:trigram:cosine:)` still constructs (as the `SignalWeights` typealias)
-- [ ] `plan.md` §5 note updated
+- [x] `grep -n "RRF.fuse\|BM25Corpus\|Trigram.dice\|canonicalTrigramSet" Sources/FoundationModelsMetadataRegistry/` returns no hits (code OR comments) — no local signal computation or fusion remains and no doc comment still describes the deleted pipeline; the only ranking entry points called are `HybridRanker.topMatches`/`HybridRanker.fullOrdering`
+- [x] The golden rankings in `Tests/FoundationModelsMetadataRegistryTests/RetrievalSearchTests.swift` pass UNCHANGED (no expected-value edits) — behavior parity, including id-field weighting, `[0,1]` normalization, zero-weight signal exclusion, and deterministic tie-breaks
+- [x] Cosine degradation parity: `--no-embedder`-style searches still emit `.embeddingUnavailable` exactly once per search and rank keyword-only (existing `EmbeddingTests`/`ExamplesSmokeTests` assertions pass unchanged)
+- [x] `rankEntireCatalog` parity for the over-budget selection path: `OverBudgetTests` assertions on candidate count (`min(candidateLimit, index.count)`) and ordering pass unchanged
+- [x] Public API is source-compatible: the three `MetadataSearcher` initializers and `Match<Item>` are unchanged; `Weights(bm25:trigram:cosine:)` still constructs (as the `SignalWeights` typealias)
+- [x] plan.md §5 note updated
 
 ## Tests
-- [ ] Update only test *internals* that referenced deleted `MetadataIndex` lookups (`CatalogTests.swift` term/trigram assertions move to `rankedDocument(forID:)`'s fields) — golden ranking expectations in `RetrievalSearchTests.swift` must not change
-- [ ] Add one test in `Tests/FoundationModelsMetadataRegistryTests/RetrievalSearchTests.swift` asserting `Match.signals` equals the `Hit.signals` Ranker computed for the same query/fixture (guards the Hit→Match mapping)
-- [ ] Run `swift test` — all suites pass GPU-free (98+ tests), including `HotReloadTests` (incremental re-embed untouched) and `ExamplesSmokeTests` (BigCatalog ~10³-entry timing path)
-- [ ] `swift build` compiles all Examples targets
+- [x] Update only test *internals* that referenced deleted `MetadataIndex` lookups (`CatalogTests.swift` term/trigram assertions move to `rankedDocument(forID:)`'s fields) — golden ranking expectations in `RetrievalSearchTests.swift` must not change
+- [x] Add one test in `Tests/FoundationModelsMetadataRegistryTests/RetrievalSearchTests.swift` asserting `Match.signals` equals the `Hit.signals` Ranker computed for the same query/fixture (guards the Hit→Match mapping)
+- [x] Run `swift test` — all suites pass GPU-free (98+ tests), including `HotReloadTests` (incremental re-embed untouched) and `ExamplesSmokeTests` (BigCatalog ~10³-entry timing path)
+- [x] `swift build` compiles all Examples targets
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.

@@ -84,7 +84,7 @@ struct CatalogTests {
         let item = FixtureMetadata(id: "deploy", block: "ships containers to production")
         let index = MetadataIndex(items: [item])
 
-        let weightedTermFrequency = try #require(index.weightedTermFrequency(forID: "deploy"))
+        let weightedTermFrequency = try #require(index.rankedDocument(forID: "deploy")).weightedTermFrequency
         #expect(weightedTermFrequency["deploy"] == BM25.primaryFieldWeight)
         #expect(weightedTermFrequency["ships"] == BM25.bodyFieldWeight)
         #expect(weightedTermFrequency["production"] == BM25.bodyFieldWeight)
@@ -98,7 +98,7 @@ struct CatalogTests {
         let item = FixtureMetadata(id: "deploy", block: "deploy ships containers to production")
         let index = MetadataIndex(items: [item])
 
-        let weightedTermFrequency = try #require(index.weightedTermFrequency(forID: "deploy"))
+        let weightedTermFrequency = try #require(index.rankedDocument(forID: "deploy")).weightedTermFrequency
         #expect(weightedTermFrequency["deploy"] == BM25.primaryFieldWeight + BM25.bodyFieldWeight)
     }
 
@@ -109,7 +109,7 @@ struct CatalogTests {
 
         let idTokenCount = Tokenizer.tokenize(text: item.id).count
         let blockTokenCount = Tokenizer.tokenize(text: item.block).count
-        #expect(index.documentLength(forID: "deploy-k8s") == idTokenCount + blockTokenCount)
+        #expect(index.rankedDocument(forID: "deploy-k8s")?.documentLength == idTokenCount + blockTokenCount)
     }
 
     @Test
@@ -117,9 +117,12 @@ struct CatalogTests {
         let item = FixtureMetadata(id: "deploy-k8s", block: "ships containers to production")
         let index = MetadataIndex(items: [item])
 
-        #expect(index.idTrigramSet(forID: "deploy-k8s") == Trigram.canonicalTrigramSet(text: "deploy-k8s"))
         #expect(
-            index.blockTrigramSet(forID: "deploy-k8s")
+            index.rankedDocument(forID: "deploy-k8s")?.primaryTrigramSet
+                == Trigram.canonicalTrigramSet(text: "deploy-k8s")
+        )
+        #expect(
+            index.rankedDocument(forID: "deploy-k8s")?.bodyTrigramSet
                 == Trigram.canonicalTrigramSet(text: "ships containers to production")
         )
     }
@@ -146,11 +149,7 @@ struct CatalogTests {
         let index = MetadataIndex(items: [FixtureMetadata(id: "deploy", block: "ships containers")])
         #expect(index.item(forID: "missing") == nil)
         #expect(index.block(forID: "missing") == nil)
-        #expect(index.weightedTermFrequency(forID: "missing") == nil)
-        #expect(index.termSet(forID: "missing") == nil)
-        #expect(index.documentLength(forID: "missing") == nil)
-        #expect(index.idTrigramSet(forID: "missing") == nil)
-        #expect(index.blockTrigramSet(forID: "missing") == nil)
+        #expect(index.rankedDocument(forID: "missing") == nil)
     }
 
     // MARK: - Match.block is verbatim, never re-derived

@@ -6,15 +6,15 @@ import Foundation
 /// Built per plan.md §1, §4 (decision #10: no persistence, no database —
 /// everything lives in memory and is rebuilt wholesale from the caller's
 /// items). Each item's `id` and rendered `renderBlock()` are precomputed
-/// once at `init` into the data the retrieval tier scores against: a BM25
-/// field-weighted term frequency (`id` at `BM25.primaryFieldWeight`, block at
-/// `BM25.bodyFieldWeight` — the `symbol_path`/body treatment
-/// `CodeContextKit`'s `SearchCorpusSnapshot` established, ported here for
-/// the `id`/block fields plan.md §4 defines), a trigram set per field, and
-/// an embedding storage slot a future task fills at index-build/update time
-/// (plan.md §5, §8). Precomputing at `init` rather than per query is what
-/// makes repeated `search()` calls cheap — tokenizing/trigramming happens
-/// once per item, not once per query.
+/// once at `init` into the data the retrieval tier scores against: one
+/// FoundationModelsRanker `RankedDocument` (`id` as the primary field,
+/// block as the body field — the two-field weighting `CodeContextKit`'s
+/// `SearchCorpusSnapshot` established, applied to the `id`/block fields
+/// plan.md §4 defines) holding the BM25/trigram statistics `HybridRanker`'s
+/// per-signal scorers consume, and an embedding storage slot filled at
+/// index-build/update time (plan.md §5, §8). Precomputing at `init` rather
+/// than per query is what makes repeated `search()` calls cheap —
+/// tokenizing/trigramming happens once per item, not once per query.
 ///
 /// `MetadataIndex` never interprets a block's contents — it only tokenizes
 /// and trigrams the opaque text `renderBlock()` returns.
@@ -31,30 +31,11 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
         /// prompt").
         let block: String
 
-        /// The field-weighted term frequency across both fields.
-        ///
-        /// `id`'s tokens are weighted `BM25.primaryFieldWeight`, `block`'s
-        /// tokens weighted `BM25.bodyFieldWeight` — the `tf` term
-        /// `BM25Corpus.score` needs.
-        let weightedTermFrequency: [String: Double]
-
-        /// This entry's distinct term set: `Set(weightedTermFrequency.keys)`.
-        ///
-        /// Cached separately so `BM25Corpus.init(queryTokens:documents:)`
-        /// doesn't rebuild it from `weightedTermFrequency` on every query.
-        let termSet: Set<String>
-
-        /// This entry's unweighted token count across both fields.
-        ///
-        /// The `|D|` value `BM25Corpus.score` needs for length
-        /// normalization.
-        let documentLength: Int
-
-        /// This entry's canonical trigram set for `item.id`.
-        let idTrigramSet: Set<String>
-
-        /// This entry's canonical trigram set for `block`.
-        let blockTrigramSet: Set<String>
+        /// This entry's precomputed BM25/trigram statistics —
+        /// `RankedDocument(primaryText: item.id, bodyText: block)`, the
+        /// per-document input FoundationModelsRanker's `HybridRanker`
+        /// scores its BM25 and trigram signals against.
+        let rankedDocument: RankedDocument
 
         /// SHA-256 digest of `block`'s UTF-8 bytes.
         ///
@@ -124,33 +105,19 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
 
     /// Precomputes one catalog item's search data.
     ///
-    /// Tokenizes `item.id` and its rendered block, then builds the
-    /// field-weighted term frequency and term set, and the per-field
-    /// trigram sets.
+    /// Renders the item's block once, then precomputes its
+    /// `RankedDocument` (tokenizing/trigramming `item.id` and the block —
+    /// FoundationModelsRanker's per-document BM25/trigram statistics) and
+    /// the block's content hash.
     ///
     /// - Parameter item: the catalog item to precompute an `Entry` for.
     /// - Returns: the precomputed entry, ready to store under `item.id`.
     private static func buildEntry(item: Item) -> Entry {
         let block = item.renderBlock()
-        let idTokens = Tokenizer.tokenize(text: item.id)
-        let blockTokens = Tokenizer.tokenize(text: block)
-
-        var weightedTermFrequency: [String: Double] = [:]
-        for token in idTokens {
-            weightedTermFrequency[token, default: 0.0] += BM25.primaryFieldWeight
-        }
-        for token in blockTokens {
-            weightedTermFrequency[token, default: 0.0] += BM25.bodyFieldWeight
-        }
-
         return Entry(
             item: item,
             block: block,
-            weightedTermFrequency: weightedTermFrequency,
-            termSet: Set(weightedTermFrequency.keys),
-            documentLength: idTokens.count + blockTokens.count,
-            idTrigramSet: Trigram.canonicalTrigramSet(text: item.id),
-            blockTrigramSet: Trigram.canonicalTrigramSet(text: block),
+            rankedDocument: RankedDocument(primaryText: item.id, bodyText: block),
             blockHash: Data(SHA256.hash(data: Data(block.utf8))),
             embedding: nil
         )
@@ -163,8 +130,8 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
     /// Returns `nil` if `id` isn't indexed (never indexed, or dropped as a
     /// duplicate). Every public lookup method below is a one-line
     /// specialization of this accessor over a single `Entry` key path —
-    /// the copy-paste `entriesByID[id]?.field` pattern lived here eight
-    /// times before being unified.
+    /// the copy-paste `entriesByID[id]?.field` pattern lived here once per
+    /// lookup before being unified.
     ///
     /// - Parameters:
     ///   - forID: the id to look up.
@@ -195,48 +162,18 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
         value(forID: id, keyPath: \.block)
     }
 
-    /// The field-weighted BM25 term frequency for `id`, or `nil` if `id` isn't indexed.
+    /// The precomputed `RankedDocument` stored under `id` — the
+    /// BM25/trigram statistics FoundationModelsRanker's `HybridRanker`
+    /// scores this entry with (`id` as its primary field, the rendered
+    /// block as its body field).
+    ///
+    /// Returns `nil` if `id` isn't indexed.
     ///
     /// - Parameter forID: the id to look up.
-    /// - Returns: the field-weighted term frequency, or `nil` if `id`
-    ///   isn't indexed.
-    public func weightedTermFrequency(forID id: String) -> [String: Double]? {
-        value(forID: id, keyPath: \.weightedTermFrequency)
-    }
-
-    /// The distinct term set for `id`, or `nil` if `id` isn't indexed.
-    ///
-    /// - Parameter forID: the id to look up.
-    /// - Returns: the distinct term set, or `nil` if `id` isn't indexed.
-    public func termSet(forID id: String) -> Set<String>? {
-        value(forID: id, keyPath: \.termSet)
-    }
-
-    /// The unweighted token count across both fields for `id`, or `nil` if `id` isn't indexed.
-    ///
-    /// - Parameter forID: the id to look up.
-    /// - Returns: the unweighted token count, or `nil` if `id` isn't
-    ///   indexed.
-    public func documentLength(forID id: String) -> Int? {
-        value(forID: id, keyPath: \.documentLength)
-    }
-
-    /// The canonical `id`-field trigram set for `id`, or `nil` if `id` isn't indexed.
-    ///
-    /// - Parameter forID: the id to look up.
-    /// - Returns: the canonical `id`-field trigram set, or `nil` if `id`
-    ///   isn't indexed.
-    public func idTrigramSet(forID id: String) -> Set<String>? {
-        value(forID: id, keyPath: \.idTrigramSet)
-    }
-
-    /// The canonical block-field trigram set for `id`, or `nil` if `id` isn't indexed.
-    ///
-    /// - Parameter forID: the id to look up.
-    /// - Returns: the canonical block-field trigram set, or `nil` if `id`
-    ///   isn't indexed.
-    public func blockTrigramSet(forID id: String) -> Set<String>? {
-        value(forID: id, keyPath: \.blockTrigramSet)
+    /// - Returns: the precomputed per-document statistics, or `nil` if
+    ///   `id` isn't indexed.
+    public func rankedDocument(forID id: String) -> RankedDocument? {
+        value(forID: id, keyPath: \.rankedDocument)
     }
 
     /// The embedding stored for `id`, or `nil` if `id` isn't indexed or not yet embedded.
@@ -454,11 +391,7 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
         Entry(
             item: entry.item,
             block: entry.block,
-            weightedTermFrequency: entry.weightedTermFrequency,
-            termSet: entry.termSet,
-            documentLength: entry.documentLength,
-            idTrigramSet: entry.idTrigramSet,
-            blockTrigramSet: entry.blockTrigramSet,
+            rankedDocument: entry.rankedDocument,
             blockHash: entry.blockHash,
             embedding: embedding
         )
