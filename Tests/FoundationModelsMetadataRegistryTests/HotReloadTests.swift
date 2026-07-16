@@ -99,13 +99,21 @@ struct HotReloadTests {
         _ = try await searcher.search(intent: "task", limit: 5)
         #expect(factoryCallCount.count == 1)
 
+        // The under-budget path ranks the whole catalog per call to attach
+        // every selected id's real fused score/signals (plan.md §3a), which
+        // embeds the query itself -- so the shared counter already includes
+        // one query embed here, on top of the one catalog embed at init.
+        let countBeforeUpdate = embedder.embeddedTextCount
         await searcher.update(items: items)
+
+        // No new embed call from `update` itself -- unchanged content never
+        // drops the cached root or re-embeds the catalog.
+        #expect(embedder.embeddedTextCount == countBeforeUpdate)
 
         _ = try await searcher.search(intent: "task", limit: 5)
 
-        // No new embed call, and the same cached root forked again --
-        // `update` with unchanged content never dropped it.
-        #expect(embedder.embeddedTextCount == 1)
+        // The same cached root forked again -- `update` with unchanged
+        // content never dropped it.
         #expect(factoryCallCount.count == 1)
         #expect(root.forkCount == 2)
     }

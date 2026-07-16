@@ -103,11 +103,17 @@ public protocol SearchableMetadata: Sendable {
 public struct Match<Item: SearchableMetadata>: Sendable {
   public let id: String
   public let block: String            // VERBATIM from the catalog, never model output
-  public let score: Double            // fused, [0,1] (1.0 for pure-selection results)
-  public let signals: Signals?        // bm25/trigram/cosine — nil in pure-selection mode
+  public let score: Double            // fused, [0,1]
+  public let signals: Signals?        // bm25/trigram/cosine — nil only when no signal ranked the item
   public let item: Item
 }
 ```
+
+*(Superseded as shipped: `score`/`signals` are no longer a fixed `1.0`/`nil` for
+selection results. FoundationModelsRanker's `SelectionTier` ranks the whole
+catalog per call — under budget as well as over — so every selected id carries
+the same real fused `score`/per-signal `signals` the retrieval tier would
+compute for it, plan.md §3a of `FoundationModelsRanker`'s own plan.)*
 
 - **`id` is the join key** across every tier: BM25 field, trigram target, selection-enum
   member, verbatim-lookup key. Domains already have one (skill directory name, tool
