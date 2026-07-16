@@ -24,8 +24,8 @@ comments:
   timestamp: 2026-07-16T00:19:10.160779+00:00
 depends_on:
 - 01KXKJCKH0QW4KVPSWEEXV05WH
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: 8f80
 title: 'Retrieval-tier migration: rebase MetadataSearcher/MetadataIndex on FoundationModelsRanker''s HybridRanker + RankedDocument and delete the local fusion pipeline'
 ---
 ## What
