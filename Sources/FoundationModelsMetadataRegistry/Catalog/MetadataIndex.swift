@@ -31,8 +31,9 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
         /// prompt").
         let block: String
 
-        /// This entry's precomputed BM25/trigram statistics —
-        /// `RankedDocument(primaryText: item.id, bodyText: block)`, the
+        /// This entry's precomputed BM25/trigram statistics, stored as one `RankedDocument`.
+        ///
+        /// `RankedDocument(primaryText: item.id, bodyText: block)` is the
         /// per-document input FoundationModelsRanker's `HybridRanker`
         /// scores its BM25 and trigram signals against.
         let rankedDocument: RankedDocument
@@ -162,10 +163,11 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
         value(forID: id, keyPath: \.block)
     }
 
-    /// The precomputed `RankedDocument` stored under `id` — the
-    /// BM25/trigram statistics FoundationModelsRanker's `HybridRanker`
-    /// scores this entry with (`id` as its primary field, the rendered
-    /// block as its body field).
+    /// The precomputed `RankedDocument` stored under `id`.
+    ///
+    /// This is the BM25/trigram statistics FoundationModelsRanker's
+    /// `HybridRanker` scores this entry with (`id` as its primary field,
+    /// the rendered block as its body field).
     ///
     /// Returns `nil` if `id` isn't indexed.
     ///
@@ -247,8 +249,9 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
         return mergingEmbeddings(ids: pendingEmbedIDs, vectors: vectors, embeddedFrom: baseline, into: baseline)
     }
 
-    /// The synchronous, hash-guarded half of index-build/update: indexes
-    /// `items` exactly like `init(items:onDiagnostic:)` (tokenizing,
+    /// The synchronous, hash-guarded half of index-build/update.
+    ///
+    /// Indexes `items` exactly like `init(items:onDiagnostic:)` (tokenizing,
     /// trigramming), then reuses `previous`'s stored embedding for every
     /// item whose `id` and rendered-block hash both match a `previous` entry
     /// that actually carries a non-`nil` embedding.
@@ -304,11 +307,12 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
         return (MetadataIndex(ids: baseline.ids, entriesByID: entriesByID), pendingEmbedIDs, textsToEmbed)
     }
 
-    /// Returns a copy of `index` with `ids`' embeddings replaced by `vectors`
-    /// (positionally aligned) — but only where `index`'s *current* entry for
-    /// that id still has the same block hash as `source`'s (the baseline
-    /// this batch was actually embedded from). Everything else is
-    /// unchanged.
+    /// Returns a copy of `index` with `ids`' embeddings replaced by `vectors`.
+    ///
+    /// The vectors are positionally aligned with `ids`, and each replacement
+    /// applies only where `index`'s *current* entry for that id still has the
+    /// same block hash as `source`'s (the baseline this batch was actually
+    /// embedded from). Everything else is unchanged.
     ///
     /// Merges into whichever index is passed as `into` — `build(items:
     /// embedder:previous:onDiagnostic:)` merges into its own freshly
@@ -357,10 +361,11 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
         return MetadataIndex(ids: index.ids, entriesByID: entriesByID)
     }
 
-    /// Whether `self` and `other` index the same ids, in the same order,
-    /// each with an identical rendered-block hash — `update(items:)`'s
-    /// redundant-update guard (plan.md §8 "hash-guarded"): calling `update`
-    /// with content identical to what's already indexed must cost nothing
+    /// Whether `self` and `other` index identical content (same ids, same order, same rendered-block hashes).
+    ///
+    /// This is `update(items:)`'s redundant-update guard (plan.md §8
+    /// "hash-guarded"): calling `update` with content identical to what's
+    /// already indexed must cost nothing
     /// (no re-embed, no selection-tier rebuild, no diagnostics), so callers
     /// may forward every upstream change notification without coalescing
     /// first. Embeddings are deliberately not part of this comparison —
@@ -415,17 +420,18 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
 
 // MARK: - FoundationModelsRanker selection-catalog conformance
 
-/// Conforms `MetadataIndex` to FoundationModelsRanker's `SelectionCatalog` —
-/// the narrow contract Ranker's `SelectionTier` drives its assembled prefix
-/// and verbatim result lookup through (that protocol was written to
-/// generalize exactly this type). `ids` is satisfied by the stored property
+/// Conforms `MetadataIndex` to FoundationModelsRanker's `SelectionCatalog`.
+///
+/// `SelectionCatalog` is the narrow contract Ranker's `SelectionTier` drives
+/// its assembled prefix and verbatim result lookup through (that protocol was
+/// written to generalize exactly this type). `ids` is satisfied by the stored property
 /// above; the two lookups forward to this index's existing accessors under
 /// the protocol's `forId` spelling.
 extension MetadataIndex: SelectionCatalog {
-    /// A (typically shorter) summary of `id`'s item — its
-    /// `SearchableMetadata.renderSummaryBlock()` — used to seed the
-    /// selection tier's assembled prefix instead of the full block
-    /// (plan.md §4).
+    /// A (typically shorter) summary of `id`'s item, from `SearchableMetadata.renderSummaryBlock()`.
+    ///
+    /// Used to seed the selection tier's assembled prefix instead of the
+    /// full block (plan.md §4).
     ///
     /// - Parameter forId: the id to look up.
     /// - Returns: the id's summary text, or `nil` if `id` isn't indexed.
@@ -433,9 +439,10 @@ extension MetadataIndex: SelectionCatalog {
         item(forID: id)?.renderSummaryBlock()
     }
 
-    /// `id`'s full, verbatim rendered block — `block(forID:)` under the
-    /// protocol's spelling; what a model-selected id resolves to in the
-    /// tier's returned results.
+    /// `id`'s full, verbatim rendered block.
+    ///
+    /// This is `block(forID:)` under the protocol's spelling — what a
+    /// model-selected id resolves to in the tier's returned results.
     ///
     /// - Parameter forId: the id to look up.
     /// - Returns: the id's verbatim block, or `nil` if `id` isn't indexed.

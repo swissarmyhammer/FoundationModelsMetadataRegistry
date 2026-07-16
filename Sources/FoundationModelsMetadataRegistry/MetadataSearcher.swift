@@ -1,7 +1,8 @@
 import os
 
-/// Per-signal fusion weights for `MetadataSearcher`'s retrieval tier (plan.md
-/// §5) — FoundationModelsRanker's `SignalWeights` under this package's
+/// Per-signal fusion weights for `MetadataSearcher`'s retrieval tier (plan.md §5).
+///
+/// FoundationModelsRanker's `SignalWeights` under this package's
 /// established name: the relative weight `HybridRanker` gives each of the
 /// BM25, trigram, and cosine rankings when fusing them.
 ///
@@ -16,10 +17,10 @@ import os
 /// cosine computation without an `.embeddingUnavailable` diagnostic.
 public typealias Weights = SignalWeights
 
-/// Searches a catalog of `SearchableMetadata` on behalf of a Foundation
-/// Models session (plan.md §3): an in-memory `MetadataIndex` plus the
-/// per-signal `Weights` retrieval fuses by, exposed through one
-/// `search(intent:limit:)` entry point.
+/// Searches a catalog of `SearchableMetadata` on behalf of a Foundation Models session (plan.md §3).
+///
+/// An in-memory `MetadataIndex` plus the per-signal `Weights` retrieval
+/// fuses by, exposed through one `search(intent:limit:)` entry point.
 ///
 /// `.retrieval` (BM25 (two fields) + character-trigram Dice + cosine, when an
 /// embedder is configured, fused and normalized to `[0, 1]` by
@@ -41,9 +42,10 @@ public typealias Weights = SignalWeights
 /// when a selection tier is configured, `.retrieval` otherwise (plan.md §7
 /// "selection when a model is configured, else retrieval").
 public actor MetadataSearcher<Item: SearchableMetadata> {
-    /// The in-memory index built from the catalog's items at `init`, replaced
-    /// wholesale by `update(items:)` (plan.md §8, hot reload) on every real
-    /// change.
+    /// The in-memory index built from the catalog's items at `init`.
+    ///
+    /// Replaced wholesale by `update(items:)` (plan.md §8, hot reload) on
+    /// every real change.
     private var index: MetadataIndex<Item>
 
     /// The per-signal fusion weights this searcher's retrieval tier uses.
@@ -52,9 +54,10 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// Which tier `search(intent:limit:)` uses.
     private let mode: SearchMode
 
-    /// The embedder used to embed the *query* text at search time (plan.md
-    /// §5 "only the query itself is embedded per search") — `nil` means no
-    /// embedder is configured, so cosine ranking is skipped and every search
+    /// The embedder used to embed the *query* text at search time, or `nil` for keyword-only searches.
+    ///
+    /// Only the query itself is embedded per search (plan.md §5); without an
+    /// embedder, cosine ranking is skipped and every search
     /// degrades to keyword-only. Catalog items are never embedded here; that
     /// happens once, at index-build/update time, via `MetadataIndex.build(
     /// items:embedder:previous:onDiagnostic:)` (or, for `update(items:)`,
@@ -64,19 +67,22 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// `update`.
     private let embedder: (any TextEmbedding)?
 
-    /// Called for every diagnostic emitted while building the index and
-    /// while searching (currently `.duplicateId`, `.embeddingUnavailable`,
-    /// `.unknownSelectedId`, and `.embedCatchUp`).
+    /// Called for every diagnostic emitted while building the index and while searching.
+    ///
+    /// Currently `.duplicateId`, `.embeddingUnavailable`,
+    /// `.unknownSelectedId`, and `.embedCatchUp`.
     private let onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
 
-    /// This searcher's selection tier configuration (plan.md §6), or `nil`
-    /// when none was supplied at `init` — kept around (rather than only
+    /// This searcher's selection tier configuration (plan.md §6), or `nil` when none was supplied at `init`.
+    ///
+    /// Kept around (rather than only
     /// building `selectionTier` once) so `update(items:)` can rebuild the
     /// tier from the same configuration whenever the index changes.
     private let selectionConfig: SelectionConfig?
 
-    /// A selection tier paired with the refreshable index snapshot it ranks
-    /// over: the tier's `retrievalRanking` closure reads `snapshot` at call
+    /// A selection tier paired with the refreshable index snapshot it ranks over.
+    ///
+    /// The tier's `retrievalRanking` closure reads `snapshot` at call
     /// time, and `selectionSearch(_:intent:limit:)` re-attaches each
     /// returned id's typed `item` from it. Boxed in an
     /// `OSAllocatedUnfairLock` (rather than captured as a plain value) so
@@ -95,12 +101,13 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// answers over.
     private typealias ConfiguredSelectionTier = (tier: SelectionTier, snapshot: OSAllocatedUnfairLock<MetadataIndex<Item>>)
 
-    /// This searcher's selection tier (plan.md §6) — FoundationModelsRanker's
+    /// This searcher's selection tier (plan.md §6), or `nil` when no `SelectionConfig` was supplied at `init`.
+    ///
+    /// FoundationModelsRanker's
     /// `SelectionTier` over this searcher's index (its `SelectionCatalog`
     /// conformance), paired with the refreshable index snapshot it ranks
-    /// over (see `ConfiguredSelectionTier`) — or `nil` when no
-    /// `SelectionConfig` was supplied at `init`; `.selection` throws
-    /// `SelectionTierUnavailable` in that case, exactly as it did before a
+    /// over (see `ConfiguredSelectionTier`). Without one, `.selection` throws
+    /// `SelectionTierUnavailable`, exactly as it did before a
     /// selection tier existed at all. The snapshot keeps
     /// `Match.item`/`Match.block` consistent even if a concurrent
     /// `update(items:)` swaps `index` while a search is suspended in the
@@ -110,8 +117,9 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// grammar derived from the new id set.
     private var selectionTier: ConfiguredSelectionTier?
 
-    /// Builds a searcher over `items`, indexing them once at `init` with no
-    /// embedder — cosine never ranks anything and every search degrades to
+    /// Builds a searcher over `items`, indexing them once at `init` with no embedder.
+    ///
+    /// Cosine never ranks anything and every search degrades to
     /// keyword-only, reported via `.embeddingUnavailable` (plan.md §5). Use
     /// `init(items:mode:weights:embedder:onDiagnostic:)` to wire up cosine.
     ///
@@ -145,9 +153,10 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         )
     }
 
-    /// Builds a searcher over `items`, embedding every item's rendered block
-    /// through `embedder` at index-build time (plan.md §5, §8) so cosine can
-    /// join RRF fusion in `search(intent:limit:)`.
+    /// Builds a searcher over `items`, embedding every item's rendered block through `embedder` at index-build time (plan.md §5, §8).
+    ///
+    /// The stored embeddings are what let cosine join the fused ranking in
+    /// `search(intent:limit:)`.
     ///
     /// - Parameters:
     ///   - items: the catalog's items, in first-seen-wins duplicate-id order
@@ -185,7 +194,9 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         )
     }
 
-    /// Builds a searcher directly over an already-built `index` — the seam
+    /// Builds a searcher directly over an already-built `index`.
+    ///
+    /// This is the seam
     /// `update(items:)` (plan.md §8, a later task) and tests needing precise
     /// control over an index's embeddings (e.g. a mix of embedded and
     /// not-yet-embedded items) use instead of re-deriving the index from
@@ -222,8 +233,9 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         )
     }
 
-    /// Builds FoundationModelsRanker's `SelectionTier` over `index` (its
-    /// `SelectionCatalog` conformance) when `config` is non-`nil`, paired
+    /// Builds FoundationModelsRanker's `SelectionTier` over `index` when `config` is non-`nil`, or returns `nil` otherwise.
+    ///
+    /// The tier is built over `index`'s `SelectionCatalog` conformance, paired
     /// with `index` boxed as the refreshable snapshot the tier's
     /// `retrievalRanking` reads at call time and
     /// `selectionSearch(_:intent:limit:)` re-attaches typed items from
@@ -382,8 +394,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         }
     }
 
-    /// Searches the catalog for `intent`, returning at most `limit` matches
-    /// ordered by descending fused score.
+    /// Searches the catalog for `intent`, returning at most `limit` matches ordered by descending fused score.
     ///
     /// - Parameters:
     ///   - intent: the search query.
@@ -413,8 +424,9 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
 
     // MARK: - Selection tier (plan.md §6, via FoundationModelsRanker)
 
-    /// Answers one `.selection`/`.auto` search through FoundationModelsRanker's
-    /// `SelectionTier`, then maps each returned `SelectionMatch` into this
+    /// Answers one `.selection`/`.auto` search through FoundationModelsRanker's `SelectionTier`.
+    ///
+    /// Maps each returned `SelectionMatch` into this
     /// package's typed `Match<Item>` by looking its id up in the tier's
     /// paired index snapshot — the tier's `SelectionCatalog` carries no item
     /// type, so the typed `item` is re-attached here. The lookup is against
@@ -449,10 +461,11 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
 
     // MARK: - Retrieval tier (plan.md §5, via FoundationModelsRanker)
 
-    /// Runs the `.retrieval` tier through FoundationModelsRanker's
+    /// Runs the `.retrieval` tier through FoundationModelsRanker's `HybridRanker.topMatches`.
+    ///
     /// `HybridRanker.topMatches(ids:documents:query:cosineScores:weights:
-    /// limit:)`: BM25 + trigram + cosine rankings fused and normalized to
-    /// `[0, 1]`, mapped back through the catalog to verbatim `Match`es
+    /// limit:)` fuses the BM25 + trigram + cosine rankings and normalizes to
+    /// `[0, 1]`; the hits map back through the catalog to verbatim `Match`es
     /// (plan.md §5). Only ever returns documents at least one signal
     /// actually ranked — contrast `rankEntireCatalog(intent:index:weights:
     /// embedder:onDiagnostic:)`, which the over-budget selection path needs
@@ -476,8 +489,9 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
 
     // MARK: - Over-budget candidate ranking (plan.md §6)
 
-    /// Ranks the entire catalog for `intent`, best-first, always returning
-    /// exactly `index.count` matches through FoundationModelsRanker's
+    /// Ranks the entire catalog for `intent`, best-first, always returning exactly `index.count` matches.
+    ///
+    /// Runs through FoundationModelsRanker's
     /// `HybridRanker.fullOrdering(ids:documents:query:cosineScores:weights:)`:
     /// documents any signal actually ranked come first, ordered exactly like
     /// `retrievalSearch(intent:limit:)`'s own fused/normalized ranking;
@@ -524,8 +538,9 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
 
     // MARK: - Shared ranking inputs and Hit -> Match mapping
 
-    /// Every indexed entry's precomputed `RankedDocument`, positionally
-    /// aligned with `index.ids` — the `documents` array both `HybridRanker`
+    /// Every indexed entry's precomputed `RankedDocument`, positionally aligned with `index.ids`.
+    ///
+    /// This is the `documents` array both `HybridRanker`
     /// entry points score. Every id in `index.ids` resolves by construction
     /// (`ids` is exactly the set `rankedDocument(forID:)` can answer for),
     /// so the `compactMap` never drops anything; `HybridRanker`'s own
@@ -538,13 +553,14 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         index.ids.compactMap { index.rankedDocument(forID: $0) }
     }
 
-    /// Computes the raw per-document cosine scores `HybridRanker` fuses as
-    /// its cosine signal — `intent` embedded through `embedder`, scored
+    /// Computes the raw per-document cosine scores `HybridRanker` fuses as its cosine signal, or `nil` to skip the signal entirely.
+    ///
+    /// `intent` is embedded through `embedder` and scored
     /// against each catalog entry's stored block embedding via
     /// `CosineScoring.cosineSimilarity(_:_:)` (plan.md §5 "brute-force
     /// scoring — plain per-row dot products for cosine — is exact and
     /// effectively instant" at metadata scale; decision #10, no vector
-    /// store) — or `nil` to skip the signal entirely.
+    /// store).
     ///
     /// Degrades to keyword-only (`nil`) and reports `.embeddingUnavailable`
     /// via `onDiagnostic` — exactly once per search — whenever cosine can't
@@ -595,8 +611,9 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         }
     }
 
-    /// Maps FoundationModelsRanker's `Hit`s back into this package's typed
-    /// `Match<Item>`es by looking each hit's id up in `index` — the id,
+    /// Maps FoundationModelsRanker's `Hit`s back into this package's typed `Match<Item>`es.
+    ///
+    /// Each hit's id is looked up in `index` — the id,
     /// fused score, and raw per-signal `Signals` carry over verbatim, and
     /// the catalog's stored block and typed `item` are re-attached here (a
     /// `Hit` carries neither). Every id a hit carries resolves in `index`
