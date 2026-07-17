@@ -68,7 +68,7 @@ let transformersPackage = "swift-transformers"
 /// (`routerDependencyName`, `foundationModelsRankerPackage`, `mlxPackage`)
 /// resolve under — extracted so the org lives in one place instead of three
 /// dependency entries that could silently drift.
-let swissArmyHammerOrg = "https://github.com/swissarmyhammer/"
+let swissArmyHammerOrg = "git@github.com:swissarmyhammer/"
 
 /// The GitHub organization URL base the Hugging Face dependencies
 /// (`huggingFacePackage`, `transformersPackage`, swift-jinja) resolve
@@ -196,9 +196,9 @@ let package = Package(
         )
     ],
     dependencies: [
-        .package(url: "\(swissArmyHammerOrg)\(routerDependencyName)", branch: "main"),
-        .package(url: "\(swissArmyHammerOrg)\(foundationModelsRankerPackage)", branch: "main"),
-        .package(url: "\(swissArmyHammerOrg)\(mlxPackage)", branch: "foundationmodels-fixes"),
+        .package(url: "\(swissArmyHammerOrg)\(routerDependencyName).git", branch: "main"),
+        .package(url: "\(swissArmyHammerOrg)\(foundationModelsRankerPackage).git", branch: "main"),
+        .package(url: "\(swissArmyHammerOrg)\(mlxPackage).git", branch: "foundationmodels-fixes"),
         .package(url: "\(huggingFaceOrg)\(huggingFacePackage)", from: "0.9.0"),
         .package(url: "\(huggingFaceOrg)\(transformersPackage)", from: "1.3.0"),
         // Pinned below swift-jinja 2.4.0: that release changed `Value.object`
