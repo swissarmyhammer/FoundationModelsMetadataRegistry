@@ -5,6 +5,4 @@
 .build/
 .swiftpm/
 .DS_Store
-# Package.resolved is committed (not ignored): it pins the FoundationModelsRouter
-# and mlx-swift-lm branch dependencies to specific commits so builds are
-# reproducible.
+Package.resolved
