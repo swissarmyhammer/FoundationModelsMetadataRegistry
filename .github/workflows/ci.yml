@@ -13,3 +13,7 @@ concurrency:
 jobs:
   ci:
     uses: swissarmyhammer/workflows/.github/workflows/swift-ci.yaml@main
+    with:
+      integration-gate-env: METADATA_REGISTRY_INTEGRATION_TESTS
+      integration-xctest-glob: "*MetadataRegistryTests.xctest"
+      integration-metallib-glob: "*Cmlx*/default.metallib"
