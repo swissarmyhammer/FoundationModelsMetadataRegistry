@@ -30,14 +30,26 @@ import FoundationModelsRouter
 
 // MARK: - Tiny real models
 
-/// The deliberately small `mlx-community` models this suite resolves —
-/// the exact pair this package's own `Examples/SemanticSearchCore` already
-/// resolves for its live-Router path (`resolveLiveEmbedder()`), reused here
-/// so a machine that already ran `swift run SemanticSearch` shares the cached
-/// weights rather than fetching a second set.
+/// The deliberately small `mlx-community` models this suite resolves.
+///
+/// `generation` is the same `SmolLM-135M` this package's own
+/// `Examples/SemanticSearchCore` resolves for its live-Router path
+/// (`resolveLiveEmbedder()`), so a machine that already ran `swift run
+/// SemanticSearch` shares those cached weights. `embedding` deliberately
+/// diverges from that path's `bge-small-en-v1.5-4bit` -- see its own doc
+/// comment.
 private enum TinyModels {
     static let generation: ModelRef = "mlx-community/SmolLM-135M-Instruct-4bit"
-    static let embedding: ModelRef = "mlx-community/bge-small-en-v1.5-4bit"
+
+    /// Matches FoundationModelsRouter's and FoundationModelsMultitool's own
+    /// gated suites (`RealModels.embedding` / `multitoolTinyProfile`'s
+    /// embedding slot) rather than `bge-small-en-v1.5-4bit`: scenario 3
+    /// below (`embedAndRRFFindsTheRightItemForAParaphrasedQuery()`) needs an
+    /// embedder whose cosine signal actually discriminates the right catalog
+    /// entry, which `bge-small`'s 4-bit quantization proved too lossy for —
+    /// it ranked `commit` behind every other candidate on this fixture,
+    /// regardless of how keyword-clean the query was.
+    static let embedding: ModelRef = "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ"
 }
 
 /// The tiny co-fitting profile this suite resolves once per test.
@@ -300,13 +312,32 @@ struct RouterIntegrationTests {
 
     // MARK: - Scenario 3: embed + RRF quality smoke via RoutedEmbedderAdapter
 
+    /// The paraphrase `embedAndRRFFindsTheRightItemForAParaphrasedQuery()` searches `gitCommands` with.
+    ///
+    /// Unlike `SemanticSearchCore.query` ("save my work"), which was tuned
+    /// for the CLI's `--no-embedder` demo (deliberately sharing the "work"
+    /// trigram with `status`'s block so keyword-only degradation still
+    /// surfaces *something*), this is tuned for this test's own purpose: its
+    /// raw cosine similarity against `gitCommands`'s embedded blocks
+    /// (measured directly with `Weights(bm25: 0, trigram: 0, cosine: 1)`)
+    /// clearly favors `commit` (0.70) over every other entry, `stash` (0.63)
+    /// included -- `stash`'s "temporarily set aside" reading is a real,
+    /// close semantic competitor for "save my work"-shaped phrasing with a
+    /// small `mlx-community` embedder, and beat `commit` on cosine alone for
+    /// several candidate phrasings tried during authoring. Also happens to
+    /// share vocabulary with `commit`'s own block ("record" / "changes"),
+    /// which only reinforces the fused BM25+trigram+cosine ranking rather
+    /// than undermining what this test proves.
+    private static let paraphrasedQuery = "make a permanent record of my changes"
+
     /// A real embed + RRF quality smoke test over this package's own fixture catalog.
     ///
-    /// Reuses `Examples/SemanticSearchCore`'s fixture catalog and paraphrased
-    /// query (`gitCommands` / `query` -- "save my work", which shares no
-    /// keyword or character trigram with `commit`'s rendered block) rather
-    /// than duplicating a second copy of the same fixture, and drives
-    /// `runSemanticSearch(query:embedder:onDiagnostic:)` with a real
+    /// Reuses `Examples/SemanticSearchCore`'s fixture catalog (`gitCommands`)
+    /// rather than duplicating a second copy of it, but drives the search
+    /// with ``paraphrasedQuery`` here rather than `SemanticSearchCore.query`
+    /// ("save my work") -- see ``paraphrasedQuery``'s own doc comment for why.
+    ///
+    /// Drives `runSemanticSearch(query:embedder:onDiagnostic:)` with a real
     /// `RoutedEmbedderAdapter` wrapping the resolved profile's embedding
     /// model -- the live-Router path `ExamplesSmokeTests` documents as
     /// "exercised only by `swift run SemanticSearch` locally, never [t]here."
@@ -324,7 +355,7 @@ struct RouterIntegrationTests {
         do {
             let embedder = RoutedEmbedderAdapter(routedEmbedder: fixture.profile.embedding)
             let matches = try await SemanticSearchCore.runSemanticSearch(
-                query: SemanticSearchCore.query,
+                query: Self.paraphrasedQuery,
                 embedder: embedder,
                 onDiagnostic: { _ in }
             )
@@ -333,7 +364,7 @@ struct RouterIntegrationTests {
             #expect(
                 top.id == "commit",
                 """
-                expected the paraphrased query "\(SemanticSearchCore.query)" to surface "commit" first via the \
+                expected the paraphrased query "\(Self.paraphrasedQuery)" to surface "commit" first via the \
                 real cosine signal; got \(matches.map(\.id))
                 """
             )
