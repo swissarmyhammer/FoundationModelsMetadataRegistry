@@ -1,8 +1,18 @@
 ---
 assignees:
 - claude-code
-position_column: doing
-position_ordinal: '80'
+comments:
+- actor: claude-code
+  id: 01m0fh8s95p5r2hz7q6zeyc20a
+  text: |-
+    ### commit — changed
+    - evidence: 4926a63 refactor(tests): move the integration suite to a nested IntegrationTests package; pushed to origin/main (576d84f..4926a63)
+    - test evidence: root `swift test` = 99 tests in 9 suites, all green (unit only); `swift test --package-path IntegrationTests` = 4 tests in 1 suite, all green against real models on the GPU
+    - notes: mlx-swift-lm moved to the `stable` branch — the old `foundationmodels-fixes` pin did not compile against the current macOS 27 SDK, and Router main requires `stable`. The examples keep `METADATA_REGISTRY_INTEGRATION_TESTS` as their own opt-in; no test reads it.
+    - next: watch the first CI run of the new two-job workflow.
+  timestamp: 2026-08-20T12:10:25.445089+00:00
+position_column: done
+position_ordinal: '9080'
 title: 'Obey the org test contract: move the integration tests to a nested package'
 ---
 ## Goal

@@ -88,6 +88,7 @@ private struct LiveRouterFixture: Sendable {
     ///   this and skips cleanly, mirroring Multitool's `PrefixReuseTests`).
     @MainActor
     static func resolve() async throws -> LiveRouterFixture {
+        _ = MetalLibraryTestBootstrap.ensureColocatedMetallib
         let cacheDir = Self.makeTempDir()
         let recordingsDir = Self.makeTempDir()
         let loader = LiveModelLoader(

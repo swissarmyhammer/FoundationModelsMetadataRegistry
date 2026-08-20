@@ -1,16 +1,28 @@
 name: CI
 
-# The unit/integration split obeys the org test contract
-# (swissarmyhammer/workflows' README):
+# The org test contract (swissarmyhammer/workflows' README) applies here in
+# full, and this repository no longer runs any repo-local test job of its
+# own to satisfy it:
 #
-# - The root `Package.swift` declares no integration target. The real-model
-#   suite is its own package under `IntegrationTests/`, so `swift test` at
-#   the root cannot reach it.
-# - No environment variable selects a suite, and nothing may start doing so.
-#   The old `integration-gate-env` input (`METADATA_REGISTRY_INTEGRATION_TESTS`)
-#   is a LEGACY input of the shared workflow and is gone from this call.
-# - The unit job runs before the integration job (`needs: unit`).
-#   `CIWorkflowTests` pins that edge from the unit suite.
+# - The nested `IntegrationTests/` package holds the real-model suite; the
+#   root `Package.swift` declares no integration target, so a bare
+#   `swift test` at the root cannot reach it.
+# - No environment variable selects a suite. This workflow gives the shared
+#   workflow no `integration-gate-env` (a LEGACY input, kept only for
+#   callers that have not migrated).
+# - The shared workflow's unit job builds the nested package on every run
+#   (the compile coupling that keeps it from rotting unnoticed), and its
+#   integration job builds, colocates the metallib for, and runs it, ordered
+#   after the unit job by the shared workflow's own internal `needs:` edge.
+#   `CIWorkflowTests` pins the delegation from this side.
+#
+# GPU-device tests under `swift test` also need
+# `IntegrationTests/Tests/.../Support/MetalLibraryTestBootstrap.swift` (the
+# root-cause fix for mlx-swift's metallib path resolution, verified
+# necessary even after the shared workflow's own colocation step was fixed
+# at workflows commit 20c0a0a to copy both filenames the loader tries): the
+# `integration-metallib-glob` input below is defense-in-depth on top of that
+# bootstrap, not a substitute for it — see that file's header.
 
 on:
   push:
@@ -23,60 +35,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  unit:
-    name: Unit tests
+  ci:
     uses: swissarmyhammer/workflows/.github/workflows/swift-ci.yaml@main
-
-  integration:
-    name: Integration (real models, real GPU)
-    runs-on: [self-hosted, macOS]
-    # A fast unit failure must stop the run before this job takes the
-    # runner. Without this edge, GitHub assigns the one self-hosted runner
-    # in an arbitrary order, and a long integration run can hold it while
-    # the fast unit signal waits in the queue.
-    needs: unit
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Toolchain versions
-        run: |
-          sw_vers
-          swift --version
-
-      - name: Clean build directory
-        run: rm -rf IntegrationTests/.build
-
-      # The compile coupling the nested package would otherwise lose.
-      #
-      # While the real-model suite was a target of the root manifest, a
-      # broken integration test broke a plain `swift build --build-tests`,
-      # so it could never rot unnoticed between the runs that actually
-      # execute it. A package of its own ends that: the root build does not
-      # compile these files at all.
-      #
-      # This step restores it, and this job runs on EVERY trigger — a build
-      # of the integration package is cheap, and only the run is expensive.
-      # Do not drop it and do not make it conditional.
-      # `IntegrationTests/Package.swift` records the same requirement from
-      # the manifest side.
-      - name: Build the integration tests
-        run: swift build --package-path IntegrationTests --build-tests
-
-      # mlx-swift's Metal backend probes `<binary-dir>/mlx.metallib` first,
-      # where `<binary-dir>` is the directory of the running Mach-O — for a
-      # test bundle, `<Target>.xctest/Contents/MacOS/`. SwiftPM puts the
-      # compiled shader library inside `mlx-swift_Cmlx.bundle`, so every
-      # probe misses and the first GPU-device eval aborts the whole test
-      # process with "Failed to load the default metallib". This step makes
-      # the placement the probe expects.
-      - name: Colocate the mlx metallib with the test binary
-        run: |
-          set -eu
-          xctest="$(find IntegrationTests/.build -name '*.xctest' -type d -print -quit)"
-          echo "xctest: ${xctest:?no .xctest bundle was built}"
-          metallib="$(find IntegrationTests/.build -path '*Cmlx*/default.metallib' -print -quit)"
-          echo "metallib: ${metallib:?no mlx-swift_Cmlx default.metallib was built}"
-          cp "$metallib" "$xctest/Contents/MacOS/mlx.metallib"
-
-      - name: Run the integration suite
-        run: swift test --package-path IntegrationTests
+    with:
+      integration-package-path: IntegrationTests
+      integration-metallib-glob: "*Cmlx*/default.metallib"

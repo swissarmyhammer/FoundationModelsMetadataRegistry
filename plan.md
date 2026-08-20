@@ -500,7 +500,8 @@ Each example doubles as the acceptance demo for its milestone (`CatalogSearch`
   embed + RRF quality smoke over a fixture catalog, reload under churn (MCP-style
   add/remove bursts). Shipped as the nested `IntegrationTests/` package
   (`swift test --package-path IntegrationTests`), per the org test contract in
-  swissarmyhammer/workflows' README.
+  swissarmyhammer/workflows' README; CI runs it via the shared `swift-ci.yaml`
+  workflow's `integration-package-path` input, not a repo-local job.
 - ✅ **M8 — Examples.** The `Examples/` suite (§13): `CatalogSearch`,
   `SemanticSearch`, `Librarian`, `BigCatalog`, `HotReload` — each a runnable
   executable target (`swift run <Name>`) over a unit-tested `<Name>Core`, compiled

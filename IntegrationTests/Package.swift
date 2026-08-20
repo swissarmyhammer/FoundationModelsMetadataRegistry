@@ -45,10 +45,11 @@ private let transformersPackage = "swift-transformers"
 /// `swift build --build-tests` at the root, so it could never rot unnoticed
 /// between real-model runs. A separate package ends that coupling: the root
 /// build no longer compiles these files at all. `.github/workflows/ci.yml`
-/// restores it — the integration job runs
-/// `swift build --package-path IntegrationTests --build-tests` on **every**
-/// run, before the expensive test step. A build of this package is cheap;
-/// only the run is expensive. Do not drop that step.
+/// restores it by delegating to the shared `swift-ci.yaml` workflow with
+/// `integration-package-path: IntegrationTests` — that input makes the
+/// shared workflow's unit job build this package on **every** run, before
+/// the expensive integration-test step runs at all. A build of this package
+/// is cheap; only the run is expensive.
 ///
 /// **Why the dependency list below repeats the root manifest's.** A SwiftPM
 /// manifest cannot import code from another manifest, and a package may only
