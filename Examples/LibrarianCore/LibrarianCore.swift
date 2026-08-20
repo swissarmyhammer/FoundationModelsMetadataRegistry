@@ -21,8 +21,8 @@ import LiveRouterSupport
 /// reasoning plan.md §6 says lexical/semantic ranking alone can't do.
 ///
 /// The model run is gated behind
-/// `ExamplesSupport.isMetadataRegistryIntegrationEnabled` -- the same opt-in
-/// env var the gated `Integration/RouterIntegrationTests.swift` suite uses.
+/// `ExamplesSupport.isMetadataRegistryIntegrationEnabled` -- the examples'
+/// real-model opt-in env var.
 /// Without it, `printCatalog()` prints the catalog and this example exits 0,
 /// GPU-free.
 

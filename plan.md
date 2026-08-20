@@ -498,7 +498,9 @@ Each example doubles as the acceptance demo for its milestone (`CatalogSearch`
 - ✅ **M7 — Gated integration.** Router-backed suite (tiny `mlx-community` models, the
   Router test pattern): real fork-per-call prefix reuse, xgrammar id-enum enforcement,
   embed + RRF quality smoke over a fixture catalog, reload under churn (MCP-style
-  add/remove bursts). Shipped as `Tests/.../Integration/RouterIntegrationTests.swift`.
+  add/remove bursts). Shipped as the nested `IntegrationTests/` package
+  (`swift test --package-path IntegrationTests`), per the org test contract in
+  swissarmyhammer/workflows' README.
 - ✅ **M8 — Examples.** The `Examples/` suite (§13): `CatalogSearch`,
   `SemanticSearch`, `Librarian`, `BigCatalog`, `HotReload` — each a runnable
   executable target (`swift run <Name>`) over a unit-tested `<Name>Core`, compiled
@@ -511,8 +513,10 @@ Unit tier is GPU-free by construction: signals and RRF are pure functions over i
 corpora (table-driven, plus golden rankings for a fixture catalog); the selection tier
 runs against scripted `AgentSession` fakes (assert fork-per-call, one-off-over-budget,
 id-enum membership, verbatim lookup); reload asserts hash-guarded re-embeds and cache
-invalidation with a counting `FakeEmbedder`. The gated integration suite (M7) follows
-the Router pattern: `.serialized`, opt-in env var, tiny real models.
+invalidation with a counting `FakeEmbedder`. The integration suite (M7) follows
+the Router pattern (`.serialized`, tiny real models) and lives in the nested
+`IntegrationTests/` package — no env var selects it; the root `swift test`
+runs the unit tests only (the org test contract).
 
 ---
 

@@ -90,11 +90,12 @@ let examplesSupportName = "ExamplesSupport"
 /// Hugging Face hub + LM-common products, and the Hugging Face
 /// hub/transformers products.
 ///
-/// This exact 5-entry list appeared verbatim in three places —
-/// `liveRouterCoreDependencies` below, the test target's dependencies
-/// (which link the gated `Integration/RouterIntegrationTests.swift` suite),
-/// and `LiveRouterSupport`'s own target — extracted here so all three share
-/// one source of truth rather than three copies that could silently drift.
+/// This exact 5-entry list appeared verbatim in two places —
+/// `liveRouterCoreDependencies` below and `LiveRouterSupport`'s own target —
+/// extracted here so both share one source of truth rather than two copies
+/// that could silently drift. (The real-model integration suite, now the
+/// nested `IntegrationTests/` package, restates the same products in its own
+/// manifest — a SwiftPM manifest cannot import code from another manifest.)
 let liveRouterProductDependencies: [Target.Dependency] = [
     .product(name: routerDependencyName, package: routerDependencyName),
     .product(name: "MLXHuggingFace", package: mlxPackage),
@@ -193,12 +194,22 @@ let package = Package(
         .library(
             name: packageName,
             targets: [packageName]
-        )
+        ),
+        // The real-model integration suite lives in the nested
+        // `IntegrationTests/` package, which depends on this package by a
+        // path. That suite drives `runSemanticSearch(query:embedder:onDiagnostic:)`
+        // over the `gitCommands` fixture catalog, and a package can only
+        // import the products of its dependencies — so `SemanticSearchCore`
+        // is a product here, not only a target.
+        .library(
+            name: "SemanticSearchCore",
+            targets: ["SemanticSearchCore"]
+        ),
     ],
     dependencies: [
         .package(url: "\(swissArmyHammerOrg)\(routerDependencyName).git", branch: "main"),
         .package(url: "\(swissArmyHammerOrg)\(foundationModelsRankerPackage).git", branch: "main"),
-        .package(url: "\(swissArmyHammerOrg)\(mlxPackage).git", branch: "foundationmodels-fixes"),
+        .package(url: "\(swissArmyHammerOrg)\(mlxPackage).git", branch: "stable"),
         .package(url: "\(huggingFaceOrg)\(huggingFacePackage)", from: "0.9.0"),
         .package(url: "\(huggingFaceOrg)\(transformersPackage)", from: "1.3.0"),
         // Pinned below swift-jinja 2.4.0: that release changed `Value.object`
@@ -236,22 +247,21 @@ let package = Package(
                 // needs a dedicated unit test.
                 .target(name: "BigCatalogCore"),
                 .target(name: "HotReloadCore"),
-                // The gated `Integration/RouterIntegrationTests.swift` suite (plan.md
-                // M7) builds a real, live `Router` + `LiveModelLoader` directly —
-                // mirroring FoundationModelsRouter's own gated
-                // `FoundationModelsRouterIntegrationTests` target and Multitool's
-                // `FoundationModelsMultitoolIntegrationTests` — so this test target
-                // needs the same product dependencies those targets link, even though
-                // every other test file here never imports them.
+                // `Jinja` is already linked transitively via `Tokenizers`
+                // (through the `*Core` targets above); declaring it here
+                // marks the root-level swift-jinja pin (the
+                // `"2.0.0"..<"2.4.0"` upper bound above, which exists only
+                // to keep `swift package update` off the release that breaks
+                // swift-transformers) as used, so SwiftPM stops warning that
+                // the dependency is unused by any target.
                 //
-                // `Jinja` is already linked transitively via `Tokenizers`;
-                // declaring it here marks the root-level swift-jinja pin
-                // (the `"2.0.0"..<"2.4.0"` upper bound above, which exists
-                // only to keep `swift package update` off the release that
-                // breaks swift-transformers) as used, so SwiftPM stops
-                // warning that the dependency is unused by any target.
+                // This target holds the unit tests, and only the unit tests.
+                // The real-model integration suite lives in the nested
+                // `IntegrationTests/` package, so a bare `swift test` at the
+                // root cannot reach it (the org test contract in
+                // swissarmyhammer/workflows' README).
                 .product(name: "Jinja", package: "swift-jinja"),
-            ] + liveRouterProductDependencies,
+            ],
             path: "Tests/\(packageName)Tests"
         ),
         // Fixture type (`GitCommand`), the common fixture prefix
@@ -315,8 +325,8 @@ let package = Package(
         // end-to-end on a Router model -- a cached root session seeded with
         // the whole (under-budget) catalog, `fork()`ed per query, ids-only
         // xgrammar-constrained output, verbatim blocks out. The model run is
-        // gated behind `METADATA_REGISTRY_INTEGRATION_TESTS` (the same
-        // opt-in env var as the gated integration suite); without it, the
+        // gated behind `METADATA_REGISTRY_INTEGRATION_TESTS` (the examples'
+        // real-model opt-in); without it, the
         // example prints its catalog and exits 0. Links the same MLX +
         // Hugging Face products as `SemanticSearchCore` to construct a live
         // `Router` + `LiveModelLoader`.

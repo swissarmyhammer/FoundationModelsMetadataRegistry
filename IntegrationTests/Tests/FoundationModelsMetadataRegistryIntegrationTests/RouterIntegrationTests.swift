@@ -6,27 +6,20 @@ import MLXLMCommon
 import Testing
 import Tokenizers
 
-import ExamplesSupport
 import FoundationModelsRouter
-@testable import SemanticSearchCore
-@testable import FoundationModelsMetadataRegistry
+import SemanticSearchCore
+import FoundationModelsMetadataRegistry
 
-// MARK: - Gate
+// MARK: - Selection
 
-/// The opt-in environment variable that enables this gated, real-model suite:
-/// `ExamplesSupport.metadataRegistryIntegrationEnvVar`
-/// ("METADATA_REGISTRY_INTEGRATION_TESTS"), the single shared literal every
-/// gated real-model path in this package reads — this suite and the
-/// `Librarian`/`BigCatalog`/`HotReload` Examples targets (task "^ew12k0b")
-/// alike — so a rename in one is caught by the compiler everywhere else,
-/// rather than two independent declarations that merely happen to agree.
-/// Unset (the default, and on any CI/GPU-less box), the whole suite is
-/// skipped, so `swift test` stays green with zero downloads — mirroring
-/// FoundationModelsRouter's own gate
-/// (`../FoundationModelsRouter/Tests/FoundationModelsRouterIntegrationTests/IntegrationTests.swift`'s
-/// `FM_ROUTER_INTEGRATION_TESTS`) and FoundationModelsMultitool's
-/// (`../FoundationModelsMultitool/Tests/FoundationModelsMultitoolIntegrationTests/Support/IntegrationGate.swift`'s
-/// `MULTITOOL_INTEGRATION`).
+/// No environment variable selects this suite. The org test contract
+/// (swissarmyhammer/workflows' README) says an environment variable must
+/// not select tests. This suite runs when its own package runs:
+/// `swift test --package-path IntegrationTests` from the repository root.
+/// The root package does not name this package, so a bare `swift test` at
+/// the root runs the unit tests only. The `Examples/` executables keep
+/// `METADATA_REGISTRY_INTEGRATION_TESTS` as their own real-model opt-in —
+/// an example program is not a test.
 
 // MARK: - Tiny real models
 
@@ -149,26 +142,24 @@ private let toolCatalogIds = toolCatalog.map(\.id)
 
 // MARK: - Suite
 
-/// The gated, Router-backed integration suite (plan.md §15 + M7): four
+/// The Router-backed integration suite (plan.md §15 + M7): four
 /// scenarios exercising this package's production seams against tiny real
 /// `mlx-community` models — real fork-per-call prefix reuse through
 /// `RoutedAgentSession`, xgrammar id-enum enforcement, an embed + RRF quality
 /// smoke via `RoutedEmbedderAdapter`, and hot-reload under an MCP-style
 /// add/remove churn burst.
 ///
-/// Gated exactly like Router's own suite: the package's deployment floor is
-/// macOS 27 already (so no redundant `@available` attribute is needed —
-/// Swift Testing's `@Suite`/`@Test` macros reject one on the type), plus the
-/// opt-in `metadataRegistryIntegrationEnvVar`. `.serialized` so the heavy
+/// The package's deployment floor is macOS 27 already (so no redundant
+/// `@available` attribute is needed — Swift Testing's `@Suite`/`@Test`
+/// macros reject one on the type). `.serialized` so the heavy
 /// resolve/release cycle happens one scenario at a time, under a generous
 /// `.timeLimit`. Downloads are cached on disk by the Hub client and reused
 /// across runs and across this package's own `SemanticSearch` example, since
 /// both resolve the identical tiny model refs.
 @Suite(
-    "Gated Router-backed integration suite (M7)",
+    "Router-backed integration suite (M7)",
     .serialized,
-    .timeLimit(.minutes(30)),
-     .enabled(if: isMetadataRegistryIntegrationEnabled)
+    .timeLimit(.minutes(30))
 )
 struct RouterIntegrationTests {
     // MARK: - Scenario 1: fork-per-call prefix reuse through RoutedAgentSession

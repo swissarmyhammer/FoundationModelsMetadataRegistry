@@ -1,0 +1,1 @@
+{"id":"01M0FGHN4DT407MZGPFSSS6MHY","timestamp":"2026-08-20T11:57:47.533363Z","op":"create","item_id":"01M0FGHN49RTSGF52QPY7JV1C0","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: 7057ff\n+tag_name: test-contract\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: 7057ff\n-tag_name: test-contract\n","transaction_id":null}

@@ -88,11 +88,14 @@ public func formattedMatches<Item: SearchableMetadata>(matches: [Match<Item>]) -
 /// `Examples/`: `Librarian`, `BigCatalog`, and `HotReload` each read this
 /// exact name to decide between their GPU-free/degraded path (unset, the
 /// default -- every example exits 0 with no network/GPU) and their real,
-/// live-Router-backed path (set). The identical literal the gated
-/// `Integration/RouterIntegrationTests.swift` suite gates its own real-model
-/// scenarios behind (`metadataRegistryIntegrationEnvVar` there) -- sharing
-/// one name means a single opt-in switch controls both the gated test suite
-/// and a real-model run of any of these three examples.
+/// live-Router-backed path (set).
+///
+/// This variable gates example programs only, never tests. The org test
+/// contract (swissarmyhammer/workflows' README) says an environment
+/// variable must not select tests, so the real-model integration suite
+/// lives in the nested `IntegrationTests/` package and runs with
+/// `swift test --package-path IntegrationTests` -- no test reads this
+/// name, and no test may start doing so.
 public let metadataRegistryIntegrationEnvVar = "METADATA_REGISTRY_INTEGRATION_TESTS"
 
 /// Whether the gated real-model path is enabled for this run.
