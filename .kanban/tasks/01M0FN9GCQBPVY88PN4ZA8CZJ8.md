@@ -12,8 +12,19 @@ comments:
     - Difference from Multitool: this package does not need `integration-no-parallel` — one `.serialized` suite, no turnstile. Decide finally when the input's semantics are visible.
     - next: when the push lands, follow /tdd — rewrite CIWorkflowTests first (red), then rewrite ci.yml (green), verify root swift test + integration build, commit, push, watch the CI run.
   timestamp: 2026-08-20T13:21:59.040146+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m0fptrh0zp7wv0x81y6m9g0q
+  text: |-
+    ### commit — changed
+    - evidence: 50c3a83 ci(tests): fold unit and integration into the shared swift-ci.yaml call; pushed to origin/main (4926a63..50c3a83)
+    - CI evidence: run https://github.com/swissarmyhammer/FoundationModelsMetadataRegistry/actions/runs/32375511644 — completed/success. Unit job "ci / Build & test": 102 tests in 9 suites green. Integration job "ci / Integration (opt-in, real dependencies)": 4 tests in 1 suite green, real models on GPU.
+    - ci.yml is now a single call to the shared swift-ci.yaml with integration-package-path: IntegrationTests and integration-metallib-glob. No repo-local jobs remain.
+    - Ported MetalLibraryTestBootstrap.swift (from Multitool, itself from mlx-swift-lm) as the root-cause metallib fix — direct local measurement showed the shared workflow's colocation step (at that time, workflows commit 0580114) did not satisfy mlx-swift's loader for this package, since no in-process bootstrap existed here. workflows commit 20c0a0a has since fixed the shared step too; the bootstrap stays as defense-in-depth's foundation, not a substitute.
+    - CIWorkflowTests rewritten (TDD) to pin the delegation shape instead of a repo-local needs: edge.
+    - next: none — task complete.
+  timestamp: 2026-08-20T13:47:37.376957+00:00
+position_column: done
+position_ordinal: '9180'
 title: Fold the repo-local integration job into the shared swift-ci.yaml call
 ---
 ## Goal

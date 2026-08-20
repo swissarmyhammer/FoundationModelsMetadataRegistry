@@ -2,9 +2,10 @@
 
 [![CI](https://github.com/swissarmyhammer/FoundationModelsMetadataRegistry/actions/workflows/ci.yml/badge.svg)](https://github.com/swissarmyhammer/FoundationModelsMetadataRegistry/actions/workflows/ci.yml)
 
-Hybrid metadata search for Foundation Models sessions: rank-fused BM25 + trigram + cosine
-retrieval, with an optional LLM-driven selection tier that returns catalog ids — never
-re-typed text. Targets macOS 27+ and Swift 6.1 (Apple's on-device Foundation Models).
+Hybrid metadata search for Foundation Models sessions. The searcher fuses BM25,
+character-trigram, and cosine signals with reciprocal rank fusion. An optional
+selection tier lets an on-device LLM select catalog ids — never re-typed text.
+The package targets macOS 27+ and Swift 6.1 (Apple's on-device Foundation Models).
 
 ```swift
 import FoundationModelsMetadataRegistry
@@ -31,11 +32,12 @@ for match in matches {
 }
 ```
 
-No embedder, no model, and no session are required for this path — retrieval alone fuses
-BM25 (id-field ×5, block ×1) and character-trigram Dice by reciprocal rank fusion, so
-`commit` ranks first even though its block never repeats the query's words. Add a
-`TextEmbedding` conformer for a cosine signal, or a `SelectionConfig` to let an LLM select
-verbatim ids over catalogs too large to fit in one prompt.
+This path does not need an embedder, a model, or a session. Retrieval alone fuses
+BM25 (id field ×5, block ×1) and character-trigram Dice by reciprocal rank fusion.
+Thus `commit` gets the first rank although its block does not contain the query's
+words. Add a `TextEmbedding` conformer to get a cosine signal. Add a
+`SelectionConfig` to let an LLM select verbatim ids from catalogs too large for
+one prompt.
 
 ## Install
 
@@ -47,10 +49,11 @@ Add the package to `Package.swift`:
 
 ## Documentation
 
-Five runnable examples cover every tier — keyword-only, semantic (cosine), LLM-driven
-selection, a 1,000-item catalog, and hot reload — in [`Examples/`](Examples/). The full
-design (architecture, diagnostics, the hot-reload contract) is in [`plan.md`](plan.md).
+Five runnable examples show each tier — keyword-only, semantic (cosine),
+LLM-driven selection, a 1,000-item catalog, and hot reload — in
+[`Examples/`](Examples/). The full design (architecture, diagnostics, the
+hot-reload contract) is in [`plan.md`](plan.md).
 
 ## License
 
-No license file is included in this repository.
+This repository does not contain a license file.
