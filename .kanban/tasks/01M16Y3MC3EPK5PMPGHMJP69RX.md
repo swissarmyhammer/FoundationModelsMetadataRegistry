@@ -40,10 +40,28 @@ comments:
     - evidence: 8 files. New: Examples/ExamplesSupport/DemoAgentSession.swift. Changed: Examples/LibrarianCore/LibrarianCore.swift, Examples/BigCatalogCore/BigCatalogCore.swift, Examples/Librarian/main.swift, Examples/BigCatalog/main.swift, Examples/ExamplesSupport/ExamplesSupport.swift, Package.swift, Tests/FoundationModelsMetadataRegistryTests/ExamplesSmokeTests.swift, Tests/FoundationModelsMetadataRegistryTests/OverBudgetTests.swift. `swift build --build-tests` clean, 0 errors 0 warnings. `swift test` = 109 tests in 9 suites (was 106); the 3 new tests pass in 0.012s. One failure appears intermittently -- `ExamplesSmokeTests.bigCatalogRetrievalFindsTheNeedleAndReportsTiming()`'s `result.elapsed < 5.0` -- reproduced 2 of 4 runs at HEAD with my change stashed, so it is pre-existing; filed as ^b8sg2pk. `swift run Librarian` and `swift run BigCatalog` each exit 0, GPU-free, and BigCatalog prints the `.retrievalCut` diagnostic.
     - next: /review
   timestamp: 2026-08-29T16:29:20.222263+00:00
+- actor: claude-code
+  id: 01m17638gxjbh4nj6wg3tv349c
+  text: |
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 5711945) — 0 findings, 0 confirmed, 1 refuted, 7 validator passes attempted, 0 failed. 9 files reviewed; 8 `.kanban/` files excluded by `.reviewignore`. All 7 prior checklist items on this card are checked, and there is no earlier Review Findings section.
+    - next: none. Card moved to done. The follow-on scope stays with `^b2487hc` (delete `Examples/LiveRouterSupport/`), `^3aeakq4` (remove the package-level Router dependencies), and `^7e74y0r` (migrate `SelectionConfig.model` to the one-argument seam).
+  timestamp: 2026-08-29T16:36:56.477309+00:00
+- actor: claude-code
+  id: 01m1763x4sm2wn42azqs7myw4n
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 8 files. New Examples/ExamplesSupport/DemoAgentSession.swift (GPU-free AgentSession, ids-only JSON via JSONEncoder because BigCatalog ids are URIs) plus demoSelectionConfig. Live-Router selection removed from LibrarianCore and BigCatalogCore, gates removed from both mains, metadataRegistryIntegrationEnvVar and isMetadataRegistryIntegrationEnabled deleted from ExamplesSupport, test target gained LibrarianCore.
+    - test: green — swift test 109 tests in 9 suites, 3 consecutive full-suite runs on a quiet machine (0.29s-0.38s); swift build --package-path IntegrationTests Build complete; swift run Librarian and swift run BigCatalog both exit 0 GPU-free
+    - commit: 5711945 refactor(examples): remove live-Router selection path from demo cores
+    - review: clean — 0 findings, 1 candidate refuted, 7 validators, task moved to done
+    - note: the implementer found a load-sensitive assertion (result.elapsed < 5.0) and correctly refused to raise the threshold, filing ^b8sg2pk instead. Measured separately: 5/5 pass in isolation at 0.236s against a 5.0s limit. The failures it saw came from four or more subagents compiling Swift at the same time, not from this change.
+    - note: the implementer used git stash to get a baseline measurement. Verified afterwards that the stash list is empty and all 8 files survived.
+  timestamp: 2026-08-29T16:37:17.593409+00:00
 depends_on:
 - 01M16Y2V1034PDVAN8Z0GK3T9F
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '9580'
 title: Remove the live-Router selection path from LibrarianCore and BigCatalogCore
 ---
 ## What

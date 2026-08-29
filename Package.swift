@@ -41,27 +41,31 @@ let foundationModelsRankerPackage = "FoundationModelsRanker"
 /// The same remote dependency FoundationModelsRouter itself declares;
 /// re-declared here with the identical URL/branch so SwiftPM's dependency
 /// resolution unifies the two into a single resolved checkout, never a
-/// duplicate, so `SemanticSearchCore` can import `MLXHuggingFace`'s
-/// `#hubDownloader()` / `#huggingFaceTokenizerLoader()` macros to build a
-/// live `Router` — the only place this package touches MLX directly
-/// (plan.md §13).
+/// duplicate.
+///
+/// No target of this package names an MLX product any more: the live-Router
+/// path the `Examples/` demos once carried is gone, and the nested
+/// `IntegrationTests/` package declares its own MLX dependency for the
+/// real-model suite. Only the `dependencies:` entry below survives, and a
+/// later change removes it.
 let mlxPackage = "mlx-swift-lm"
 
 /// The Hugging Face Hub client package name.
 ///
-/// `SemanticSearchCore` links this to supply `LiveModelLoader`'s
-/// `Downloader`, mirroring FoundationModelsRouter's own gated integration
-/// suite and its `Examples/MultiModelGeneration` demo (`hubProducts` in that
-/// package's manifest). Needed only by `SemanticSearchCore`'s live-Router
-/// path; the library target never imports it.
+/// Supplied `LiveModelLoader`'s `Downloader` while the `Examples/` demos
+/// resolved a live `Router`. No target of this package names its `HuggingFace`
+/// product any more — the real-model suite in the nested `IntegrationTests/`
+/// package declares its own — so only the `dependencies:` entry below
+/// survives, and a later change removes it.
 let huggingFacePackage = "swift-huggingface"
 
 /// The Hugging Face Transformers package name.
 ///
-/// Its `Tokenizers` product supplies `LiveModelLoader`'s `TokenizerLoader`
-/// alongside `huggingFacePackage`'s `Downloader`. Needed only by
-/// `SemanticSearchCore`'s live-Router path; the library target never
-/// imports it.
+/// Its `Tokenizers` product supplied `LiveModelLoader`'s `TokenizerLoader`
+/// alongside `huggingFacePackage`'s `Downloader`, on the same removed
+/// live-Router path. No target of this package names it any more; only the
+/// `dependencies:` entry below survives, and a later change removes it —
+/// though it also anchors the swift-jinja pin the test target keeps alive.
 let transformersPackage = "swift-transformers"
 
 /// The GitHub organization URL base the swissarmyhammer-family dependencies
@@ -78,46 +82,30 @@ let huggingFaceOrg = "https://github.com/huggingface/"
 
 /// The name of the shared `Examples/ExamplesSupport` library target.
 ///
-/// Referenced verbatim by every example's dependency list (`CatalogSearchCore`
-/// via `exampleExecutableTarget`, `liveRouterCoreDependencies`, the test
-/// target, and the target's own declaration) — extracted here so all four
-/// share one source of truth rather than four string literals that could
-/// silently drift.
+/// Referenced by `exampleDependencies(on:)` — which every `Examples/` target's
+/// dependency list goes through — by the test target, and by the target's own
+/// declaration; extracted here so all three share one source of truth rather
+/// than three string literals that could silently drift.
 let examplesSupportName = "ExamplesSupport"
 
-/// The Router/MLX/Hugging Face product quintet that resolves a real
-/// `Router` + `LiveModelLoader`: FoundationModelsRouter itself, MLX's
-/// Hugging Face hub + LM-common products, and the Hugging Face
-/// hub/transformers products.
+/// The dependency list every `Examples/` target carries: the one library
+/// target it is written against, plus `ExamplesSupport` for the shared
+/// fixtures, the deterministic embedder, and the match formatter.
 ///
-/// This exact 5-entry list appeared verbatim in two places —
-/// `liveRouterCoreDependencies` below and `LiveRouterSupport`'s own target —
-/// extracted here so both share one source of truth rather than two copies
-/// that could silently drift. (The real-model integration suite, now the
-/// nested `IntegrationTests/` package, restates the same products in its own
-/// manifest — a SwiftPM manifest cannot import code from another manifest.)
-let liveRouterProductDependencies: [Target.Dependency] = [
-    .product(name: routerDependencyName, package: routerDependencyName),
-    .product(name: "MLXHuggingFace", package: mlxPackage),
-    .product(name: "MLXLMCommon", package: mlxPackage),
-    .product(name: "HuggingFace", package: huggingFacePackage),
-    .product(name: "Tokenizers", package: transformersPackage),
-]
-
-/// The full dependency list every `*Core` target on the live-Router path
-/// needs: the main library target, `ExamplesSupport`, `LiveRouterSupport`,
-/// plus `liveRouterProductDependencies`.
+/// Both helpers below spelled this same two-entry list out, differing only in
+/// the library they name — a `*Core` target depends on the main library, and
+/// an executable depends on its own `*Core` — so it lives here instead, and
+/// the rule that an `Examples/` target reaches for nothing else has one home.
 ///
-/// `SemanticSearchCore`, `LibrarianCore`, `BigCatalogCore`, and
-/// `HotReloadCore` each depended on this identical 8-entry list verbatim —
-/// extracted here so the four targets share one source of truth rather than
-/// four copies that could silently drift. (`CatalogSearchCore` stays
-/// GPU-free/Router-free and deliberately does not use this constant.)
-let liveRouterCoreDependencies: [Target.Dependency] = [
-    .target(name: packageName),
-    .target(name: examplesSupportName),
-    .target(name: "LiveRouterSupport"),
-] + liveRouterProductDependencies
+/// - Parameter libraryName: the library target this `Examples/` target is
+///   written against.
+/// - Returns: the dependency list.
+func exampleDependencies(on libraryName: String) -> [Target.Dependency] {
+    [
+        .target(name: libraryName),
+        .target(name: examplesSupportName),
+    ]
+}
 
 /// Builds an `Examples/` executable target: a thin runnable entry point that
 /// depends only on its own `*Core` library target plus `ExamplesSupport`,
@@ -137,27 +125,27 @@ let liveRouterCoreDependencies: [Target.Dependency] = [
 func exampleExecutableTarget(name: String, coreName: String) -> Target {
     .executableTarget(
         name: name,
-        dependencies: [
-            .target(name: coreName),
-            .target(name: examplesSupportName),
-        ],
+        dependencies: exampleDependencies(on: coreName),
         path: "Examples/\(name)"
     )
 }
 
-/// Builds an `Examples/<name>` `*Core` library target on the live-Router
-/// path: depends on `liveRouterCoreDependencies` (the main library,
-/// `ExamplesSupport`, `LiveRouterSupport`, and the Router/MLX/Hugging Face
-/// product quintet), rooted at `Examples/<name>`.
+/// Builds an `Examples/<name>` `*Core` library target: an example's entry
+/// logic as a plain library, depending on the main library target plus
+/// `ExamplesSupport` and nothing else, rooted at `Examples/<name>`.
 ///
-/// `SemanticSearchCore`, `LibrarianCore`, `BigCatalogCore`, and
-/// `HotReloadCore` each declared this identical shape verbatim, differing
-/// only in `name` — extracted here so adding the next example's `*Core`
-/// target is one call instead of a fifth copy of the boilerplate.
-/// (`CatalogSearchCore` stays GPU-free/Router-free — it depends on
-/// `packageName`/`examplesSupportName` only, not
-/// `liveRouterCoreDependencies` — so it deliberately does not use this
-/// helper.)
+/// Every core now has the GPU-free, Router-free shape `CatalogSearchCore`
+/// always had. The four that once resolved a real embedder or session through
+/// a live `Router` do so no longer — the demos run against `ExamplesSupport`'s
+/// deterministic embedder and scripted `DemoAgentSession`, and the real-model
+/// story lives in the nested `IntegrationTests/` package. So no core links
+/// MLX or Hugging Face, and no core needs a Router product.
+///
+/// `CatalogSearchCore`, `SemanticSearchCore`, `LibrarianCore`,
+/// `BigCatalogCore`, and `HotReloadCore` each declared this identical shape
+/// verbatim, differing only in `name` — extracted here so adding the next
+/// example's `*Core` target is one call instead of a sixth copy of the
+/// boilerplate.
 ///
 /// - Parameter name: the `*Core` target's name, and the `Examples/`
 ///   subdirectory it lives in.
@@ -165,20 +153,21 @@ func exampleExecutableTarget(name: String, coreName: String) -> Target {
 func exampleCoreTarget(name: String) -> Target {
     .target(
         name: name,
-        dependencies: liveRouterCoreDependencies,
+        dependencies: exampleDependencies(on: packageName),
         path: "Examples/\(name)"
     )
 }
 
 /// The SwiftPM manifest for FoundationModelsMetadataRegistry (plan.md §10).
 ///
-/// A single library target over the FoundationModelsRouter sibling, a Swift
+/// A single library target over the FoundationModelsRanker sibling, a Swift
 /// Testing unit test target, and the `Examples/` executable targets (§13):
-/// `CatalogSearch` (keyword-only, GPU-free) and `SemanticSearch`
-/// (`RoutedEmbedderAdapter` over a live Router, with a `--no-embedder` flag
-/// for the GPU-free degraded path) — demos only, never a dependency of the
-/// library. Each example's entry logic lives in its own `*Core` library
-/// target (`CatalogSearchCore`, `SemanticSearchCore`) rather than directly in
+/// `CatalogSearch` (keyword-only) and `SemanticSearch` (`ExamplesSupport`'s
+/// deterministic embedder joining the cosine signal, with a `--no-embedder`
+/// flag for the degraded path) — demos only, never a dependency of the
+/// library, and every one of them GPU-free. Each example's entry logic lives
+/// in its own `*Core` library target (`CatalogSearchCore`,
+/// `SemanticSearchCore`) rather than directly in
 /// `main.swift`, so the test target can `@testable import` and invoke it
 /// directly as a plain library dependency, without the special (and, on this
 /// toolchain, crash-prone) "testable executable" build path SwiftPM uses
@@ -246,13 +235,12 @@ let package = Package(
                 .target(name: "BigCatalogCore"),
                 .target(name: "HotReloadCore"),
                 .target(name: "LibrarianCore"),
-                // `Jinja` is already linked transitively via `Tokenizers`
-                // (through the `*Core` targets above); declaring it here
-                // marks the root-level swift-jinja pin (the
-                // `"2.0.0"..<"2.4.0"` upper bound above, which exists only
-                // to keep `swift package update` off the release that breaks
-                // swift-transformers) as used, so SwiftPM stops warning that
-                // the dependency is unused by any target.
+                // No target links `Tokenizers` any more, so this entry is now
+                // the only thing that marks the root-level swift-jinja pin
+                // (the `"2.0.0"..<"2.4.0"` upper bound above, which exists
+                // only to keep `swift package update` off the release that
+                // breaks swift-transformers) as used, so SwiftPM stops
+                // warning that the dependency is unused by any target.
                 //
                 // This target holds the unit tests, and only the unit tests.
                 // The real-model integration suite lives in the nested
@@ -274,49 +262,26 @@ let package = Package(
             dependencies: [.target(name: packageName)],
             path: "Examples/\(examplesSupportName)"
         ),
-        // Shared live-Router profile resolution (plan.md §13 M8):
-        // `SemanticSearchCore`, `LibrarianCore`, `BigCatalogCore`, and
-        // `HotReloadCore` each resolve the identical tiny `mlx-community`
-        // model triple through a live `Router` + `LiveModelLoader` for their
-        // gated (real-model) path — extracted here rather than each target
-        // carrying its own near-identical copy. Deliberately its own target
-        // (not folded into `ExamplesSupport`) so `CatalogSearchCore`/
-        // `CatalogSearch` — which stay GPU-free and never need Router/MLX at
-        // all — don't gain these dependencies transitively through
-        // `ExamplesSupport`.
-        .target(
-            name: "LiveRouterSupport",
-            dependencies: [.target(name: packageName)] + liveRouterProductDependencies,
-            path: "Examples/LiveRouterSupport"
-        ),
         // `CatalogSearch`'s entry logic (plan.md §13 M1): fixture items
         // conformed to `SearchableMetadata`, a keyword-only
         // `MetadataSearcher(mode: .retrieval)` — no embedder, no model — one
         // query, `Match`es with their per-signal `Signals`. A plain library
         // (not the executable itself) so `ExamplesSmokeTests` can invoke it
         // directly.
-        .target(
-            name: "CatalogSearchCore",
-            dependencies: [
-                .target(name: packageName),
-                .target(name: examplesSupportName),
-            ],
-            path: "Examples/CatalogSearchCore"
-        ),
+        exampleCoreTarget(name: "CatalogSearchCore"),
         // The ~30-line hello world (plan.md §13 M1): a thin runnable entry
         // point over `CatalogSearchCore`. Runs anywhere, GPU-free; `swift
         // build` keeps it compiling in CI.
         exampleExecutableTarget(name: "CatalogSearch", coreName: "CatalogSearchCore"),
         // `SemanticSearch`'s entry logic (plan.md §13 M2): `CatalogSearch`
-        // plus `RoutedEmbedderAdapter` — the cosine signal joins fusion once
-        // a live Router resolves a real embedder, so a paraphrased query
-        // ranks where keywords alone miss; the `--no-embedder` path
-        // demonstrates the graceful keyword-only degradation and its
-        // diagnostic, GPU-free. A plain library (not the executable itself)
-        // so `ExamplesSmokeTests` can invoke the GPU-free path directly.
-        // Links the same MLX + Hugging Face products as
-        // FoundationModelsRouter's own `Examples/MultiModelGeneration` to
-        // construct a live `Router` + `LiveModelLoader`.
+        // plus a third signal — `ExamplesSupport`'s `DeterministicEmbedder`
+        // embeds catalog and query, so cosine joins BM25 and trigram in RRF
+        // fusion and shows up in each match's per-signal breakdown; the
+        // `--no-embedder` path demonstrates the graceful keyword-only
+        // degradation and its diagnostic. That embedder hashes text rather
+        // than modelling meaning, which is what keeps the whole example free
+        // of network and GPU. A plain library (not the executable itself) so
+        // `ExamplesSmokeTests` can invoke both paths directly.
         exampleCoreTarget(name: "SemanticSearchCore"),
         // A thin runnable entry point over `SemanticSearchCore`.
         exampleExecutableTarget(name: "SemanticSearch", coreName: "SemanticSearchCore"),
@@ -344,11 +309,10 @@ let package = Package(
         // (MCP-style add/remove) -- immediate keyword searchability, embed
         // catch-up progress via `.embedCatchUp`, and the selection tier's
         // cached root + grammar rebuild on a real catalog change, all
-        // GPU-free against a deterministic embedder. Only when
-        // `METADATA_REGISTRY_INTEGRATION_TESTS` is set does it also run the
-        // same burst against a real, live-Router-resolved embedder. A plain
-        // library (not the executable itself) so `ExamplesSmokeTests` can
-        // invoke the GPU-free index-rebuild path directly.
+        // GPU-free against `ExamplesSupport`'s deterministic embedder, which
+        // is the only embedder this example ever builds. A plain library (not
+        // the executable itself) so `ExamplesSmokeTests` can invoke the
+        // index-rebuild path directly.
         exampleCoreTarget(name: "HotReloadCore"),
         // A thin runnable entry point over `HotReloadCore`.
         exampleExecutableTarget(name: "HotReload", coreName: "HotReloadCore"),
