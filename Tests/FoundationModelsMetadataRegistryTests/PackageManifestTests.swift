@@ -5,15 +5,14 @@ import Testing
 /// package may name an MLX or Hugging Face product.
 ///
 /// Those products exist to resolve a live `Router` + `LiveModelLoader`, and
-/// the only code that still needs one is the real-model integration suite in
-/// the nested `IntegrationTests/` package, which declares them in its own
-/// manifest. Carrying them here instead links MLX and Hugging Face into every
+/// no code in this repository needs one any more: the real-model suite that
+/// did is gone. Naming one here links MLX and Hugging Face into every
 /// `Examples/` demo — and, through the test target, into a plain
-/// `swift build --build-tests` — for a capability the unit-tested code never
-/// exercises.
+/// `swift build --build-tests` — for a capability nothing exercises.
 ///
 /// A later edit that re-adds one of those products to a target fails this
-/// suite. The right place for it is `IntegrationTests/Package.swift`.
+/// suite. A target that genuinely needs one belongs in a separate package
+/// that declares the dependency in its own manifest, never here.
 @Suite("Package manifest")
 struct PackageManifestTests {
     /// The products that pull the live-Router path into a target: MLX's
@@ -33,8 +32,8 @@ struct PackageManifestTests {
         #expect(
             live.isEmpty,
             """
-            Package.swift must name no MLX or Hugging Face product — they belong to the nested \
-            IntegrationTests package, which declares them in its own manifest; found: \(live)
+            Package.swift must name no MLX or Hugging Face product — nothing in this repository \
+            resolves a live Router any more; found: \(live)
             """
         )
     }

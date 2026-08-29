@@ -2,20 +2,21 @@ import Foundation
 import Testing
 
 /// Pins `.github/workflows/ci.yml` to the shared CI shape the org test
-/// contract (swissarmyhammer/workflows' README) asks for: one call to the
-/// shared `swift-ci.yaml`, with `integration-package-path` naming the nested
-/// `IntegrationTests/` package so the shared workflow's own unit job builds
-/// it on every run, and its integration job builds, colocates the metallib
-/// for, and runs it — ordered after the unit job by the shared workflow's
-/// own internal `needs: test` edge, not a repo-local one.
+/// contract (swissarmyhammer/workflows' README) asks for: one job, which
+/// delegates to the shared `swift-ci.yaml` and passes it no input at all.
 ///
-/// This suite previously pinned a repo-local `needs: unit` edge between two
-/// repo-local jobs; that edge doesn't exist on this side any more once both
-/// jobs delegate to the shared workflow, so this suite pins delegation
-/// instead: the `uses:` line names the shared workflow, and the inputs name
-/// this repository's actual nested package and metallib glob. A later edit
-/// that points `uses:` somewhere else, or drops `integration-package-path`
-/// back to repo-local jobs, fails this suite.
+/// This repository has unit tests only. The shared workflow gates its
+/// integration job on `integration-gate-env`, `integration-filter`,
+/// `integration-skip`, or `integration-package-path` being non-empty, so
+/// passing none of them is what keeps that job switched off. Every input of
+/// the shared workflow is optional, which is what makes the bare `uses:`
+/// call valid.
+///
+/// This suite pins both halves of that shape: the `uses:` line names the
+/// shared workflow, and no line passes an `integration-*` input. A later
+/// edit that points `uses:` somewhere else, adds repo-local test jobs, or
+/// re-introduces an integration input without an integration suite to run,
+/// fails this suite.
 @Suite("CI workflow")
 struct CIWorkflowTests {
     @Test("ci.yml calls the shared swift-ci.yaml workflow")
@@ -31,35 +32,23 @@ struct CIWorkflowTests {
         )
     }
 
-    @Test("ci.yml points integration-package-path at the nested IntegrationTests package")
-    func namesTheNestedIntegrationPackage() throws {
+    @Test("ci.yml passes the shared workflow no integration-* input")
+    func passesNoIntegrationInput() throws {
         let lines = try Self.workflowLines()
-        let namesPackage = lines.contains { line in
-            line.trimmingCharacters(in: .whitespaces) == "integration-package-path: IntegrationTests"
-        }
+        // Matched case-insensitively: GitHub Actions resolves a `with:` key
+        // against the called workflow's `inputs:` without regard to case, so
+        // `Integration-Package-Path:` would switch the integration job on
+        // just as `integration-package-path:` does. A case-sensitive read
+        // would let that spelling through.
+        let integrationInputs = lines
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { $0.lowercased().hasPrefix("integration-") }
         #expect(
-            namesPackage,
+            integrationInputs.isEmpty,
             """
-            ci.yml must set integration-package-path: IntegrationTests so the shared workflow \
-            builds and runs the nested package, rather than falling back to repo-local jobs.
-            """
-        )
-    }
-
-    @Test("ci.yml sets an integration-metallib-glob so the shared workflow's colocation step runs")
-    func setsAMetallibGlob() throws {
-        let lines = try Self.workflowLines()
-        let setsGlob = lines.contains { line in
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            return trimmed.hasPrefix("integration-metallib-glob:") && trimmed != "integration-metallib-glob:"
-        }
-        #expect(
-            setsGlob,
-            """
-            ci.yml must set a non-empty integration-metallib-glob. \
-            MetalLibraryTestBootstrap.swift is the root-cause fix for GPU-device tests under \
-            `swift test`, and this input is defense-in-depth on top of it — see that file's \
-            header.
+            ci.yml must pass no integration-* input. This repository has no integration suite, \
+            so the shared workflow's integration job must stay switched off; found: \
+            \(integrationInputs)
             """
         )
     }

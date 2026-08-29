@@ -44,11 +44,28 @@ comments:
     - evidence: 3 files. Deleted: Examples/LiveRouterSupport/LiveRouterSupport.swift (and its directory). New: Tests/FoundationModelsMetadataRegistryTests/PackageManifestTests.swift. Changed: Package.swift. `rm -rf .build/out && swift build` clean (1 expected warning, `foundationmodelsrouter` unused, owned by ^3aeakq4). `swift test` = 110 tests in 10 suites, 3 consecutive clean runs at 0.300s/0.300s/0.305s. All 5 `swift run` demos exit 0. `swift build --package-path IntegrationTests --build-tests` Build complete.
     - next: /review
   timestamp: 2026-08-29T17:17:44.426140+00:00
+- actor: claude-code
+  id: 01m178n7pdhc2htakg9ysa5yy1
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 7bcfbcd) — 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed. 3 files reviewed. Index store cleared (`rm -rf .build/out && swift build --build-tests`, Build complete) before the scan, because this commit deletes declarations and a stale index gives false dead-code reports.
+    - next: none. Task moved to done. Follow-on scope stays with ^3aeakq4 (package-level dependency entries), ^9m7y43t (IntegrationTests), ^7e74y0r (SelectionConfig.model), ^b8sg2pk (elapsed assertion).
+  timestamp: 2026-08-29T17:21:42.605473+00:00
+- actor: claude-code
+  id: 01m178nt4fkzx9qyjx2x9ejekk
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 3 files. Examples/LiveRouterSupport/ deleted (git rm -r). Package.swift: LiveRouterSupport target, liveRouterProductDependencies and liveRouterCoreDependencies removed; exampleCoreTarget rewritten to the GPU-free shape with all five cores through it; new exampleDependencies(on:) helper; stale manifest prose corrected. New Tests/FoundationModelsMetadataRegistryTests/PackageManifestTests.swift.
+    - test: green — swift test 110 tests in 10 suites, 3 consecutive clean runs at 0.300s; all 5 swift run demos exit 0; swift build --package-path IntegrationTests --build-tests Build complete
+    - commit: 7bcfbcd refactor(examples): remove LiveRouterSupport and its manifest wiring
+    - review: clean — 0 findings, 7 validators, task moved to done. The reviewer cleared .build/out first, per the known stale-index gotcha, so the dead-code validator ran against a fresh index.
+    - note: swift build now emits one expected warning, "dependency 'foundationmodelsrouter' is not used by any target". ^3aeakq4 clears it. SwiftPM does not report mlx-swift-lm, swift-huggingface or swift-transformers unused, because FoundationModelsRanker still reaches them transitively.
+  timestamp: 2026-08-29T17:22:01.487025+00:00
 depends_on:
 - 01M16Y37AEYBQ1JEY02X0QR1AP
 - 01M16Y3MC3EPK5PMPGHMJP69RX
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '9680'
 title: Delete the LiveRouterSupport target
 ---
 ## What

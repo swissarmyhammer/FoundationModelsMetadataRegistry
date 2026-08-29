@@ -44,19 +44,18 @@ let foundationModelsRankerPackage = "FoundationModelsRanker"
 /// duplicate.
 ///
 /// No target of this package names an MLX product any more: the live-Router
-/// path the `Examples/` demos once carried is gone, and the nested
-/// `IntegrationTests/` package declares its own MLX dependency for the
-/// real-model suite. Only the `dependencies:` entry below survives, and a
-/// later change removes it.
+/// path the `Examples/` demos once carried is gone, and the repository has no
+/// real-model suite left that would need one. Only the `dependencies:` entry
+/// below survives, and a later change removes it.
 let mlxPackage = "mlx-swift-lm"
 
 /// The Hugging Face Hub client package name.
 ///
 /// Supplied `LiveModelLoader`'s `Downloader` while the `Examples/` demos
 /// resolved a live `Router`. No target of this package names its `HuggingFace`
-/// product any more — the real-model suite in the nested `IntegrationTests/`
-/// package declares its own — so only the `dependencies:` entry below
-/// survives, and a later change removes it.
+/// product any more, and no real-model suite is left anywhere in the
+/// repository to want it, so only the `dependencies:` entry below survives,
+/// and a later change removes it.
 let huggingFacePackage = "swift-huggingface"
 
 /// The Hugging Face Transformers package name.
@@ -137,9 +136,9 @@ func exampleExecutableTarget(name: String, coreName: String) -> Target {
 /// Every core now has the GPU-free, Router-free shape `CatalogSearchCore`
 /// always had. The four that once resolved a real embedder or session through
 /// a live `Router` do so no longer — the demos run against `ExamplesSupport`'s
-/// deterministic embedder and scripted `DemoAgentSession`, and the real-model
-/// story lives in the nested `IntegrationTests/` package. So no core links
-/// MLX or Hugging Face, and no core needs a Router product.
+/// deterministic embedder and scripted `DemoAgentSession`, and no real-model
+/// path is left anywhere in the repository. So no core links MLX or Hugging
+/// Face, and no core needs a Router product.
 ///
 /// `CatalogSearchCore`, `SemanticSearchCore`, `LibrarianCore`,
 /// `BigCatalogCore`, and `HotReloadCore` each declared this identical shape
@@ -183,16 +182,6 @@ let package = Package(
         .library(
             name: packageName,
             targets: [packageName]
-        ),
-        // The real-model integration suite lives in the nested
-        // `IntegrationTests/` package, which depends on this package by a
-        // path. That suite drives `runSemanticSearch(query:embedder:onDiagnostic:)`
-        // over the `gitCommands` fixture catalog, and a package can only
-        // import the products of its dependencies — so `SemanticSearchCore`
-        // is a product here, not only a target.
-        .library(
-            name: "SemanticSearchCore",
-            targets: ["SemanticSearchCore"]
         ),
     ],
     dependencies: [
@@ -243,10 +232,9 @@ let package = Package(
                 // warning that the dependency is unused by any target.
                 //
                 // This target holds the unit tests, and only the unit tests.
-                // The real-model integration suite lives in the nested
-                // `IntegrationTests/` package, so a bare `swift test` at the
-                // root cannot reach it (the org test contract in
-                // swissarmyhammer/workflows' README).
+                // This repository has no integration suite at all, so a bare
+                // `swift test` at the root runs every test it has (the org
+                // test contract in swissarmyhammer/workflows' README).
                 .product(name: "Jinja", package: "swift-jinja"),
             ],
             path: "Tests/\(packageName)Tests"

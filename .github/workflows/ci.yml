@@ -1,28 +1,21 @@
 name: CI
 
 # The org test contract (swissarmyhammer/workflows' README) applies here in
-# full, and this repository no longer runs any repo-local test job of its
-# own to satisfy it:
+# full, and this repository satisfies it with unit tests only:
 #
-# - The nested `IntegrationTests/` package holds the real-model suite; the
-#   root `Package.swift` declares no integration target, so a bare
-#   `swift test` at the root cannot reach it.
+# - `swift test` at the root runs every test this repository has, and only
+#   unit tests. There is no integration suite: no test needs a real model, a
+#   network, a GPU, or much wall-clock time.
 # - No environment variable selects a suite. This workflow gives the shared
 #   workflow no `integration-gate-env` (a LEGACY input, kept only for
 #   callers that have not migrated).
-# - The shared workflow's unit job builds the nested package on every run
-#   (the compile coupling that keeps it from rotting unnoticed), and its
-#   integration job builds, colocates the metallib for, and runs it, ordered
-#   after the unit job by the shared workflow's own internal `needs:` edge.
-#   `CIWorkflowTests` pins the delegation from this side.
-#
-# GPU-device tests under `swift test` also need
-# `IntegrationTests/Tests/.../Support/MetalLibraryTestBootstrap.swift` (the
-# root-cause fix for mlx-swift's metallib path resolution, verified
-# necessary even after the shared workflow's own colocation step was fixed
-# at workflows commit 20c0a0a to copy both filenames the loader tries): the
-# `integration-metallib-glob` input below is defense-in-depth on top of that
-# bootstrap, not a substitute for it — see that file's header.
+# - The shared workflow's integration job is gated on `integration-gate-env`,
+#   `integration-filter`, `integration-skip`, or `integration-package-path`
+#   being non-empty. This workflow passes none of them, so that job never
+#   runs and the unit job is the whole of CI. Every input of the shared
+#   workflow is optional, so the bare `uses:` below is a valid call.
+#   `CIWorkflowTests` pins the delegation, and the absence of every
+#   `integration-*` input, from this side.
 
 on:
   push:
@@ -37,6 +30,3 @@ concurrency:
 jobs:
   ci:
     uses: swissarmyhammer/workflows/.github/workflows/swift-ci.yaml@main
-    with:
-      integration-package-path: IntegrationTests
-      integration-metallib-glob: "*Cmlx*/default.metallib"
