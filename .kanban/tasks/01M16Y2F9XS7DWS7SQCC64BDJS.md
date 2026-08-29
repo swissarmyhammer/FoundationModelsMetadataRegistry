@@ -26,8 +26,24 @@ comments:
     - evidence: 1 file already correct in the working tree — /Users/wballard/github/swissarmyhammer/FoundationModelsMetadataRegistry/Package.swift (uncommitted, verified by `git diff`, one line deleted). `swift build` exit 0. `swift test` exit 0 — 102 tests in 9 suites passed. `swift build --package-path IntegrationTests` exit 0. No SwiftPM "unused dependency" warning.
     - next: /review
   timestamp: 2026-08-29T14:53:06.220583+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m170aj5j46n3a9ak9tm00t6g
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` — 0 findings, 0 confirmed, 0 refuted, 7 validators attempted, 0 failed. 1 file reviewed (`Package.swift`); 18 `.kanban/` files excluded by `.reviewignore`.
+    - next: task moved to `done`. No findings to record.
+  timestamp: 2026-08-29T14:56:04.274385+00:00
+- actor: claude-code
+  id: 01m170azf9073td6sv4bnqgska
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: no-change — the edit was already in the working tree and verified correct (Package.swift, one line deleted)
+    - test: green — swift test, 102 tests in 9 suites passed, 0 failed, 0 repo warnings; swift build --package-path IntegrationTests clean
+    - commit: 9733ff4 build(package): drop unused Router product link from library target
+    - review: clean — 0 findings, 7 validators, task moved to done
+  timestamp: 2026-08-29T14:56:17.897707+00:00
+position_column: done
+position_ordinal: '9280'
 title: Remove the unused Router product link from the main library target
 ---
 ## What

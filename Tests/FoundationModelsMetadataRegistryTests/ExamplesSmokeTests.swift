@@ -18,6 +18,41 @@ import ExamplesSupport
 /// SemanticSearch` locally, never here.
 @Suite("Examples smoke tests")
 struct ExamplesSmokeTests {
+    /// The embedding width the `DeterministicEmbedder` tests below ask for, and
+    /// the length every vector they get back must have.
+    private static let deterministicEmbedderDimension = 8
+
+    /// The texts the `DeterministicEmbedder` tests below embed: two distinct
+    /// texts, so "one vector per text" and "the same texts embed the same way
+    /// twice" are both real claims.
+    private static let deterministicEmbedderTexts = ["a", "b"]
+
+    // MARK: - ExamplesSupport (the shared GPU-free deterministic embedder)
+
+    @Test("ExamplesSupport's deterministic embedder returns one vector per text at the requested dimension")
+    func deterministicEmbedderReturnsOneVectorPerTextAtTheRequestedDimension() async throws {
+        let embedder = ExamplesSupport.DeterministicEmbedder(
+            dimension: Self.deterministicEmbedderDimension
+        )
+
+        let vectors = try await embedder.embed(Self.deterministicEmbedderTexts)
+
+        #expect(vectors.count == Self.deterministicEmbedderTexts.count)
+        #expect(vectors.allSatisfy { $0.count == Self.deterministicEmbedderDimension })
+    }
+
+    @Test("ExamplesSupport's deterministic embedder embeds the same texts to the same vectors every time")
+    func deterministicEmbedderEmbedsTheSameTextsToTheSameVectorsEveryTime() async throws {
+        let embedder = ExamplesSupport.DeterministicEmbedder(
+            dimension: Self.deterministicEmbedderDimension
+        )
+
+        let first = try await embedder.embed(Self.deterministicEmbedderTexts)
+        let second = try await embedder.embed(Self.deterministicEmbedderTexts)
+
+        #expect(first == second)
+    }
+
     // MARK: - CatalogSearch (M1, keyword-only, GPU-free)
 
     @Test("CatalogSearch ranks the literal keyword match first, with real per-signal scores")
