@@ -1,21 +1,25 @@
 import ExamplesSupport
 import Foundation
 import FoundationModelsMetadataRegistry
-import LiveRouterSupport
 
 /// # `SemanticSearch`'s entry logic (plan.md §13 M2).
 ///
-/// `CatalogSearch` plus `RoutedEmbedderAdapter`: the cosine signal joins RRF
-/// fusion once a live Router resolves a real embedder, so a paraphrased
-/// query ("save my work" -> `commit`) ranks where keywords alone miss.
-/// `--no-embedder` demonstrates the graceful keyword-only degradation and
-/// its `.embeddingUnavailable` diagnostic, GPU-free. Factored into this
-/// library target (rather than living directly in `SemanticSearch`'s
-/// `main.swift`) so `ExamplesSmokeTests` can import and invoke the
-/// `--no-embedder` path directly, with no `swift run` subprocess spawning.
+/// `CatalogSearch` plus a third signal: `ExamplesSupport`'s
+/// `DeterministicEmbedder` embeds every catalog block and the query, so
+/// cosine joins BM25 and trigram in RRF fusion and appears in each match's
+/// per-signal breakdown. That embedder hashes text rather than modelling
+/// meaning, so this example demonstrates how the cosine signal is wired in,
+/// not how well a real model ranks -- which is what keeps it free of network
+/// and GPU. `--no-embedder` drops the embedder entirely and demonstrates the
+/// graceful keyword-only degradation and its `.embeddingUnavailable`
+/// diagnostic.
 ///
-/// The `GitCommand` fixture type and the match formatter are shared with
-/// `CatalogSearchCore` via `ExamplesSupport`.
+/// Factored into this library target (rather than living directly in
+/// `SemanticSearch`'s `main.swift`) so `ExamplesSmokeTests` can import and
+/// invoke both paths directly, with no `swift run` subprocess spawning.
+///
+/// The `GitCommand` fixture type, the `DeterministicEmbedder`, and the match
+/// formatter are shared with the other examples via `ExamplesSupport`.
 
 /// The fixture catalog this example searches — `ExamplesSupport.baseGitCommands`
 /// (`CatalogSearch`'s five git subcommands) plus `status`, whose block shares
@@ -49,14 +53,16 @@ public let query = "save my work"
 /// - Parameters:
 ///   - query: the search query.
 ///   - embedder: the embedder to embed the catalog and query with, or `nil`
-///     for keyword-only retrieval.
+///     for keyword-only retrieval. Defaults to a fresh
+///     `DeterministicEmbedder()` — GPU-free, and the only embedder this
+///     example ever builds; `--no-embedder` passes `nil` to override it.
 ///   - limit: the maximum number of matches to return. Defaults to `5`.
 ///   - onDiagnostic: called for every diagnostic emitted while indexing and
 ///     searching.
 /// - Returns: the ranked matches, best first.
 public func runSemanticSearch(
     query: String,
-    embedder: (any TextEmbedding)?,
+    embedder: (any TextEmbedding)? = DeterministicEmbedder(),
     limit: Int = 5,
     onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void
 ) async throws -> [Match<GitCommand>] {
@@ -67,31 +73,6 @@ public func runSemanticSearch(
         onDiagnostic: onDiagnostic
     )
     return try await searcher.search(intent: query, limit: limit)
-}
-
-/// Resolves a real, on-device embedding model through a live `Router` and
-/// wraps it as a `TextEmbedding` — the only path in this example that
-/// touches the network/GPU. Downloads (first run) and loads three small
-/// `mlx-community` models sized for a demo run (plan.md §13).
-///
-/// - Returns: a `RoutedEmbedderAdapter` wrapping the resolved profile's
-///   embedding model.
-/// - Throws: whatever `Router.resolve(_:reporting:)` throws (unsatisfiable
-///   profile, download/load failure).
-public func resolveLiveEmbedder() async throws -> any TextEmbedding {
-    // `LiveRouterSupport.buildLiveEmbedder` resolves a `Router` with a
-    // durable `recordingsDir` and a `LiveModelLoader` configured with a real
-    // `Downloader`/`TokenizerLoader` (mirrors FoundationModelsRouter's own
-    // `Examples/MultiModelGeneration`), resolving the same tiny
-    // `mlx-community` model triple every gated Examples target shares.
-    // Router always resolves all three slots together; deliberately tiny,
-    // co-resident models keep this demo cheap even though only `embedding`
-    // is exercised below.
-    try await buildLiveEmbedder(
-        demoLabel: "SemanticSearch",
-        name: "semantic-search-demo",
-        description: "Tiny co-resident models sized for a local demo run of the cosine signal."
-    )
 }
 
 /// Prints every diagnostic this example's searches emit — `.embeddingUnavailable`

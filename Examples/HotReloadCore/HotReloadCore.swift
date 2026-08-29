@@ -1,7 +1,6 @@
 import ExamplesSupport
 import Foundation
 import FoundationModelsMetadataRegistry
-import LiveRouterSupport
 
 /// # `HotReload`'s entry logic (plan.md §13 M8): `update(items:)` bursts.
 ///
@@ -16,17 +15,15 @@ import LiveRouterSupport
 /// change drops the cached root session and its candidate-id grammar,
 /// rebuilding both against the new catalog on the next search (plan.md §8).
 ///
-/// Both GPU-free paths run against a small deterministic embedder
+/// Both paths run against a small deterministic embedder
 /// (`ExamplesSupport.DeterministicEmbedder`) -- a `FakeEmbedder`-style test
 /// double, but defined in `ExamplesSupport` since production code (a library
-/// target) can't import a test-target type. Only when
-/// `ExamplesSupport.isMetadataRegistryIntegrationEnabled` is set does
-/// `resolveLiveEmbedder()` additionally resolve a real, live-Router-backed
-/// embedder to replay the same burst against.
+/// target) can't import a test-target type. That is the only embedder this
+/// example ever builds, so it touches no network and no GPU.
 ///
 /// Factored into this library target (rather than living directly in
 /// `HotReload`'s `main.swift`) so `ExamplesSmokeTests` can invoke both
-/// GPU-free paths directly, with no `swift run` subprocess spawning.
+/// paths directly, with no `swift run` subprocess spawning.
 
 // MARK: - Fixture catalog
 
@@ -34,9 +31,9 @@ import LiveRouterSupport
 /// `SearchableFixtureItem`: an MCP-resource-shaped id and description.
 public typealias HotReloadTool = SearchableFixtureItem
 
-/// The three tools this example's burst adds and removes, mirroring the
-/// gated integration suite's own churn scenario
-/// (`RouterIntegrationTests.reloadUnderChurnStaysSearchableDuringMCPStyleAddRemoveBursts`).
+/// The three tools this example's burst adds and removes, mirroring an MCP
+/// server's own `listChanged` churn: tools appear, stay across a redundant
+/// forward, and drop out again.
 /// The first tool in the burst sequence: present from the initial add.
 public let hotReloadToolA = HotReloadTool(id: "toolA", block: "reads a file from disk")
 
@@ -90,9 +87,9 @@ public struct BurstStepResult: Sendable {
 ///   - limit: the maximum number of matches each step's search returns.
 ///     Defaults to `5`.
 ///   - embedder: the embedder to embed the catalog and query with. Defaults
-///     to a fresh `DeterministicEmbedder()` -- GPU-free. Pass a real,
-///     live-Router-resolved embedder (`resolveLiveEmbedder()`) to replay the
-///     same burst against a real model.
+///     to a fresh `DeterministicEmbedder()` -- GPU-free, and what every
+///     caller uses; the parameter stays open so a test can replay the same
+///     burst against a different embedder, or against none at all.
 /// - Returns: one `BurstStepResult` per entry in `burst`, in order.
 public func runHotReloadBurst(
     burst: [[HotReloadTool]] = hotReloadBurst,
@@ -252,22 +249,4 @@ private final class DemoCallCounter: @unchecked Sendable {
         defer { lock.unlock() }
         value += 1
     }
-}
-
-// MARK: - Gated real-model burst (real embedder)
-
-/// Resolves a real, on-device embedding model through a live `Router` --
-/// the only path in this example that touches the network/GPU. Mirrors
-/// `SemanticSearchCore.resolveLiveEmbedder()`'s live-Router setup, sized for
-/// the same tiny `mlx-community` models.
-///
-/// - Returns: a `RoutedEmbedderAdapter` wrapping the resolved profile's
-///   embedding model.
-/// - Throws: whatever `Router.resolve(_:reporting:)` throws.
-public func resolveLiveEmbedder() async throws -> any TextEmbedding {
-    try await buildLiveEmbedder(
-        demoLabel: "HotReload",
-        name: "hot-reload-demo",
-        description: "Tiny co-resident models sized for a local demo run of the hot-reload burst against a real embedder."
-    )
 }

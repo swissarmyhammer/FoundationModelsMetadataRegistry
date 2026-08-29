@@ -1,10 +1,50 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m1717gm8jt598f85zqeksyfs
+  text: |-
+    Research done. Findings:
+
+    - `SemanticSearchCore.runSemanticSearch(query:embedder:limit:onDiagnostic:)` has NO default for `embedder`. `HotReloadCore.runHotReloadBurst(burst:query:limit:embedder:)` already defaults `embedder` to `DeterministicEmbedder()`. The card asks for a test that calls "SemanticSearchCore's entry function with the default embedder", so `runSemanticSearch` gets the same default: `embedder: (any TextEmbedding)? = DeterministicEmbedder()`. That matches the prevailing pattern in the sibling core.
+    - `IntegrationTests/.../RouterIntegrationTests.swift` calls `SemanticSearchCore.runSemanticSearch(query:embedder:onDiagnostic:)` with an explicit embedder, so a new default breaks nothing there. That package is owned by a later task; not touched here.
+    - `ExamplesSupport.isMetadataRegistryIntegrationEnabled` / `metadataRegistryIntegrationEnvVar` stay: `Examples/Librarian/main.swift` and `Examples/BigCatalog/main.swift` still read them, and sibling task ^mjp69rx owns those.
+    - `DeterministicEmbedder` hashes UTF-8 bytes into a unit-normalized vector with non-negative components, so cosine over any two non-empty texts is > 0. The "cosine signal is present" assertion is therefore `signals.cosine > 0.0`, not an equality.
+    - `Package.swift` target dependency lists are untouched: `SemanticSearchCore`/`HotReloadCore` keep their `LiveRouterSupport` target dependency until ^b2487hc removes it. Removing only the imports still builds.
+  timestamp: 2026-08-29T15:11:52.968640+00:00
+- actor: claude-code
+  id: 01m171qccfnpekxw6af53n6y6h
+  text: |-
+    Implementation landed. TDD cycle, both directions watched:
+
+    RED — added the two `ExamplesSmokeTests` tests first. `swift test --filter ExamplesSmokeTests` failed to compile: `error: missing argument for parameter 'embedder' in call`, which is the feature being absent, not a typo.
+
+    GREEN — `runSemanticSearch` gained `embedder: (any TextEmbedding)? = DeterministicEmbedder()`. `swift test` = 106 tests in 9 suites, all pass (was 104).
+
+    Also proved the second test discriminates, rather than passing for free: temporarily wrote the wrong implementation (`embedder: embedder ?? DeterministicEmbedder()` inside the body, so the default would leak into the `--no-embedder` path). That made it fail on both claims — `recorder.diagnostics.contains(.embeddingUnavailable)` and `matches.allSatisfy { $0.signals?.cosine == 0.0 }` — then reverted.
+
+    Decisions worth carrying forward:
+
+    - The doc comment could no longer claim "a paraphrased query ranks where keywords alone miss". `DeterministicEmbedder` hashes bytes, it does not model meaning, so `commit` does not rank first for "save my work" -- it lands 4th. The rewritten docs say the example demonstrates how the cosine signal is wired in, not ranking quality. Writing the old claim over the new embedder would have been a false doc comment.
+    - `HotReload/main.swift`'s `printBurst(_:label:)` lost its `label` parameter, because deleting the "Live" branch left one caller passing one constant. The printed prefix is still "GPU-free step N", so the output is byte-identical to before.
+    - Removed the `RouterIntegrationTests....` cross-reference from `HotReloadCore.swift`. The acceptance criterion is literal ("neither file names `Router`"), and it pointed into the sibling `IntegrationTests/` package. Replaced with a self-contained description of the churn shape.
+
+    Scope held exactly to the card: `Examples/LiveRouterSupport/` untouched, `Package.swift` untouched (`SemanticSearchCore`/`HotReloadCore` keep their now-unused `LiveRouterSupport` target dependency until ^b2487hc removes it -- it still builds), `LibrarianCore`/`BigCatalogCore` untouched for ^mjp69rx.
+
+    Known deliberate divergence for the reviewer: `LibrarianCore` and `BigCatalogCore` are near-copies that still carry the live-Router path and the `METADATA_REGISTRY_INTEGRATION_TESTS` gate. That is not an incomplete propagation -- sibling task ^mjp69rx owns those two files.
+  timestamp: 2026-08-29T15:20:32.911047+00:00
+- actor: claude-code
+  id: 01m171qht2h0r3gf6pfkh3rtgv
+  text: |-
+    ### implement — changed
+    - evidence: 5 files — Examples/SemanticSearchCore/SemanticSearchCore.swift, Examples/HotReloadCore/HotReloadCore.swift, Examples/SemanticSearch/main.swift, Examples/HotReload/main.swift, Tests/FoundationModelsMetadataRegistryTests/ExamplesSmokeTests.swift. `swift build` clean (only the pre-existing mlx `missing creator for mutated node` warning, present at baseline). `swift test` = 106 tests in 9 suites, 0 failures (was 104). `swift run SemanticSearch` prints cosine=0.898/0.875 on ranked matches; `swift run SemanticSearch --no-embedder` prints the embeddingUnavailable diagnostic with cosine=0.000; `swift run HotReload` prints all 4 burst steps plus the rebuild demo. All GPU-free, no network.
+    - next: /review
+  timestamp: 2026-08-29T15:20:38.466547+00:00
 depends_on:
 - 01M16Y2V1034PDVAN8Z0GK3T9F
-position_column: todo
-position_ordinal: '8280'
+position_column: doing
+position_ordinal: '80'
 title: Remove the live-Router embedder path from SemanticSearchCore and HotReloadCore
 ---
 ## What

@@ -12,10 +12,10 @@ import ExamplesSupport
 /// callable function, living in a plain library target (`CatalogSearchCore`,
 /// `SemanticSearchCore`) their thin `main.swift` calls into. These tests
 /// import those library targets directly and assert on real output -- no
-/// `swift run` subprocess spawning -- covering every GPU-free path.
-/// `SemanticSearchCore`'s default (real-embedder) path resolves a live
-/// Router over the network/GPU and is exercised only by `swift run
-/// SemanticSearch` locally, never here.
+/// `swift run` subprocess spawning. Every path each example runs is GPU-free
+/// and needs no network, so these tests cover all of them, including
+/// `SemanticSearchCore`'s default path over the shared
+/// `ExamplesSupport.DeterministicEmbedder`.
 @Suite("Examples smoke tests")
 struct ExamplesSmokeTests {
     /// The embedding width the `DeterministicEmbedder` tests below ask for, and
@@ -79,7 +79,22 @@ struct ExamplesSmokeTests {
         #expect(formatted.contains("cosine="))
     }
 
-    // MARK: - SemanticSearch --no-embedder (M2 degradation, GPU-free)
+    // MARK: - SemanticSearch (M2 cosine signal and --no-embedder degradation, GPU-free)
+
+    @Test("SemanticSearch's default embedder joins the cosine signal into fusion, GPU-free")
+    func semanticSearchDefaultEmbedderContributesACosineSignal() async throws {
+        let matches = try await SemanticSearchCore.runSemanticSearch(
+            query: SemanticSearchCore.query,
+            onDiagnostic: { _ in }
+        )
+
+        let first = try #require(matches.first)
+        let signals = try #require(first.signals)
+        // The default `DeterministicEmbedder` embeds the query and every
+        // block, so cosine is a real, present signal here -- unlike the
+        // `--no-embedder` path below, where it stays absent (plan.md §5).
+        #expect(signals.cosine > 0.0)
+    }
 
     @Test("SemanticSearch --no-embedder degrades to keyword-only and reports embeddingUnavailable")
     func semanticSearchNoEmbedderReportsDegradation() async throws {
@@ -104,6 +119,26 @@ struct ExamplesSmokeTests {
         // (semantically wrong) ranking.
         #expect(!matches.isEmpty)
         #expect(matches.contains { $0.id == "status" })
+    }
+
+    @Test("SemanticSearch --no-embedder overrides the default embedder, leaving cosine absent")
+    func semanticSearchNoEmbedderOverridesTheDefaultEmbedder() async throws {
+        let recorder = DiagnosticRecorder()
+        let matches = try await SemanticSearchCore.runSemanticSearch(
+            query: SemanticSearchCore.query,
+            embedder: nil,
+            onDiagnostic: { recorder.record($0) }
+        )
+
+        // Passing `nil` explicitly must beat the GPU-free default embedder:
+        // the keyword-only degradation still reports itself, and cosine stays
+        // absent on every match rather than quietly ranking (plan.md §5).
+        #expect(recorder.diagnostics.contains(.embeddingUnavailable))
+        // `allSatisfy` is vacuously true over an empty array, so the search
+        // has to have returned something for the cosine claim below to mean
+        // anything at all.
+        #expect(!matches.isEmpty)
+        #expect(matches.allSatisfy { $0.signals?.cosine == 0.0 })
     }
 
     @Test("SemanticSearch --no-embedder's formatter still renders every signal")
