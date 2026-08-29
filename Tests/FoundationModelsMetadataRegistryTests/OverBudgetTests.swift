@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 
+@testable import BigCatalogCore
 @testable import FoundationModelsMetadataRegistry
 
 /// Tests for the selection tier's over-budget path (plan.md §6) and `.auto`
@@ -381,5 +382,39 @@ struct OverBudgetTests {
 
         #expect(autoMatches.map(\.id) == retrievalMatches.map(\.id))
         #expect(!autoMatches.isEmpty)
+    }
+
+    // MARK: - `BigCatalog`'s over-budget demo (plan.md §13 M8)
+
+    /// The catalog size `bigCatalogDemoOverBudgetSelectionReportsARetrievalCut()`
+    /// drives the demo with: comfortably more entries than
+    /// `SelectionConfig.defaultCandidateLimit`, so the cut really cuts, and
+    /// their assembled summary blocks comfortably exceed the demo's own tiny
+    /// capacity limit, so the over-budget path really runs. Far smaller than
+    /// the demo's own ~10^3 default, which `ExamplesSmokeTests` already
+    /// indexes and times -- this test measures the diagnostic, not the
+    /// throughput, and a second ~10^3-entry index running beside that timed
+    /// test would only slow it down.
+    static let bigCatalogDemoEntryCount = 40
+
+    @Test
+    func bigCatalogDemoOverBudgetSelectionReportsARetrievalCut() async throws {
+        let recorder = DiagnosticRecorder()
+        let catalog = BigCatalogCore.makeBigCatalog(count: Self.bigCatalogDemoEntryCount)
+
+        _ = try await BigCatalogCore.runBigCatalogOverBudgetSelection(
+            catalog: catalog,
+            query: BigCatalogCore.bigCatalogNeedleQuery,
+            onDiagnostic: { recorder.record($0) }
+        )
+
+        // The demo's deliberately tiny capacity limit puts this catalog over
+        // budget, so the tier ranks every entry and keeps the default top-M
+        // before seeding its one-off session.
+        #expect(
+            recorder.diagnostics.contains(
+                .retrievalCut(considered: catalog.count, kept: SelectionConfig.defaultCandidateLimit)
+            )
+        )
     }
 }

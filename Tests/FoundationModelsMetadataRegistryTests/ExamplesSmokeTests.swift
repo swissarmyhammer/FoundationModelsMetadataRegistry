@@ -5,6 +5,7 @@ import Testing
 @testable import CatalogSearchCore
 import ExamplesSupport
 @testable import HotReloadCore
+@testable import LibrarianCore
 @testable import SemanticSearchCore
 
 /// Smoke tests for the `Examples/` executable targets (plan.md §13):
@@ -27,7 +28,20 @@ struct ExamplesSmokeTests {
     /// twice" are both real claims.
     private static let deterministicEmbedderTexts = ["a", "b"]
 
-    // MARK: - ExamplesSupport (the shared GPU-free deterministic embedder)
+    // MARK: - ExamplesSupport (the shared GPU-free demo doubles)
+
+    @Test("ExamplesSupport's demo agent session answers with an ids-only JSON body naming exactly the ids it was given")
+    func demoAgentSessionAnswersWithExactlyTheIdsItWasGiven() async throws {
+        let session = ExamplesSupport.DemoAgentSession(selectedIds: ["alpha", "bravo"])
+
+        // The prompt is ignored by design -- this double is scripted, not a
+        // model, so the same ids come back whatever it is asked.
+        let response = try await session.respond(to: "any prompt at all")
+
+        // Exactly the wire shape the selection tier decodes: an ids-only
+        // object, ids in the order given.
+        #expect(response == #"{"ids":["alpha","bravo"]}"#)
+    }
 
     @Test("ExamplesSupport's deterministic embedder returns one vector per text at the requested dimension")
     func deterministicEmbedderReturnsOneVectorPerTextAtTheRequestedDimension() async throws {
@@ -225,5 +239,17 @@ struct ExamplesSmokeTests {
         #expect(result.rebuiltFactoryCallCount == 2)
         #expect(result.initialCandidateIds == ["toolA"])
         #expect(result.updatedCandidateIds == ["toolA", "toolB"])
+    }
+
+    // MARK: - Librarian (M8, .selection tier end-to-end, GPU-free)
+
+    @Test("Librarian's selection tier returns exactly the ids its scripted demo session named")
+    func librarianSelectionReturnsTheIdsTheDemoSessionNamed() async throws {
+        let matches = try await LibrarianCore.runLibrarianSelection(query: LibrarianCore.librarianQuery)
+
+        // The scripted `DemoAgentSession` stands in for the model, so the
+        // selected set is fixed: the tier maps those ids back through the
+        // catalog, in the order the session named them.
+        #expect(matches.map(\.id) == LibrarianCore.librarianSelectedIds)
     }
 }

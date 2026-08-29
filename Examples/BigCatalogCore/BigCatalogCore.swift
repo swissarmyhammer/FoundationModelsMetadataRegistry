@@ -1,7 +1,6 @@
 import ExamplesSupport
 import Foundation
 import FoundationModelsMetadataRegistry
-import LiveRouterSupport
 
 /// # `BigCatalog`'s entry logic (plan.md §13 M8): the headroom story.
 ///
@@ -10,18 +9,19 @@ import LiveRouterSupport
 /// `CatalogSearch`/`SemanticSearch` use: `runBigCatalogRetrieval(catalog:
 /// query:limit:)` builds a keyword-only `MetadataSearcher(mode: .retrieval)`
 /// over the whole catalog and reports how long indexing + search actually
-/// took. Only when `ExamplesSupport.isMetadataRegistryIntegrationEnabled` is
-/// set does `runBigCatalogOverBudgetSelection(catalog:query:)` also drive
-/// the `.selection` tier's **over-budget** path (plan.md §6): the assembled
-/// prefix for ~1,000 items overflows any reasonable capacity, so
-/// `SelectionTier` ranks the whole catalog, keeps the top-M candidates, and
-/// seeds a fresh one-off session with them -- reported via
-/// `.retrievalCut(considered:kept:)`.
+/// took. `runBigCatalogOverBudgetSelection(catalog:query:limit:onDiagnostic:)`
+/// then drives the `.selection` tier's **over-budget** path (plan.md §6) over
+/// that same catalog: the assembled prefix for ~1,000 items overflows any
+/// reasonable capacity, so `SelectionTier` ranks the whole catalog, keeps the
+/// top-M candidates, and seeds a fresh one-off session with them -- reported
+/// via `.retrievalCut(considered:kept:)`. That session is `ExamplesSupport`'s
+/// scripted `DemoAgentSession`, so the over-budget path is as free of network
+/// and GPU as the retrieval timing above it.
 ///
 /// Factored into this library target (rather than living directly in
-/// `BigCatalog`'s `main.swift`) so `ExamplesSmokeTests` can import and invoke
-/// the GPU-free retrieval-timing path directly, with no `swift run`
-/// subprocess spawning.
+/// `BigCatalog`'s `main.swift`) so `ExamplesSmokeTests`/`OverBudgetTests` can
+/// import and invoke both paths directly, with no `swift run` subprocess
+/// spawning.
 
 // MARK: - Fixture catalog
 
@@ -117,44 +117,48 @@ public func runBigCatalogRetrieval(
     return RetrievalTimingResult(matches: matches, elapsed: elapsed, catalogCount: catalog.count)
 }
 
-// MARK: - Gated over-budget selection (real model)
+// MARK: - GPU-free over-budget selection
 
-/// Runs the over-budget `.selection` path (plan.md §6) against a real,
-/// live-Router-resolved model: `catalog`'s assembled prefix (~1,000 items'
-/// worth of summary blocks) overflows any reasonable
-/// `SelectionConfig.capacityCharacterLimit`, so `SelectionTier` ranks the
-/// whole catalog via its retrieval tier, keeps the top-M candidates, and
-/// seeds a fresh, uncached, unforked one-off session with exactly those --
-/// reported via `.retrievalCut(considered:kept:)`, printed by
-/// `printDiagnostic(_:)`.
+/// The assembled-prefix character budget this example's selection searches
+/// run under. Deliberately tiny: ~1,000 items' worth of summary blocks is
+/// always far larger than this, guaranteeing the over-budget path runs rather
+/// than the cached-root one.
+private let overBudgetCapacityCharacterLimit = 2_000
+
+/// Runs the over-budget `.selection` path (plan.md §6): `catalog`'s assembled
+/// prefix (~1,000 items' worth of summary blocks) overflows
+/// `overBudgetCapacityCharacterLimit`, so `SelectionTier` ranks the whole
+/// catalog via its retrieval tier, keeps the top-M candidates, and seeds a
+/// fresh, uncached, unforked one-off session with exactly those -- reported
+/// via `.retrievalCut(considered:kept:)`.
 ///
-/// Only ever called behind `ExamplesSupport.isMetadataRegistryIntegrationEnabled`
-/// -- this is the one path in this target that touches the network/GPU.
+/// That session is `ExamplesSupport`'s scripted `DemoAgentSession`, scripted
+/// to select the needle entry the top-M candidates always contain, so this
+/// path touches no network and no GPU: what it demonstrates is the tier's
+/// rank-then-cut behavior, not what a real model would pick.
 ///
 /// - Parameters:
 ///   - catalog: the catalog to select over.
 ///   - query: the search query.
 ///   - limit: the maximum number of matches to return. Defaults to `10`.
+///   - onDiagnostic: called for every diagnostic emitted while searching --
+///     `.retrievalCut` is the one this path always reports.
 /// - Returns: the selected items' matches, at most `limit`.
 public func runBigCatalogOverBudgetSelection(
     catalog: [BigCatalogItem],
     query: String,
-    limit: Int = 10
+    limit: Int = 10,
+    onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void
 ) async throws -> [Match<BigCatalogItem>] {
-    let config = try await buildSelectionConfig(
-        demoLabel: "BigCatalog",
-        name: "big-catalog-demo",
-        description: "Tiny co-resident models sized for a local demo run of the over-budget selection path.",
-        // Deliberately tiny: ~1,000 items' assembled summary-block prefix is
-        // always far larger than this, guaranteeing the over-budget path
-        // runs rather than the cached-root one.
-        capacityCharacterLimit: 2_000
+    let config = demoSelectionConfig(
+        selectedIds: [bigCatalogNeedleId],
+        capacityCharacterLimit: overBudgetCapacityCharacterLimit
     )
-    let searcher = MetadataSearcher(items: catalog, mode: .selection, selection: config, onDiagnostic: printDiagnostic)
+    let searcher = MetadataSearcher(items: catalog, mode: .selection, selection: config, onDiagnostic: onDiagnostic)
     return try await searcher.search(intent: query, limit: limit)
 }
 
-/// Prints every diagnostic this example's gated selection search emits --
+/// Prints every diagnostic this example's selection search emits --
 /// `.retrievalCut` is the one the over-budget path always triggers; every
 /// other diagnostic falls back to the package default (plan.md §1 "every
 /// degradation is reported, never silent").

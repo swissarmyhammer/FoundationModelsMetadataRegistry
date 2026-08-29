@@ -1,7 +1,5 @@
 import ExamplesSupport
-import Foundation
 import FoundationModelsMetadataRegistry
-import LiveRouterSupport
 
 /// # `Librarian`'s entry logic (plan.md §13 M8): `.selection` mode end-to-end.
 ///
@@ -9,10 +7,10 @@ import LiveRouterSupport
 /// this package's own catalog: a cached root session, seeded once with the
 /// whole (under-budget) trip-planning catalog, `fork()`s a fresh child per
 /// query so the prefix's KV cache is prefilled once and inherited per call
-/// (plan.md §6). Output is ids-only, constrained by an xgrammar id-enum
-/// grammar so the model is structurally incapable of inventing a tool that
-/// doesn't exist; `MetadataSearcher` maps the returned ids back through the
-/// catalog to verbatim blocks -- never model-generated text.
+/// (plan.md §6). Output is ids-only, constrained by an id-enum grammar the
+/// tier derives per call so the session is structurally incapable of
+/// inventing a tool that doesn't exist; `MetadataSearcher` maps the returned
+/// ids back through the catalog to verbatim blocks -- never generated text.
 ///
 /// `librarianQuery` ("the warmest city on my trip") is an intent-level query:
 /// no single catalog item answers it directly, so answering it requires
@@ -20,11 +18,11 @@ import LiveRouterSupport
 /// `weather` (to compare their conditions) -- exactly the task-decomposition
 /// reasoning plan.md §6 says lexical/semantic ranking alone can't do.
 ///
-/// The model run is gated behind
-/// `ExamplesSupport.isMetadataRegistryIntegrationEnabled` -- the examples'
-/// real-model opt-in env var.
-/// Without it, `printCatalog()` prints the catalog and this example exits 0,
-/// GPU-free.
+/// The session is `ExamplesSupport`'s scripted `DemoAgentSession`, which
+/// names exactly those two ids: this example demonstrates how the cached-root
+/// selection path is wired and what it returns, not how well a real model
+/// decomposes a task -- which is what keeps the whole example free of network
+/// and GPU.
 
 // MARK: - Fixture catalog
 
@@ -53,9 +51,9 @@ public let librarianQuery = "the warmest city on my trip"
 
 // MARK: - GPU-free catalog print
 
-/// Prints the trip-planning catalog, one line per tool -- the GPU-free path
-/// this example runs when
-/// `ExamplesSupport.isMetadataRegistryIntegrationEnabled` is unset.
+/// Prints the trip-planning catalog, one line per tool -- the surface
+/// `runLibrarianSelection(query:config:limit:)` then selects over, printed
+/// first so the selected ids can be read against the whole catalog.
 public func printCatalog() {
     print("Trip-planning catalog (\(tripPlanningCatalog.count) tools):")
     for tool in tripPlanningCatalog {
@@ -63,39 +61,33 @@ public func printCatalog() {
     }
 }
 
-// MARK: - Gated selection (real model)
+// MARK: - GPU-free selection
+
+/// The ids the scripted demo session always names, and so the ids
+/// `runLibrarianSelection(query:config:limit:)` returns for `librarianQuery`:
+/// the two tools that query genuinely needs, which is what this example is
+/// here to show.
+public let librarianSelectedIds = ["tripCities", "weather"]
 
 /// Runs `query` against `tripPlanningCatalog` through the `.selection` tier,
 /// building a fresh `MetadataSearcher` over the catalog for this call.
 ///
 /// - Parameters:
 ///   - query: the search query.
-///   - config: the selection tier configuration to search with -- built by
-///     `resolveLiveSelectionConfig()` for a real model run.
+///   - config: the selection tier configuration to search with. Defaults to
+///     `ExamplesSupport`'s GPU-free `demoSelectionConfig(selectedIds:
+///     capacityCharacterLimit:)` scripted with `librarianSelectedIds` -- the
+///     only configuration this example ever builds. Its default capacity
+///     comfortably fits this small catalog's assembled prefix, so the
+///     cached-root + fork-per-call path runs.
 ///   - limit: the maximum number of matches to return. Defaults to `5`.
 /// - Returns: the selected tools' verbatim matches, at most `limit`.
 public func runLibrarianSelection(
     query: String,
-    config: SelectionConfig,
+    config: SelectionConfig = demoSelectionConfig(selectedIds: librarianSelectedIds),
     limit: Int = 5
 ) async throws -> [Match<TripPlanningTool>] {
     let searcher = MetadataSearcher(items: tripPlanningCatalog, mode: .selection, selection: config)
     return try await searcher.search(intent: query, limit: limit)
-}
-
-/// Resolves a real, on-device model profile through a live `Router` and
-/// builds a `SelectionConfig` whose session factory constrains every guided
-/// session to the id-enum grammar the selection tier derives per call --
-/// the only path in this example that touches the network/GPU.
-///
-/// - Returns: a `SelectionConfig` ready to drive `runLibrarianSelection(
-///   query:config:limit:)`.
-/// - Throws: whatever `Router.resolve(_:reporting:)` throws.
-public func resolveLiveSelectionConfig() async throws -> SelectionConfig {
-    try await buildSelectionConfig(
-        demoLabel: "Librarian",
-        name: "librarian-demo",
-        description: "Tiny co-resident models sized for a local demo run of the selection tier."
-    )
 }
 

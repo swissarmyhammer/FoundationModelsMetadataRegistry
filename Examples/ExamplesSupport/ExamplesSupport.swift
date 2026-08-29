@@ -82,27 +82,6 @@ public func formattedMatches<Item: SearchableMetadata>(matches: [Match<Item>]) -
     }.joined(separator: "\n")
 }
 
-// MARK: - Gated real-model opt-in (plan.md §13 M8)
-
-/// The opt-in environment variable that gates every real-model path across
-/// `Examples/`: `Librarian`, `BigCatalog`, and `HotReload` each read this
-/// exact name to decide between their GPU-free/degraded path (unset, the
-/// default -- every example exits 0 with no network/GPU) and their real,
-/// live-Router-backed path (set).
-///
-/// This variable gates example programs only, never tests. The org test
-/// contract (swissarmyhammer/workflows' README) says an environment
-/// variable must not select tests, so the real-model integration suite
-/// lives in the nested `IntegrationTests/` package and runs with
-/// `swift test --package-path IntegrationTests` -- no test reads this
-/// name, and no test may start doing so.
-public let metadataRegistryIntegrationEnvVar = "METADATA_REGISTRY_INTEGRATION_TESTS"
-
-/// Whether the gated real-model path is enabled for this run.
-public var isMetadataRegistryIntegrationEnabled: Bool {
-    ProcessInfo.processInfo.environment[metadataRegistryIntegrationEnvVar] != nil
-}
-
 // MARK: - Shared diagnostic printing (plan.md §1)
 
 /// Prints one diagnostic the way every `Examples/` target's own

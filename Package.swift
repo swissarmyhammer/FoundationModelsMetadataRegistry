@@ -236,16 +236,16 @@ let package = Package(
                 .target(name: examplesSupportName),
                 .target(name: "CatalogSearchCore"),
                 .target(name: "SemanticSearchCore"),
-                // `BigCatalogCore`/`HotReloadCore`'s GPU-free paths (plan.md §13
-                // M8) -- retrieval timing over a synthetic ~10^3-entry catalog,
-                // and `update(items:)` burst/index-rebuild -- both exercised
-                // directly by `ExamplesSmokeTests`, exactly like
-                // `CatalogSearchCore`/`SemanticSearchCore` above. `LibrarianCore`
-                // isn't linked here: its only GPU-free behavior is the catalog
-                // print `swift run Librarian` exercises directly; nothing in it
-                // needs a dedicated unit test.
+                // `BigCatalogCore`/`HotReloadCore`/`LibrarianCore`'s GPU-free
+                // paths (plan.md §13 M8) -- retrieval timing over a synthetic
+                // ~10^3-entry catalog, `update(items:)` burst/index-rebuild,
+                // and the `.selection` tier driven through a scripted
+                // `DemoAgentSession` -- all exercised directly by
+                // `ExamplesSmokeTests`/`OverBudgetTests`, exactly like
+                // `CatalogSearchCore`/`SemanticSearchCore` above.
                 .target(name: "BigCatalogCore"),
                 .target(name: "HotReloadCore"),
+                .target(name: "LibrarianCore"),
                 // `Jinja` is already linked transitively via `Tokenizers`
                 // (through the `*Core` targets above); declaring it here
                 // marks the root-level swift-jinja pin (the
@@ -321,26 +321,22 @@ let package = Package(
         // A thin runnable entry point over `SemanticSearchCore`.
         exampleExecutableTarget(name: "SemanticSearch", coreName: "SemanticSearchCore"),
         // `Librarian`'s entry logic (plan.md §13 M8): `.selection` mode
-        // end-to-end on a Router model -- a cached root session seeded with
-        // the whole (under-budget) catalog, `fork()`ed per query, ids-only
-        // xgrammar-constrained output, verbatim blocks out. The model run is
-        // gated behind `METADATA_REGISTRY_INTEGRATION_TESTS` (the examples'
-        // real-model opt-in); without it, the
-        // example prints its catalog and exits 0. Links the same MLX +
-        // Hugging Face products as `SemanticSearchCore` to construct a live
-        // `Router` + `LiveModelLoader`.
+        // end-to-end -- a cached root session seeded with the whole
+        // (under-budget) catalog, `fork()`ed per query, ids-only output,
+        // verbatim blocks out. The session is `ExamplesSupport`'s scripted
+        // `DemoAgentSession`, so the whole path is GPU-free and
+        // `ExamplesSmokeTests` invokes it directly.
         exampleCoreTarget(name: "LibrarianCore"),
         // A thin runnable entry point over `LibrarianCore`.
         exampleExecutableTarget(name: "Librarian", coreName: "LibrarianCore"),
         // `BigCatalog`'s entry logic (plan.md §13 M8): the headroom story --
         // a synthetic ~10^3-entry catalog (ids = URIs), in-memory retrieval
-        // with printed timings, GPU-free. Only when
-        // `METADATA_REGISTRY_INTEGRATION_TESTS` is set does it also run a
-        // selection query that overflows the assembled-prefix budget -> top-M
-        // candidates -> a fresh one-off session, printing the `.retrievalCut`
-        // diagnostic. A plain library (not the executable itself) so
-        // `ExamplesSmokeTests` can invoke the GPU-free retrieval-timing path
-        // directly.
+        // with printed timings, then a selection query that overflows the
+        // assembled-prefix budget -> top-M candidates -> a fresh one-off
+        // session, printing the `.retrievalCut` diagnostic. Both paths are
+        // GPU-free (the one-off session is `ExamplesSupport`'s scripted
+        // `DemoAgentSession`). A plain library (not the executable itself) so
+        // `ExamplesSmokeTests`/`OverBudgetTests` can invoke both directly.
         exampleCoreTarget(name: "BigCatalogCore"),
         // A thin runnable entry point over `BigCatalogCore`.
         exampleExecutableTarget(name: "BigCatalog", coreName: "BigCatalogCore"),

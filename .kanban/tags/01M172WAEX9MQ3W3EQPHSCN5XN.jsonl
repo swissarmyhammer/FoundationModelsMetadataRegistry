@@ -1,0 +1,1 @@
+{"id":"01M172WAEYJ7W3QZXQF5A8M5QC","timestamp":"2026-08-29T15:40:43.358319Z","op":"create","item_id":"01M172WAEX9MQ3W3EQPHSCN5XN","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: '008672'\n+tag_name: stuck\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: '008672'\n-tag_name: stuck\n","transaction_id":null}
