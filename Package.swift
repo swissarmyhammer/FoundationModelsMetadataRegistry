@@ -225,7 +225,6 @@ let package = Package(
         .target(
             name: packageName,
             dependencies: [
-                .product(name: routerDependencyName, package: routerDependencyName),
                 .product(name: foundationModelsRankerPackage, package: foundationModelsRankerPackage),
             ],
             path: "Sources/\(packageName)"
