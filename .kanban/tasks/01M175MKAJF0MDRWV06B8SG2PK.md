@@ -16,8 +16,73 @@ comments:
 
     So this does NOT block the Router-removal batch. Keep the task: a wall-clock assertion in a parallel test suite is genuinely fragile, and it will fail again on a loaded CI runner. Do not fix it by raising the threshold — that hides the fragility instead of removing it.
   timestamp: 2026-08-29T16:31:31.865241+00:00
-position_column: todo
-position_ordinal: '8980'
+- actor: claude-code
+  id: 01m17basgx4d1mfnr45argg8sf
+  text: |-
+    ### Research and reproduction
+
+    Confirmed the defect is the only wall-clock assertion in the whole `Tests/` tree. A grep for `elapsed|Date()|ContinuousClock|DispatchTime|timeIntervalSince` across `Tests/` matched two lines only, both of them the pair at `ExamplesSmokeTests.swift:186-187`. So the cause exists at one site, and one edit removes it.
+
+    Read the source of truth: `Examples/BigCatalogCore/BigCatalogCore.swift`. `runBigCatalogRetrieval` opens its clock with `let start = Date()`, builds the searcher, searches, then closes it with `Date().timeIntervalSince(start)`. Both clock reads sit strictly inside the call. That fact is what the fix uses.
+
+    ### RED — the failure reproduced
+
+    Baseline on a quiet machine, 3 runs: all passed, 109 tests in 10 suites, 0.28s to 0.30s.
+
+    Then the same suite under load. 384 busy-loop processes on 32 cores was NOT enough -- 4 runs, all passed, the whole suite in 2.5s to 3.2s. At 1024 busy-loop processes the assertion failed on all 3 runs:
+
+    ```
+    ✘ Test run with 109 tests in 10 suites failed after 19.255 seconds with 1 issue.
+    ✘ Test "BigCatalog's retrieval-timing path finds the deterministic needle across a ~10^3-entry synthetic catalog"
+      recorded an issue at ExamplesSmokeTests.swift:187:9: Expectation failed: result.elapsed < 5.0
+    ```
+
+    Only that one assertion failed. Every other test in the suite stayed green under the same load, which shows the defect is the wall-clock claim and nothing else.
+
+    ### Cost of that reproduction — a warning for the next agent
+
+    The first version of the load script spawned `/bin/sh -c 'while :; do :; done'` directly. Its cleanup used `pkill -f sah_spinner.sh`, which never matched those processes, because that command line carries no script name. 997 spinners leaked and the machine reached a load average of 809. The orchestrator killed them. Do not repeat this. If load is ever needed again, give each process a name the cleanup can match, and check `pgrep` after the run.
+
+    ### GREEN — the fix
+
+    The test now measures the call from the outside and bounds the reported timing against that window, instead of against a constant:
+
+    ```swift
+    let callStart = Date()
+    let result = try await BigCatalogCore.runBigCatalogRetrieval(query: BigCatalogCore.bigCatalogNeedleQuery)
+    let callWindow = Date().timeIntervalSince(callStart)
+    ...
+    #expect(result.elapsed.isFinite)
+    #expect(result.elapsed >= 0)
+    #expect(result.elapsed <= callWindow)
+    ```
+
+    Why this is not a loosened assertion. The old `< 5.0` compared the timing with a number that had nothing to do with the run, so it measured the machine. The new bound compares the timing with the window the call really ran in, so it measures whether the value describes THIS call. `runBigCatalogRetrieval` starts its clock after the window opens and stops it before the window closes, so `elapsed <= callWindow` holds by construction. A busy machine makes both sides larger together, and load cannot fail it. The three claims are independent: a negative value passes the other two, and only `isFinite` names "a real number" directly rather than leaving it to NaN comparison semantics.
+
+    Two validator rules bound this edit, and both are satisfied:
+
+    - `test-integrity/no-test-cheating`, check 3 "Flaky test fixes" and check 4 "A weakened assertion". The threshold is not raised and no claim is dropped. The timing claim is replaced by a stronger one about what the value measures.
+    - `code-hygiene/dead-code-swift`, `assignOnlyProperty`. `RetrievalTimingResult.elapsed` keeps a reader in the test, so it does not become an assign-only property.
+
+    Also removed the unnamed `5.0` literal, which `magic-numbers-swift` reports by position. Swift Testing is neither `QuickSpec` nor `XCTestCase`, so the swiftlint `test_parent_classes` carve-out never covered it.
+
+    ### Verification
+
+    10 consecutive `swift test` runs after the fix, all passed, 109 tests in 10 suites, 0.27s to 0.47s. `swift build --build-tests` is clean with no new warnings.
+
+    Acceptance criteria: no assertion in `ExamplesSmokeTests` can now fail because the machine is slow; `first.id == bigCatalogNeedleId` is kept, as are `catalogCount == 1_000` and the needle-ranking claim; the threshold is removed, not raised; 10 consecutive runs pass.
+
+    `Package.swift` and `TestSupport/SelectionFixtures.swift` are untouched, and `stash@{0}` is untouched.
+  timestamp: 2026-08-29T18:08:26.141107+00:00
+- actor: claude-code
+  id: 01m17bbfp2w9nkvwe3xtsmp7fg
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsMetadataRegistryTests/ExamplesSmokeTests.swift. `swift build --build-tests` clean. RED: 3 of 3 `swift test` runs failed at `ExamplesSmokeTests.swift:187: Expectation failed: result.elapsed < 5.0` under load. GREEN: 10 of 10 consecutive `swift test` runs passed, 109 tests in 10 suites, 0.27s to 0.47s.
+    - next: /review
+  timestamp: 2026-08-29T18:08:48.834493+00:00
+position_column: doing
+position_ordinal: '80'
 title: Replace the flaky wall-clock assertion in the BigCatalog retrieval-timing smoke test
 ---
 ## What
@@ -55,10 +120,30 @@ timing claim to a place where a slow machine cannot fail the unit suite.
 Note that task `^9m7y43t` may delete the `IntegrationTests/` package, so weigh
 the third option against that.
 
+## What was done
+
+The second option, made stronger. The test measures the call from the outside
+and bounds the reported timing against that window, in place of a constant:
+
+```swift
+let callStart = Date()
+let result = try await BigCatalogCore.runBigCatalogRetrieval(query: BigCatalogCore.bigCatalogNeedleQuery)
+let callWindow = Date().timeIntervalSince(callStart)
+...
+#expect(result.elapsed.isFinite)
+#expect(result.elapsed >= 0)
+#expect(result.elapsed <= callWindow)
+```
+
+`runBigCatalogRetrieval` starts its clock after this window opens and stops it
+before this window closes, so `elapsed <= callWindow` holds by construction. A
+busy machine makes both sides larger together. The claim is therefore about
+what the value measures, not about how fast the machine is.
+
 ## Acceptance Criteria
 
-- [ ] `ExamplesSmokeTests` holds no assertion that can fail because the machine
+- [x] `ExamplesSmokeTests` holds no assertion that can fail because the machine
       is slow.
-- [ ] The needle-ranking claim (`first.id == bigCatalogNeedleId`) is kept.
-- [ ] The threshold is not simply raised.
-- [ ] 10 consecutive `swift test` runs pass.
+- [x] The needle-ranking claim (`first.id == bigCatalogNeedleId`) is kept.
+- [x] The threshold is not simply raised.
+- [x] 10 consecutive `swift test` runs pass.

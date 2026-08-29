@@ -174,17 +174,26 @@ struct ExamplesSmokeTests {
 
     @Test("BigCatalog's retrieval-timing path finds the deterministic needle across a ~10^3-entry synthetic catalog")
     func bigCatalogRetrievalFindsTheNeedleAndReportsTiming() async throws {
+        // Watch the call from the outside, so the timing it reports can be
+        // measured against the window it actually ran in.
+        let callStart = Date()
         let result = try await BigCatalogCore.runBigCatalogRetrieval(query: BigCatalogCore.bigCatalogNeedleQuery)
+        let callWindow = Date().timeIntervalSince(callStart)
 
         #expect(result.catalogCount == 1_000)
         let first = try #require(result.matches.first)
         #expect(first.id == BigCatalogCore.bigCatalogNeedleId)
-        // A real timing, not a placeholder -- never negative, and this
-        // "in-memory retrieval" story runs GPU-free (no session, no
-        // network), so it settles in well under a second even over a
-        // ~10^3-entry catalog.
+        // The reported timing must be a real measurement of this run, not a
+        // placeholder. Three claims say so, and none of them names a fixed
+        // number of seconds: the value is a real number, a duration is never
+        // negative, and the run cannot take longer than the window the test
+        // watched it from. `runBigCatalogRetrieval` starts its clock after
+        // this window opens and stops it before this window closes, so the
+        // last claim holds by construction. A busy machine makes both sides
+        // of it larger together -- load cannot fail this test.
+        #expect(result.elapsed.isFinite)
         #expect(result.elapsed >= 0)
-        #expect(result.elapsed < 5.0)
+        #expect(result.elapsed <= callWindow)
     }
 
     @Test("BigCatalog's formatter still renders every signal over the ~10^3-entry catalog")
