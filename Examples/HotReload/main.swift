@@ -12,22 +12,17 @@ import HotReloadCore
 /// The actual logic lives in `HotReloadCore` so `ExamplesSmokeTests` can
 /// invoke both paths directly; this file is just the runnable entry point.
 
-/// Prints one line per burst step -- what `update(items:)` applied and what
-/// the immediate search found -- followed by that step's diagnostics.
-///
-/// - Parameter steps: the burst's per-step results, in replay order.
-func printBurst(_ steps: [BurstStepResult]) {
-    for (index, step) in steps.enumerated() {
-        print("GPU-free step \(index + 1): update(items: \(step.appliedIds)) -> search(\"file\") = \(step.searchResultIds)")
-        for diagnostic in step.diagnostics {
-            print("  [diagnostic] \(diagnostic)")
-        }
+print("GPU-free hot-reload burst (deterministic embedder):\n")
+
+// One line per burst step -- what `update(items:)` applied and what the
+// immediate search found -- followed by that step's diagnostics.
+let steps = try await runHotReloadBurst()
+for (index, step) in steps.enumerated() {
+    print("GPU-free step \(index + 1): update(items: \(step.appliedIds)) -> search(\"file\") = \(step.searchResultIds)")
+    for diagnostic in step.diagnostics {
+        print("  [diagnostic] \(diagnostic)")
     }
 }
-
-print("GPU-free hot-reload burst (deterministic embedder):\n")
-let steps = try await runHotReloadBurst()
-printBurst(steps)
 
 print("\nSelection-tier root/grammar rebuild demo (GPU-free, scripted session):")
 let rebuild = try await runSelectionRootRebuildDemo()
