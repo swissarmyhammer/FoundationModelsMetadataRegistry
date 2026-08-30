@@ -1,4 +1,3 @@
-import FoundationModelsRouter
 import os
 
 @testable import FoundationModelsMetadataRegistry
@@ -6,7 +5,7 @@ import os
 // MARK: - Selection-tier `AgentSession` fixtures (plan.md §6, M3)
 //
 // Mirrors Multitool's own `LibrarianFixtures.swift`: `SelectionTests` never
-// touches a real Router model — the selection tier's root session is always
+// touches a real model — the selection tier's root session is always
 // supplied through the internal `AgentSession` seam, the same zero-GPU
 // pattern `LibrarianTests` established there and `RetrievalSearchTests`/
 // `AgentSessionTests` establish in this package.
@@ -14,9 +13,8 @@ import os
 /// Thrown by `RootSessionRespondCalledDirectlySession.respond(to:)` if it is
 /// ever called directly — the selection tier's contract is that every
 /// `search()` call goes through a `fork()` of the prefix-rooted session,
-/// never the root itself (`RoutedSession.fork(workingDirectory:)`'s
-/// KV-cache-copy seam only pays off if the root is never asked to generate
-/// on its own transcript).
+/// never the root itself (`AgentSession.fork()`'s KV-cache-copy seam only
+/// pays off if the root is never asked to generate on its own transcript).
 struct RootSessionRespondCalledDirectlyError: Error, Equatable {}
 
 /// A selection-root `AgentSession` double: records how many times `fork()`
@@ -65,25 +63,26 @@ final class RootSessionRespondCalledDirectlySession: AgentSession, Sendable {
     }
 }
 
-/// Records every `(instructions, grammar)` pair a `SelectionConfig.model`
-/// factory closure was called with, returning one freshly-scripted
+/// Records every `instructions` string a `SelectionConfig.model` factory
+/// closure was called with, returning one freshly-scripted
 /// `ScriptedAgentSession` (canned with `responses`) per call — lets a test
 /// assert on *how many times* a session was created (proving the root
-/// session is cached, not rebuilt per `search()` call), on *what prefix
-/// text* was actually seeded (e.g. that it carries summary blocks, not full
-/// ones), and on *what grammar* the tier derived for the call (e.g. that it
-/// enum-constrains ids to the current candidate set and caps `maxItems`).
+/// session is cached, not rebuilt per `search()` call) and on *what prefix
+/// text* was actually seeded: that it carries summary blocks rather than
+/// full ones, and that it names this round's candidate ids.
+///
+/// The instructions are the whole seam. A session factory takes the prefix
+/// and nothing else, so the prefix text is the only thing a test can read
+/// back about what the tier showed the model — and, with no grammar
+/// constraining the decoder, the only thing standing between the model and
+/// an invented id.
 final class RecordingSessionFactory: Sendable {
     /// The canned responses every created session is scripted with.
     private let responses: [String]
 
-    /// Every `instructions` string `makeSession(instructions:grammar:)` has
-    /// been called with, in call order.
+    /// Every `instructions` string `makeSession(instructions:)` has been
+    /// called with, in call order.
     private let receivedInstructionsBox = OSAllocatedUnfairLock<[String]>(initialState: [])
-
-    /// Every `Grammar` `makeSession(instructions:grammar:)` has been called
-    /// with, in call order.
-    private let receivedGrammarsBox = OSAllocatedUnfairLock<[Grammar]>(initialState: [])
 
     /// Creates a factory whose every vended session is scripted with
     /// `responses`.
@@ -98,20 +97,13 @@ final class RecordingSessionFactory: Sendable {
     /// call order.
     var receivedInstructions: [String] { receivedInstructionsBox.withLock { $0 } }
 
-    /// Every `Grammar` this factory has been called with, in call order.
-    var receivedGrammars: [Grammar] { receivedGrammarsBox.withLock { $0 } }
-
     /// Creates and records a new scripted session — `SelectionConfig`'s
     /// `model` factory parameter.
     ///
-    /// - Parameters:
-    ///   - instructions: the instructions text to record.
-    ///   - grammar: the grammar the tier derived for this call, recorded
-    ///     alongside the instructions.
+    /// - Parameter instructions: the assembled prefix text to record.
     /// - Returns: a freshly-scripted `ScriptedAgentSession`.
-    func makeSession(instructions: String, grammar: Grammar) -> any AgentSession {
+    func makeSession(instructions: String) -> any AgentSession {
         receivedInstructionsBox.withLock { $0.append(instructions) }
-        receivedGrammarsBox.withLock { $0.append(grammar) }
         return ScriptedAgentSession(responses)
     }
 }

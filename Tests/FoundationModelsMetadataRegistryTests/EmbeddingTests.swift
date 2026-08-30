@@ -7,9 +7,8 @@ import Testing
 /// absent-signal rule for un-embedded items, graceful degradation to
 /// keyword-only with `.embeddingUnavailable` when no embedder is
 /// configured, and `MetadataIndex.build(items:embedder:previous:onDiagnostic:)`'s
-/// hash-keyed incremental re-embedding. `RoutedEmbedderAdapter` compiles
-/// (proving it type-checks against FoundationModelsRouter's `RoutedEmbedder`)
-/// but is never exercised here — no GPU in unit tests.
+/// hash-keyed incremental re-embedding. Every embedder here is a scripted
+/// fake behind the `TextEmbedding` seam — no GPU in unit tests.
 struct EmbeddingTests {
     struct FixtureItem: SearchableMetadata {
         let id: String

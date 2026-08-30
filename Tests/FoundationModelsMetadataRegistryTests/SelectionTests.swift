@@ -1,4 +1,3 @@
-import Foundation
 import Testing
 
 @testable import FoundationModelsMetadataRegistry
@@ -8,9 +7,9 @@ import Testing
 /// `search()` call, the summary-vs-full block separation
 /// (`renderSummaryBlock()` seeds the prefix; `renderBlock()` is what a
 /// `Match` carries back verbatim), ids-only decoding, verbatim lookup by id,
-/// unknown-id filtering + diagnostic, and the id-enum grammar's contents.
+/// unknown-id filtering + diagnostic, and the id-enum schema's contents.
 /// Driven entirely against the internal `AgentSession` seam via scripted
-/// fakes (`TestSupport/SelectionFixtures.swift`) — zero GPU, no Router
+/// fakes (`TestSupport/SelectionFixtures.swift`) — zero GPU, no external
 /// dependency, the same pattern Multitool's `LibrarianTests` established.
 /// The over-budget path and `.auto`'s real resolution are covered in
 /// `OverBudgetTests`.
@@ -46,7 +45,7 @@ struct SelectionTests {
             #"{"ids":["rollback"]}"#,
         ])
         let factoryCallCount = CallCounter()
-        let config = SelectionConfig(model: { _, _ in
+        let config = SelectionConfig(model: { _ in
             factoryCallCount.increment()
             return root
         })
@@ -259,81 +258,37 @@ struct SelectionTests {
         }
     }
 
-    // MARK: - Grammar id-set contents
+    // MARK: - Id-enum schema contents
 
     @Test
-    func idEnumGrammarContainsExactlyTheCatalogsCurrentIds() throws {
-        let grammar = try SelectionTier.idEnumGrammar(ids: Self.catalog.map(\.id))
+    func idEnumSchemaConstrainsIdsToTheGivenCandidateSet() throws {
+        // `idEnumSchema(ids:)` returns JSON Schema source text, and the
+        // three constraints below are its whole substance. `enum` is what
+        // stops an invented id. `maxItems` is what stops a runaway repeat
+        // of a valid one: a grammar compiler enforces `minItems`/`maxItems`
+        // but silently ignores `uniqueItems`, so without the bound a
+        // compiled grammar permits an unbounded-length array of repeated
+        // enum members -- observed as a 6150-token runaway on an off-topic
+        // query (task ^678h0ex). A selection can never legitimately name
+        // more ids than there are candidates, so `ids.count` is the exact
+        // structural cap.
+        let ids = ["alpha", "bravo", "charlie"]
 
-        guard case .jsonSchema(let source) = grammar else {
-            Issue.record("expected a .jsonSchema grammar")
-            return
-        }
-        let data = try #require(source.data(using: .utf8))
-        let root = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        let properties = try #require(root["properties"] as? [String: Any])
-        let idsSchema = try #require(properties["ids"] as? [String: Any])
-        let itemsSchema = try #require(idsSchema["items"] as? [String: Any])
-        let enumValues = try #require(itemsSchema["enum"] as? [String])
+        let constraints = try SelectionIDConstraints(schemaSource: SelectionTier.idEnumSchema(ids: ids))
 
-        #expect(Set(enumValues) == Set(Self.catalog.map(\.id)))
+        #expect(constraints.allowedIDs == Set(ids))
+        #expect(constraints.uniqueItems)
+        #expect(constraints.maxItems == ids.count)
     }
 
     @Test
-    func idEnumGrammarMarksIdsAsUniqueItems() throws {
-        let grammar = try SelectionTier.idEnumGrammar(ids: Self.catalog.map(\.id))
+    func idEnumSchemaReflectsAnEmptyCandidateSetAsAnEmptyEnumCappedAtZero() throws {
+        // An empty catalog admits no selection at all, and the schema says
+        // so on both counts rather than degrading into an unconstrained
+        // array of arbitrary strings.
+        let constraints = try SelectionIDConstraints(schemaSource: SelectionTier.idEnumSchema(ids: []))
 
-        guard case .jsonSchema(let source) = grammar else {
-            Issue.record("expected a .jsonSchema grammar")
-            return
-        }
-        let data = try #require(source.data(using: .utf8))
-        let root = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        let properties = try #require(root["properties"] as? [String: Any])
-        let idsSchema = try #require(properties["ids"] as? [String: Any])
-
-        #expect(idsSchema["uniqueItems"] as? Bool == true)
-    }
-
-    @Test
-    func idEnumGrammarBoundsIdsWithMaxItemsAtTheCandidateCount() throws {
-        // `maxItems` is what actually stops runaway generation: Router's
-        // grammar compiler (`RuntimeJSONSchemaConverter`) enforces
-        // `minItems`/`maxItems` but silently ignores `uniqueItems`, so
-        // without this bound the compiled grammar permits an
-        // unbounded-length array of repeated enum members -- observed as a
-        // 6150-token runaway on an off-topic query (task ^678h0ex). A
-        // selection can never legitimately exceed the candidate count, so
-        // `ids.count` is the exact structural cap.
-        let grammar = try SelectionTier.idEnumGrammar(ids: Self.catalog.map(\.id))
-
-        guard case .jsonSchema(let source) = grammar else {
-            Issue.record("expected a .jsonSchema grammar")
-            return
-        }
-        let data = try #require(source.data(using: .utf8))
-        let root = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        let properties = try #require(root["properties"] as? [String: Any])
-        let idsSchema = try #require(properties["ids"] as? [String: Any])
-
-        #expect(idsSchema["maxItems"] as? Int == Self.catalog.count)
-    }
-
-    @Test
-    func idEnumGrammarReflectsAnEmptyCatalogAsAnEmptyEnum() throws {
-        let grammar = try SelectionTier.idEnumGrammar(ids: [])
-
-        guard case .jsonSchema(let source) = grammar else {
-            Issue.record("expected a .jsonSchema grammar")
-            return
-        }
-        let data = try #require(source.data(using: .utf8))
-        let root = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        let properties = try #require(root["properties"] as? [String: Any])
-        let idsSchema = try #require(properties["ids"] as? [String: Any])
-        let itemsSchema = try #require(idsSchema["items"] as? [String: Any])
-        let enumValues = try #require(itemsSchema["enum"] as? [String])
-
-        #expect(enumValues.isEmpty)
+        #expect(constraints.allowedIDs.isEmpty)
+        #expect(constraints.maxItems == 0)
     }
 }

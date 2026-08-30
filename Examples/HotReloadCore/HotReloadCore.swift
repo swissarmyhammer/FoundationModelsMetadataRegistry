@@ -184,8 +184,8 @@ public struct SelectionRebuildDemoResult: Sendable {
     public let updatedCandidateIds: [String]
 }
 
-/// Demonstrates the `.selection` tier's cached-root + grammar rebuild on a
-/// real catalog change (plan.md §8), GPU-free: a scripted `AgentSession`
+/// Demonstrates the `.selection` tier's cached-root rebuild on a real
+/// catalog change (plan.md §8), GPU-free: a scripted `AgentSession`
 /// double stands in for the model (this demo cares about *how many times*
 /// and *against what candidate ids* the tier builds a session, not what a
 /// real model would pick), so no network or GPU is touched.
@@ -196,7 +196,7 @@ public struct SelectionRebuildDemoResult: Sendable {
 ///   against the scripted session below).
 public func runSelectionRootRebuildDemo() async throws -> SelectionRebuildDemoResult {
     let factoryCallCount = DemoCallCounter()
-    let config = SelectionConfig(model: { _, _ in
+    let config = SelectionConfig(model: { _ in
         factoryCallCount.increment()
         return ScriptedSelectionSession()
     })

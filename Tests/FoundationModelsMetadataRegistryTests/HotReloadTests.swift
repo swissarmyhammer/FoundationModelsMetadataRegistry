@@ -1,4 +1,3 @@
-import Foundation
 import Testing
 
 @testable import FoundationModelsMetadataRegistry
@@ -89,7 +88,7 @@ struct HotReloadTests {
             #"{"ids":["a"]}"#,
         ])
         let factoryCallCount = CallCounter()
-        let config = SelectionConfig(model: { _, _ in
+        let config = SelectionConfig(model: { _ in
             factoryCallCount.increment()
             return root
         })
@@ -134,7 +133,7 @@ struct HotReloadTests {
         #expect(recorder.diagnostics.isEmpty)
     }
 
-    // MARK: - Root/grammar invalidation on a real change
+    // MARK: - Root/candidate-set invalidation on a real change
 
     @Test
     func updateWithARealChangeDropsTheCachedRootSoTheNextSearchRebuildsItAgainstTheNewCatalog() async throws {
@@ -153,35 +152,25 @@ struct HotReloadTests {
         _ = try await searcher.search(intent: "task", limit: 5)
 
         // The root was rebuilt (factory invoked again, not reused), and the
-        // rebuilt prefix's candidate id set -- what a real id-enum grammar
-        // would be derived from -- reflects the new catalog.
+        // rebuilt prefix's candidate id set -- what a caller's own id-enum
+        // schema would be derived from -- reflects the new catalog.
         #expect(factory.receivedInstructions.count == 2)
         #expect(factory.receivedInstructions[1].contains("SUMMARY_a"))
         #expect(factory.receivedInstructions[1].contains("SUMMARY_b"))
     }
 
     @Test
-    func idEnumGrammarAfterAnUpdateReflectsExactlyTheNewCatalogsIds() throws {
-        // `SelectionTier.idEnumGrammar(ids:)` is a pure function of the
+    func idEnumSchemaAfterAnUpdateReflectsExactlyTheNewCatalogsIds() throws {
+        // `SelectionTier.idEnumSchema(ids:)` is a pure function of the
         // current id set; proving `update(items:)` changes that id set is
         // `updateWithARealChangeDropsTheCachedRoot...`'s job. This test
-        // pins down the grammar itself for the *post-update* id set, so a
+        // pins down the schema itself for the *post-update* id set, so a
         // regression in either half is caught independently.
         let updatedIds = ["a", "b", "c"]
-        let grammar = try SelectionTier.idEnumGrammar(ids: updatedIds)
 
-        guard case .jsonSchema(let source) = grammar else {
-            Issue.record("expected a .jsonSchema grammar")
-            return
-        }
-        let data = try #require(source.data(using: .utf8))
-        let root = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        let properties = try #require(root["properties"] as? [String: Any])
-        let idsSchema = try #require(properties["ids"] as? [String: Any])
-        let itemsSchema = try #require(idsSchema["items"] as? [String: Any])
-        let enumValues = try #require(itemsSchema["enum"] as? [String])
+        let constraints = try SelectionIDConstraints(schemaSource: SelectionTier.idEnumSchema(ids: updatedIds))
 
-        #expect(Set(enumValues) == Set(updatedIds))
+        #expect(constraints.allowedIDs == Set(updatedIds))
     }
 
     // MARK: - Embed catch-up diagnostic
@@ -338,22 +327,15 @@ struct HotReloadTests {
 
         // The caught-up embeddings must influence the over-budget candidate
         // ranking without waiting for the next content change: "z" outranks
-        // the zero-signal tail, so this round's candidate set (seeded
-        // summaries + grammar id enum) is (z, x), not catalog-order (x, y).
+        // the zero-signal tail, so this round's candidate set is (z, x), not
+        // catalog-order (x, y). The seeded prefix names each candidate id as
+        // a `## <id>` heading above its summary, so the prefix carries both
+        // halves of that claim.
         let instructions = try #require(factory.receivedInstructions.first)
         #expect(instructions.contains("SUMMARY_z"))
-        let grammar = try #require(factory.receivedGrammars.first)
-        guard case .jsonSchema(let source) = grammar else {
-            Issue.record("expected a .jsonSchema grammar")
-            return
-        }
-        let data = try #require(source.data(using: .utf8))
-        let root = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        let properties = try #require(root["properties"] as? [String: Any])
-        let idsSchema = try #require(properties["ids"] as? [String: Any])
-        let itemsSchema = try #require(idsSchema["items"] as? [String: Any])
-        let enumValues = try #require(itemsSchema["enum"] as? [String])
-        #expect(Set(enumValues) == ["z", "x"])
+        #expect(instructions.contains("## z"))
+        #expect(instructions.contains("## x"))
+        #expect(!instructions.contains("## y"))
     }
 
     @Test
@@ -369,7 +351,7 @@ struct HotReloadTests {
             #"{"ids":["a"]}"#,
         ])
         let factoryCallCount = CallCounter()
-        let config = SelectionConfig(model: { _, _ in
+        let config = SelectionConfig(model: { _ in
             factoryCallCount.increment()
             return root
         })

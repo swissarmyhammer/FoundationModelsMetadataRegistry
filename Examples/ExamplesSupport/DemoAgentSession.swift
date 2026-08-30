@@ -64,10 +64,10 @@ public struct DemoAgentSession: AgentSession {
 /// the scripted ids and the capacity budget -- shared here so the two demos
 /// have one source of truth rather than two near-identical copies.
 ///
-/// The session factory ignores both of its arguments. The instructions text
-/// would seed a real model's prefix and the grammar would constrain its
-/// output; a scripted session needs neither, and the tier's own behavior --
-/// which is what both demos exist to show -- is unchanged either way.
+/// The session factory ignores its argument. The instructions text would
+/// seed a real model's prefix; a scripted session needs none of it, and the
+/// tier's own behavior -- which is what both demos exist to show -- is
+/// unchanged either way.
 ///
 /// - Parameters:
 ///   - selectedIds: the catalog ids every vended session names, in the order
@@ -81,7 +81,7 @@ public func demoSelectionConfig(
     capacityCharacterLimit: Int = SelectionConfig.defaultCapacityCharacterLimit
 ) -> SelectionConfig {
     SelectionConfig(
-        model: { _, _ in DemoAgentSession(selectedIds: selectedIds) },
+        model: { _ in DemoAgentSession(selectedIds: selectedIds) },
         // Both demos select over API-surface-shaped catalogs; keep the
         // original librarian prompt text rather than silently switching to
         // FoundationModelsRanker's neutral `.selectionDefault`.

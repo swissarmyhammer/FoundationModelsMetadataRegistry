@@ -15,7 +15,7 @@ import Testing
 /// retrieval otherwise. Driven against the internal `AgentSession` seam via
 /// scripted fakes (`TestSupport/SelectionFixtures.swift`), plus this
 /// package's real, GPU-free BM25/trigram retrieval tier for deterministic
-/// candidate ranking — zero GPU, no Router dependency, the same pattern
+/// candidate ranking — zero GPU, no external dependency, the same pattern
 /// `SelectionTests` established for the under-budget path.
 struct OverBudgetTests {
     // MARK: - Fixtures
@@ -81,7 +81,7 @@ struct OverBudgetTests {
     func overBudgetCreatesAFreshSessionPerCallWithoutCaching() async throws {
         let factoryCallCount = CallCounter()
         let config = SelectionConfig(
-            model: { _, _ in
+            model: { _ in
                 factoryCallCount.increment()
                 return ScriptedAgentSession([#"{"ids":["alpha"]}"#])
             },
@@ -101,7 +101,7 @@ struct OverBudgetTests {
     func overBudgetSessionIsNeverForked() async throws {
         let session = ScriptedAgentSession([#"{"ids":["alpha"]}"#])
         let config = SelectionConfig(
-            model: { _, _ in session },
+            model: { _ in session },
             capacityCharacterLimit: Self.forcedOverBudgetLimit,
             candidateLimit: 2
         )
@@ -186,7 +186,7 @@ struct OverBudgetTests {
         let recorder = DiagnosticRecorder()
         let factoryCallCount = CallCounter()
         let config = SelectionConfig(
-            model: { _, _ in
+            model: { _ in
                 factoryCallCount.increment()
                 return ScriptedAgentSession([#"{"ids":[]}"#])
             },
@@ -206,14 +206,14 @@ struct OverBudgetTests {
         #expect(recorder.diagnostics == [.retrievalCut(considered: 0, kept: 0)])
     }
 
-    // MARK: - Candidate-set-only verbatim lookup (one-off grammar id set)
+    // MARK: - Candidate-set-only verbatim lookup (one-off candidate id set)
 
     @Test
     func idOutsideTopMCandidatesIsFilteredAndReportedAsUnknownEvenThoughItIsAValidCatalogId() async throws {
         let recorder = DiagnosticRecorder()
         // "charlie" is a real catalog id, but `candidateLimit: 2` excludes
         // it from this round's candidates (alpha, bravo only) -- the
-        // one-off session's grammar is constrained to the candidate ids,
+        // one-off session's admissible ids are this round's candidates,
         // not the wider catalog, so this must be treated as unknown even
         // though "charlie" resolves in the catalog overall.
         let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha","charlie"]}"#])
@@ -235,17 +235,36 @@ struct OverBudgetTests {
         #expect(recorder.diagnostics.contains(.unknownSelectedId(id: "charlie")))
     }
 
-    // MARK: - Grammar handed to the session factory (task ^678h0ex, via Ranker)
+    // MARK: - The assembled prefix shows the model the candidate ids
 
     @Test
-    func factoryReceivesAGrammarEnumConstrainedToTheCandidateSetAndCappedAtItsCount() async throws {
-        // The runaway-generation fix (task ^678h0ex) now lives inside
-        // Ranker's `SelectionTier`, which derives the id-enum grammar itself
-        // and hands it to the session factory per call. Over budget with
-        // `candidateLimit: 2`, the grammar must enum-constrain ids to
-        // exactly this round's candidates (alpha, bravo -- never the wider
-        // catalog) and cap `maxItems` at the candidate count, the structural
-        // bound that actually stops runaway generation.
+    func assembledPrefixNamesEachCandidateIdAboveItsSummary() throws {
+        // Ranker fixed a defect here: the prefix used to render each
+        // candidate's summary block alone, so the model saw no ids at all
+        // while the preamble told it not to invent one, and every selection
+        // came back `.unknownSelectedId`. A grammar-backed caller never saw
+        // the defect, because the id-enum grammar forced a valid id out of
+        // the decoder whatever the prompt said. This package drives the tier
+        // with no grammar, so the prefix is the only thing standing between
+        // the model and an invented id.
+        let prefix = SelectionTier.assemblePrefix(
+            preamble: .librarianDefault,
+            catalog: MetadataIndex(items: Self.catalog)
+        )
+
+        for item in Self.catalog {
+            #expect(prefix.contains("## \(item.id)\n\(item.summary)"))
+        }
+    }
+
+    @Test
+    func overBudgetPrefixNamesExactlyThisRoundsCandidateIds() async throws {
+        // The over-budget path seeds its one-off session with the top-M
+        // candidates only, so the prefix must name alpha and bravo and no
+        // other catalog id. This is the fact the id-enum grammar used to
+        // carry (task ^678h0ex): the model's admissible id set is this
+        // round's candidates, never the wider catalog. With the grammar gone
+        // from the tier, the prefix is where that set is stated.
         let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
         let config = SelectionConfig(
             model: factory.makeSession,
@@ -256,20 +275,12 @@ struct OverBudgetTests {
 
         _ = try await searcher.search(intent: "alpha", limit: 5)
 
-        let grammar = try #require(factory.receivedGrammars.first)
-        guard case .jsonSchema(let source) = grammar else {
-            Issue.record("expected a .jsonSchema grammar")
-            return
-        }
-        let data = try #require(source.data(using: .utf8))
-        let root = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        let properties = try #require(root["properties"] as? [String: Any])
-        let idsSchema = try #require(properties["ids"] as? [String: Any])
-        let itemsSchema = try #require(idsSchema["items"] as? [String: Any])
-        let enumValues = try #require(itemsSchema["enum"] as? [String])
-
-        #expect(Set(enumValues) == ["alpha", "bravo"])
-        #expect(idsSchema["maxItems"] as? Int == 2)
+        let instructions = try #require(factory.receivedInstructions.first)
+        #expect(instructions.contains("## alpha"))
+        #expect(instructions.contains("## bravo"))
+        #expect(!instructions.contains("## charlie"))
+        #expect(!instructions.contains("## delta"))
+        #expect(!instructions.contains("## echo"))
     }
 
     // MARK: - Retrieval-tier signals attach to over-budget results
@@ -311,7 +322,7 @@ struct OverBudgetTests {
             #"{"ids":["alpha"]}"#,
         ])
         let config = SelectionConfig(
-            model: { _, _ in
+            model: { _ in
                 factoryCallCount.increment()
                 return root
             },
@@ -340,7 +351,7 @@ struct OverBudgetTests {
         )
         let factoryCallCount = CallCounter()
         let config = SelectionConfig(
-            model: { _, _ in
+            model: { _ in
                 factoryCallCount.increment()
                 return ScriptedAgentSession([#"{"ids":["alpha"]}"#])
             },
