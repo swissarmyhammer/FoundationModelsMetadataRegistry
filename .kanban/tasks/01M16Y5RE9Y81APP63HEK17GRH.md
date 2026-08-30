@@ -154,10 +154,51 @@ comments:
     - evidence: 3 files — plan.md, Tests/FoundationModelsMetadataRegistryTests/PlanDocumentTests.swift (new), Tests/FoundationModelsMetadataRegistryTests/TestSupport/RepositoryFiles.swift. `swift test` 114 passed / 0 failed in 12 suites (was 113 in 11). `swift build --build-tests` 0 warnings, 0 errors. The open finding is checked; 0 findings remain open. Not committed; `stash@{0}` untouched.
     - next: ready for `/review`.
   timestamp: 2026-08-30T13:23:53.822329+00:00
+- actor: claude-code
+  id: 01m19dgpavrgp950aj0zd7epp9
+  text: |-
+    ### commit — changed
+    - evidence: db7a328 fix(plan): mark every retired-name claim in plan.md as history
+    - next: none
+  timestamp: 2026-08-30T13:25:05.499077+00:00
+- actor: claude-code
+  id: 01m19dt289aq036jb3qjtr07ch
+  text: |-
+    ### review — clean
+
+    - evidence: `review sha HEAD~1..HEAD` — 0 findings, 0 confirmed, 0 refuted, 7 attempted. The engine read the 2 Swift files. `plan.md` matched no validator, so a person read all 658 lines and checked each claim.
+    - The prior finding is corrected in both of the shapes it named. §5 has its own dated head blockquote (`plan.md:152-159`). It names all three places §5 spells `RoutedEmbedderAdapter` (`plan.md:169`, `plan.md:187`, `plan.md:195`), and it retracts the false sentence. §5 is also in decision #14's supersedes list (`plan.md:442`).
+    - Decision #14's promise in the head blockquote holds. A count of the retired names finds 116 in the file. Each one is in a section that has a dated marker where it stands: the summary (`plan.md:23`), §1 (`:69`), §2 (`:83`), §3 (`:113`), §5 (`:152`), §6 (`:220`), §8 (`:313`), §9 (`:338`), §10 (`:353`), §11 decisions 8 and 12 (`:409`, `:432`), §12 (`:485`), §13 (`:538`), §14 M2/M5/M7/M8 (`:594`, `:609`, `:622`, `:630`), §15 (`:644`).
+    - §10's marker is corrected. It now removes `RoutedAgentSession` from the list of what this package ships before it says the rest of the section is current.
+    - Two places have a retired name but no marker, and both are correct as they are. `plan.md:656` is the `### Sources` bibliography, which gives provenance. `plan.md:331` says the Skills plan accepts the Router dependency package-wide; that is a statement about the sibling plan, and it is still true there (`../FoundationModelsSkills/plan.md:610`).
+    - next: none. The task moves to done.
+  timestamp: 2026-08-30T13:30:12.617761+00:00
+- actor: claude-code
+  id: 01m19dtxwgccxehq4ree8tkds0
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 3 files: plan.md, Tests/.../PlanDocumentTests.swift (new), Tests/.../TestSupport/RepositoryFiles.swift
+    - test: green — swift test 114 passed, 0 failed, 12 suites (was 113 in 11); swift build --build-tests 0 warnings, 0 errors
+    - commit: db7a328 fix(plan): mark every retired-name claim in plan.md as history
+    - review: clean — 0 findings, 7 validators, task moved to done. This closes the Router-removal board.
+
+    ### The fix removed the cause, not the line
+    The finding named one place. §5 actually spelled the retired type three times — the cosine-seam wiring, the "port, don't depend" file list, and the re-export list. A sweep then found eleven MORE unmarked present-tense claims: the summary paragraph (which sat above a promise that said "every section below"), §1, §2, §3, §6, §8 item 4, §9, §11 decisions 8 and 12, and §14's M2, M5 and M8. §10's own marker was itself wrong — it certified "the rest of this section is current" while the rest still said this package ships RoutedAgentSession.
+
+    Historical text is preserved throughout. The markers state the present tense beside it.
+
+    ### Verification of the header promise
+    The reviewer read all 658 lines and took a token census: 116 hits for Router/Routed*/Grammar/idEnumGrammar/LiveRouterSupport/IntegrationTests/MLX/Hugging Face. Every hit sits in a section carrying a dated marker where it stands. §4 and §7 contain no retired name and need none.
+
+    Two unmarked occurrences are correct as they stand: the `### Sources` bibliography (provenance, not a current-dependency claim), and §9's Skills bullet, which describes the SIBLING plan's decision #17 — confirmed still true at FoundationModelsSkills/plan.md:610.
+
+    ### The drift guard
+    PlanDocumentTests splits plan.md at its `## ` headings and asserts any section spelling Router, Routed, Grammar or IntegrationTests also spells "decision #14". A "no retired name anywhere" test would be the WRONG test, because the history must stay. Written first, it failed naming eight sections — the finding, found mechanically. Its stated limit: one marker clears the whole section it sits in, so §14's per-milestone entries needed hand checking.
+  timestamp: 2026-08-30T13:30:40.912780+00:00
 depends_on:
 - 01M16Y5CNB3P7E5ESF43AEAKQ4
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: 9b80
 title: Update the docs that describe the Router dependency
 ---
 ## What
