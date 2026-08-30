@@ -32,9 +32,16 @@ struct PlanDocumentTests {
     /// the `LiveRouterSupport` target; `Routed` covers `RoutedSession`,
     /// `RoutedEmbedder`, `RoutedEmbedderAdapter`, and `RoutedAgentSession`;
     /// `Grammar` covers the deleted Router type and the `idEnumGrammar(ids:)`
-    /// that returned it; `IntegrationTests` covers the deleted nested
-    /// package. Matching is case-sensitive, so the ordinary lower-case word
-    /// "grammar" — which the plan still uses correctly — does not match.
+    /// that returned it. Matching is case-sensitive, so the ordinary
+    /// lower-case word "grammar" — which the plan still uses correctly — does
+    /// not match.
+    ///
+    /// Every stem here names something that is *gone*. `IntegrationTests`
+    /// was a stem while the nested package was deleted; the package is back
+    /// (decision #15), so the stem is not. A live directory must be free to
+    /// be named in the present tense, and holding it here would have forced
+    /// every section that names it to call it history — the one reading that
+    /// is now false.
     ///
     /// This is deliberately a wider net than the whole identifiers
     /// `PackageManifestTests` bans outright, and it asks for something
@@ -45,7 +52,6 @@ struct PlanDocumentTests {
         "Router",
         "Routed",
         "Grammar",
-        "IntegrationTests",
     ]
 
     /// The text a section carries to mark its Router-era statements as

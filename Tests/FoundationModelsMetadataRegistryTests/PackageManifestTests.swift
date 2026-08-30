@@ -4,10 +4,13 @@ import Testing
 /// Pins `Package.swift` to a Router-free, GPU-free shape: no target of this
 /// package may name an MLX or Hugging Face product.
 ///
-/// Those products exist to resolve a live `Router` + `LiveModelLoader`, and
-/// no code in this repository needs one any more: the real-model suite that
-/// did is gone. Naming one here links MLX and Hugging Face into every
-/// `Examples/` demo — and, through the test target, into a plain
+/// Those products exist to resolve a live `Router` + `LiveModelLoader`, and no
+/// code in this repository needs one any more: the Router-backed real-model
+/// suite that did is gone, and the nested `IntegrationTests/` package that
+/// stands in its place drives Apple Intelligence through
+/// `LanguageModelSession`, over one path dependency on this package and nothing
+/// else. Naming one here links MLX and Hugging Face into every `Examples/`
+/// demo — and, through the test target, into a plain
 /// `swift build --build-tests` — for a capability nothing exercises.
 ///
 /// A later edit that re-adds one of those products to a target fails this

@@ -28,6 +28,17 @@ embedders come from [`../FoundationModelsRouter`](../FoundationModelsRouter/plan
 > `RoutedSession`/`RoutedEmbedder`, `RoutedEmbedderAdapter`/`RoutedAgentSession`,
 > `Grammar`/`idEnumGrammar`, `LiveRouterSupport`, the `IntegrationTests/`
 > package — is history, and says so where it stands.
+>
+> **Update 2026-08-30 — decision #15.** The nested `IntegrationTests/` package
+> is back, and M7 with it in a narrower shape. It is a SwiftPM package of its
+> own that the root manifest never names, holding five tests in four suites,
+> and it drives Apple Intelligence through `LanguageModelSession` — no Router,
+> no MLX, no tiny `mlx-community` model, and one path dependency on this
+> package. `ci.yml` passes the shared `swift-ci.yaml` an
+> `integration-package-path` input again. Everything decision #14 says about
+> the Router removal still holds; the one line of it that no longer does is
+> "the repository has no integration suite", and decision #15 says what stands
+> there instead.
 
 ---
 
@@ -357,6 +368,15 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
 > this package ships — only the `AgentSession` half of that pair still exists. The
 > macOS 27 floor is unchanged but now stands on FoundationModelsRanker's own, which
 > is identical. The rest of this section is current.)*
+>
+> *(Extended 2026-08-30 — decision #15. This section describes one package, and the
+> repository now holds two: `IntegrationTests/` is a SwiftPM package of its own,
+> declaring the same macOS 27 floor and a single path dependency on this one. The
+> root manifest never names it, so it is no part of the library's own graph and a
+> bare `swift test` cannot see it. Nothing above changes — the library is still one
+> target on `FoundationModelsRanker` alone, and the "gated integration suite" the
+> Router bullet names is still gone; what stands in that directory now drives Apple
+> Intelligence.)*
 
 - **Single SwiftPM library target `FoundationModelsMetadataRegistry`**, macOS 27+ (the
   Router floor; same platform commitment as Multitool/Agents, no fallback paths), plus
@@ -465,6 +485,10 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
       gone with the models it drove, so the repository has no integration suite at
       all and `ci.yml` calls the shared `swift-ci.yaml` with no inputs. A bare
       `swift test` at the root is now the whole suite.
+      *(Superseded 2026-08-30 — decision #15: the package is back, driving Apple
+      Intelligence rather than the models this bullet retired, and `ci.yml` passes
+      `integration-package-path: IntegrationTests` again. A bare `swift test` at
+      the root is once more the unit tier alone, not the whole suite.)*
 
     Two API changes came with Ranker's Router-free release, and the signatures in
     §6, §12 and decision #12 predate them: `SelectionConfig` takes a one-argument
@@ -479,6 +503,57 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
     the MLX/Hugging Face graph it dragged behind it, cost every build and every CI run
     for a capability no code exercised. Consumers that do want a real model wire their
     own conformer to the two seams, which is the shape §1 always asked for.
+15. *(2026-08-30 — supersedes decision #14's "the gated integration suite (M7)"
+    bullet, §14's M7, §15's closing note and §10's one-package reading — each of
+    which carries its own dated marker)* **The nested `IntegrationTests/` package
+    is reinstated, on Apple Intelligence.** It is a SwiftPM package of its own at
+    `IntegrationTests/`, declaring the same macOS 27 floor and one dependency —
+    a path dependency on this package. The root manifest never names it, so a
+    bare `swift test` runs the unit tier alone and
+    `swift test --package-path IntegrationTests` runs this one. `ci.yml` passes
+    `integration-package-path: IntegrationTests` to the shared `swift-ci.yaml`,
+    whose unit job then builds the nested package on every run and whose
+    integration job runs it; `CIWorkflowTests` pins that input from this side. No
+    environment variable selects anything — the package boundary carries the
+    split, which is the org test contract in swissarmyhammer/workflows' README.
+
+    **Two real-model tests, not eight.** The package holds five tests in four
+    suites: `ColdSelectionRealModelTests` and `HotReloadRealModelTests` drive the
+    model, and `ModelAvailabilityTests` and `IntegrationCatalogTests` hold up the
+    availability gate and the fixture catalog. The exclusions are as deliberate
+    as the inclusions:
+
+    - **Ranker's own four real-model tests are not duplicated.** They already
+      cover the `LanguageModelSession` seam, guided generation, and Ranker's
+      zero-config `Searcher`. A copy here would measure the same code twice.
+    - **The over-budget path is excluded.** Its mechanics stand at 97% line
+      coverage through fakes, and the model-behaviour half of it is Ranker's to
+      measure. Every scenario here therefore stays on the under-budget
+      cached-root path.
+    - **Real embeddings are excluded.** FoundationModels exposes no embedding API
+      at all, so every scenario runs keyword-only and every selection search
+      reports `.embeddingUnavailable` — 55 of 55 measured runs.
+    - **What is left is the seam only this repository can cover:**
+      `MetadataSearcher` and `MetadataIndex`'s `SelectionCatalog` conformance
+      feeding Ranker's `assemblePrefix`, under this package's own
+      `.librarianDefault` preamble; plus `update(items:)`, which Ranker's own
+      facade has no equivalent for.
+
+    **The measurement behind the intents.** `.librarianDefault` was measured over
+    125 cold runs and did **not** reproduce the cold-empty behaviour Ranker
+    measured against its own neutral `.selectionDefault`. Every intent the suite
+    drives is taken verbatim from that measurement rather than invented, the
+    off-topic control returned empty on 5 of 5 cold runs, and `.unknownSelectedId`
+    fired in none of the 125. The suite is therefore a guard rather than a
+    reproduction, and it keeps the fresh-searcher-per-query shape that is what
+    makes it able to catch that defect if it ever appears here.
+
+    Why: decision #14 was right that nothing in this repository resolved a real
+    model *through Router*, and it is still right that no Router, no MLX and no
+    Hugging Face package belongs in this graph — `PackageManifestTests` still
+    pins that. FoundationModels ships a real model with the platform this package
+    already commits to, so the seam can be measured against one at no cost to the
+    dependency graph.
 
 ## 12. Public API (as shipped)
 
@@ -622,6 +697,17 @@ Each example doubles as the acceptance demo for its milestone (`CatalogSearch`
   *(Removed 2026-08-30 — decision #14: the `IntegrationTests/` package is
   deleted with the models it drove, and `ci.yml` now passes the shared workflow
   no input at all.)*
+  *(Reinstated 2026-08-30 — decision #15: the package stands at
+  `IntegrationTests/` again and `ci.yml` passes
+  `integration-package-path: IntegrationTests` again, but it drives Apple
+  Intelligence through `LanguageModelSession` rather than the tiny
+  `mlx-community` models this milestone was written around. The subject narrowed
+  with the models: what it measures is cold `.selection` and `update(items:)`
+  over this package's own seam. The rest of the list above has no subject left —
+  `Grammar` went with Router, so there is no xgrammar enforcement to measure;
+  FoundationModels exposes no embedding API, so there is no embed + RRF quality
+  smoke to run; and `LanguageModelSession.fork()` returns `self`, so there is no
+  fork-per-call prefix reuse to observe.)*
 - ✅ **M8 — Examples.** The `Examples/` suite (§13): `CatalogSearch`,
   `SemanticSearch`, `Librarian`, `BigCatalog`, `HotReload` — each a runnable
   executable target (`swift run <Name>`) over a unit-tested `<Name>Core`, compiled
@@ -645,6 +731,15 @@ runs the unit tests only (the org test contract).
 tier above is the whole suite, and a bare `swift test` at the root runs every
 test this repository has. The org test contract is met by there being no second
 target to select, not by a package boundary — and still by no env var.)*
+
+*(Reinstated 2026-08-30 — decision #15: there is an integration suite again, and
+the paragraph above has the shape of it right — it lives in the nested
+`IntegrationTests/` package, `swift test --package-path IntegrationTests` runs
+it, the root `swift test` runs the unit tier alone, and no env var selects
+either. The substrate is what changed: Apple Intelligence through
+`LanguageModelSession`, not the Router pattern, not tiny real models, and no
+`.serialized` trait on any of its suites. So the org test contract is met by a
+package boundary once more, rather than by there being nothing to select.)*
 
 ---
 

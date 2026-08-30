@@ -45,10 +45,38 @@ comments:
     - evidence: 3 files — `IntegrationTests/Tests/FoundationModelsMetadataRegistryIntegrationTests/HotReloadRealModelTests.swift` (new), `.../Support/SelectionScenario.swift` (new, shared wiring extracted from the cold suite), `.../ColdSelectionRealModelTests.swift` (calls the shared wiring; unused `import FoundationModels` dropped). RED: 2 of 2 failed with `update(items:)` removed, `answer.ids → ["dyeWool"]`. GREEN: `swift test --package-path IntegrationTests` 3/3 runs, 5 tests in 4 suites; root `swift test` 115 tests in 12 suites; `swift build --package-path IntegrationTests --build-tests` 0 warnings.
     - next: `/review`
   timestamp: 2026-08-30T23:05:16.993034+00:00
+- actor: claude-code
+  id: 01m1aewxbtq4aw19bmttfgnv3f
+  text: |
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (dbb89f0) — 0 findings, 0 confirmed, 0 refuted, 7 validators attempted, 0 failed. 3 files reviewed; 4 `.kanban/` files excluded by `.reviewignore`.
+    - checks: `update(items:)` runs on the live searcher — `SelectionScenario.makeSearcher(over: startingCatalog, ...)`, then `await searcher.update(items: reloadedCatalog)`, then `searcher.search(...)`, all on the same instance. The remove half is load-bearing: `^nwt7nz4` measured the same intent at 5/5 for `dyeWool` while present and 5/5 empty once gone, and deleting the `update(items:)` call makes both tests fail. The `ColdSelectionRealModelTests.swift` refactor changed plumbing only — the `unknownSelectedId` expectation moved into `SelectionScenario` unchanged, with a `sourceLocation` parameter added so a failure reports the caller.
+    - next: none. Task moved to `done`.
+  timestamp: 2026-08-30T23:08:28.922032+00:00
+- actor: claude-code
+  id: 01m1aexr8m6j6p7twfb2bvk99v
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 3 files: HotReloadRealModelTests.swift (new), Support/SelectionScenario.swift (new), ColdSelectionRealModelTests.swift (refactored onto the shared members)
+    - test: green — RED first: with the `update(items:)` call deleted, the remove intent answered `["dyeWool"]` and both tests failed. GREEN: 3 consecutive `swift test --package-path IntegrationTests` runs, 5 tests in 4 suites each. Root swift test 115 in 12 suites. swift build --package-path IntegrationTests --build-tests: 0 warnings, 0 errors.
+    - commit: dbb89f0 test(integration): add hot-reload real-model test for update(items:)
+    - review: clean — 0 findings, 7 validators, task moved to done
+
+    ### The three things the reviewer verified against the source
+    1. **The searcher is live.** One `searcher` binding is built over `startingCatalog`, `await searcher.update(items: reloadedCatalog)` runs on it, and `search` runs on that same instance. No second searcher is constructed. That is the entire path under test — a freshly built searcher would prove nothing about a tier rebuild.
+    2. **The remove half discriminates.** It rests on the measured pair from ^nwt7nz4: the same intent found `dyeWool` 5/5 while present and returned nothing 5/5 once gone. The search limit is bound to `reloadedCatalog.count`, so a cap can never be the reason an id is missing. Combined with the mutation proof, "the id is gone" is distinguished from "the model happened not to pick it".
+    3. **The refactor is plumbing only.** The expectation moved verbatim. Two changes: the failure text now says "no id of the catalog it was given" because the helper serves two catalogs, and a `sourceLocation: SourceLocation = #_sourceLocation` parameter makes a failure report the calling suite rather than the helper.
+
+    ### One deviation from the instruction, and it was right
+    I told the implementer to follow the sibling test's shape for the searcher wiring and diagnostic sink. It extracted both into `Support/SelectionScenario.swift` instead of copying them, on the grounds that a verbatim second copy of the `SelectionConfig` construction and the `.unknownSelectedId` filter is exactly what the duplication validator exists to catch. That is the better call, and refactoring the sibling onto it is in scope rather than creep.
+
+    ### Why this test exists at all
+    FoundationModelsRanker's four real-model tests drive its own `Searcher` facade, which has no hot reload — its catalog is fixed for the facade's lifetime. Nothing upstream exercises a tier rebuild over this package's `MetadataIndex` conformance to `SelectionCatalog`. This is the seam only this repository can cover.
+  timestamp: 2026-08-30T23:08:56.468649+00:00
 depends_on:
 - 01M1A97K9T94SEZ0CA0NWT7NZ4
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: a080
 title: 'Real-model test: update(items:) makes new ids selectable and removed ids unreachable'
 ---
 ## What
