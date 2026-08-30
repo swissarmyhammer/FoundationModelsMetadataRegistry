@@ -100,10 +100,46 @@ comments:
     - evidence: no repository files changed. The card's product is data. 125 cold real-model runs measured through a scratchpad probe, now deleted. Every answerable candidate 5/5, both empty-controls 5/5 empty, `.unknownSelectedId` never fired. Chosen sets named for `^xmt6fmc` and `^ddaxwaz` in the measurement comment above. `git status --porcelain` shows only `.kanban/`.
     - next: `/review`, then `^xmt6fmc` and `^ddaxwaz` unblock. Both must assert on `.unknownSelectedId` specifically, never on an empty diagnostic collection — `.embeddingUnavailable` fires on every selection search.
   timestamp: 2026-08-30T22:41:13.079926+00:00
+- actor: claude-code
+  id: 01m1adh6rg7g4rge7ep6575mdc
+  text: |-
+    ### review — clean
+    - evidence: zero new findings. `review sha HEAD~1..HEAD` (72ea26f) — 0 files reviewed, 6 of 6 excluded by `.reviewignore` (`.kanban/`). counts: findings 0, confirmed 0, refuted 0.
+    - Acceptance criterion "the probe is deleted, not committed" is confirmed: `git show --stat HEAD` lists only 6 `.kanban/` files, so the commit adds no source file, no package manifest, and no executable target. `git status --porcelain` shows only `.kanban/` changes.
+    - This card ships no test by design, so the absence of a test is not a finding.
+    - next: none. Card moved to done.
+  timestamp: 2026-08-30T22:44:36.752589+00:00
+- actor: claude-code
+  id: 01m1adj3a2cp206zz60fzbykn2
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 0 repository files. This card's product is data: 125 cold real-model runs through a scratchpad probe, since deleted.
+    - test: n/a — the card ships no test by design
+    - commit: 72ea26f chore(kanban): record cold librarianDefault measurement on ^nwt7nz4 (6 files, all .kanban/)
+    - review: clean — 0 findings, 6 of 6 files excluded by .reviewignore. The engine stated the exclusion explicitly rather than reporting an empty scope. The probe-did-not-leak criterion was verified against `git show --stat HEAD` and `git status --porcelain`.
+
+    ### The headline: the premise this card existed to check did NOT hold
+    The card was written because `^xmt6fmc` imported FoundationModelsRanker's evidence that a cold imperative query scored 0/5 — measured against `.selectionDefault`, not this package's `.librarianDefault`. The worry was that `.librarianDefault`, which says "return an empty list if nothing fits", would invite the empty answer the test forbids.
+
+    It did not. Over `IntegrationCatalog.base`, all three imperatives and all three interrogatives scored **5/5 across three independent replications**, and the off-topic control returned empty 5/5 — so empty results are reachable and the non-empty assertion is meaningful. No rescoping needed, and no preamble was tuned.
+
+    The fresh-searcher-per-query design stays anyway. It is what would make the test capable of catching that defect if it ever appears.
+
+    ### The discovery that changed both downstream cards
+    `MetadataDiagnostic.embeddingUnavailable` fires on **every** selection search — 55 of 55 in the final replication. `SelectionTier`'s under-budget path calls `retrievalRanking` once per call to attach real score and signals, and that closure reports the missing embedder.
+
+    So an assertion of "no diagnostics were recorded" would fail on every run, for a reason with nothing to do with the guarded defect. Both `^xmt6fmc` and `^ddaxwaz` now say: filter for `.unknownSelectedId` specifically. It fired in **zero** of the 125 runs.
+
+    ### Scope extended beyond the card
+    The card asked only for base-group intents. `^ddaxwaz` needs add-only and remove-only intents that base cannot supply, so those were measured too — including the pair that makes its remove half load-bearing: `Dye this fleece yarn with indigo.` finds `dyeWool` 5/5 while the item is present, and returns empty 5/5 once it is gone.
+
+    ### Note for the next commit
+    Two `.kanban/` files for `^f10jvv9` were left unstaged — board-state lag whose source changes already landed in 0557599. They will sweep into the next commit.
+  timestamp: 2026-08-30T22:45:05.986961+00:00
 depends_on:
 - 01M1A8MDQ9NTZX4A0N8JZBA4XN
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '9e80'
 title: Measure librarianDefault on cold sessions and select stable intents
 ---
 ## What

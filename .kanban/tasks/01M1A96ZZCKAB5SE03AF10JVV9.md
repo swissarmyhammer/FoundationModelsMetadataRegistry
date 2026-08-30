@@ -48,10 +48,41 @@ comments:
     - evidence: 4 files — `.github/workflows/ci.yml`, `Tests/FoundationModelsMetadataRegistryTests/CIWorkflowTests.swift`, `Package.swift`, `IntegrationTests/Package.swift`. `swift test` 115 tests / 12 suites, 0 failures; `swift build --build-tests` clean; `swift build --package-path IntegrationTests --build-tests` clean.
     - next: `/review`
   timestamp: 2026-08-30T22:28:46.068896+00:00
+- actor: claude-code
+  id: 01m1acswbwsgh0keavwx4ysx6e
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` — 7 validator passes attempted, 0 failed, 0 findings, 0 confirmed, 0 refuted. 4 files reviewed (.github/workflows/ci.yml, Tests/FoundationModelsMetadataRegistryTests/CIWorkflowTests.swift, Package.swift, IntegrationTests/Package.swift); 4 .kanban files excluded by .reviewignore. No prior `## Review Findings` section on this card.
+    - falsifiability check of the two replacement tests: both can fail. `namesTheNestedIntegrationPackage()` compares a trimmed line for equality with `integration-package-path: IntegrationTests`, so it fails if the line is removed, misspelled, or given a different value. `passesNoOtherIntegrationInput()` lowercases each trimmed line before it tests the `integration-` prefix and excludes only `integration-package-path:`, so a capitalized `Integration-Metallib-Glob:` key fails it. This matches how GitHub Actions resolves `with:` keys, which it does without regard to case. A near-miss key such as `integration-package-path-extra:` is also caught, because the exclusion prefix ends with a colon.
+    - next: card moved to done. Acceptance criterion 4 (the live `Integration` job reports a conclusion other than `skipped`) stays unchecked by design — the card defers it to the orchestrator after the push, because /finish commits locally and never pushes.
+  timestamp: 2026-08-30T22:31:52.444367+00:00
+- actor: claude-code
+  id: 01m1actrxfz013wbz27ph4j96p
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 4 files: .github/workflows/ci.yml, Tests/.../CIWorkflowTests.swift, Package.swift, IntegrationTests/Package.swift
+    - test: green — swift test at root 115 tests in 12 suites, 0 failures (114 before; one test added); swift build --build-tests clean, 0 warnings; swift build --package-path IntegrationTests --build-tests Build complete
+    - commit: 0557599 ci: point CI at the nested IntegrationTests package
+    - review: clean — 0 findings, 7 validators, task moved to done
+
+    ### The trap fired exactly as the card predicted
+    `passesNoIntegrationInput()` asserted ci.yml carries NO line starting `integration-`. Adding the input made it fail, correctly — it was written when the suite was deleted. It became two tests, because the acceptance criterion has two halves one test cannot see: `namesTheNestedIntegrationPackage()` pins the exact trimmed line by equality, and `passesNoOtherIntegrationInput()` keeps the case-insensitive sweep with the package path excluded.
+
+    Both were made to fail before being trusted. The second would have passed the moment it was written, so a capitalized `Integration-Metallib-Glob:` key was added temporarily to watch it fail. That also proves the guard catches a capitalized key — which matters, because GitHub Actions resolves `with:` keys against the called workflow's `inputs:` without regard to case. The reviewer independently confirmed the exclusion prefix ends with a colon, so a near-miss like `integration-package-path-extra:` is caught rather than let through.
+
+    ### One file beyond the card's list
+    `IntegrationTests/Package.swift`'s doc comment ended "until it lands the command above is the only thing that compiles this package". This card lands it, so the implementer corrected it rather than leaving a statement its own change falsified.
+
+    ### Acceptance criterion 4 is deferred, not failed
+    Subtasks read 6/7. The live `Integration` job conclusion cannot be verified inside `/finish`, which commits locally and never pushes. The orchestrator verifies it after the batch, when the user pushes. This did not hold the card in review.
+
+    ### Left alone deliberately, belongs to ^3cj12gk
+    `PlanDocumentTests.retiredNameStems` still lists "IntegrationTests", and plan.md still says this repository has no integration suite. Neither fails today.
+  timestamp: 2026-08-30T22:32:21.679135+00:00
 depends_on:
 - 01M1A8MDQ9NTZX4A0N8JZBA4XN
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: 9d80
 title: Wire integration-package-path into CI early, so the nested package builds on every run
 ---
 ## What

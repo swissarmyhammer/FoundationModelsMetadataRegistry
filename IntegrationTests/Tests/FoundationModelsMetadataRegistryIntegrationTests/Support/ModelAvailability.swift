@@ -62,9 +62,10 @@ enum ModelAvailability {
     ///   anything this roster does not name is this package's own failure to
     ///   report as it stands.
     ///
-    /// The scenarios that call this arrive in their own changes; the wrapper
-    /// lands here so both of them find it already written.
-    // periphery:ignore
+    /// `ColdSelectionRealModelTests` is the first scenario to call this. The
+    /// `// periphery:ignore` marker that stood here while the wrapper waited
+    /// for that caller is gone with it: the staging contract keeps a marker
+    /// only until the change it was written for lands.
     static func recordingEnvironmentFaults<Value>(
         _ body: () async throws -> Value
     ) async throws -> Value {
