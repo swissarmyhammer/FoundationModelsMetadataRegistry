@@ -88,8 +88,44 @@ comments:
     - gap: acceptance criterion 3 — `recordingEnvironmentFaults(_:)` does not name `LanguageModelSession.GenerationError`, because that type is deprecated at macOS 27 and naming it warns on every build. See the BLOCKER comment above for the measurements and the two ways out.
     - next: a person decides — amend the criterion to the macOS 27 error types (`LanguageModelError`, `SystemLanguageModel.Error`, `LanguageModelSession.Error`, which the code already names), or accept a `#DeprecatedDeclaration` warning on every build. Every other criterion is met and green.
   timestamp: 2026-08-30T22:11:11.731826+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m1abq3vcej58kypb406jekwd
+  text: |-
+    ### commit — changed
+    - evidence: 64fb99c test(integration): add IntegrationTests package skeleton for real-model suite
+    - next: none
+  timestamp: 2026-08-30T22:12:53.228172+00:00
+- actor: claude-code
+  id: 01m1abvsx75c32kcq0qx5hmfrv
+  text: |
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 64fb99c) — 0 findings, 0 confirmed, 0 refuted; 7 validators attempted, 0 failed, 0 skipped; 5 files reviewed, 14 excluded by the `.kanban/` ignore rule. Zero new findings, and every acceptance and test item on the card is checked. No prior `## Review Findings` section exists, so none is appended.
+    - next: none. Task moved to done. The macOS 27 blocker is closed: the card records the 2026-08-30 correction to `SystemLanguageModel.Error` and `LanguageModelError`, and `isEnvironmentFault(_:)` names those types with the deprecation recorded in its doc comment.
+  timestamp: 2026-08-30T22:15:26.887277+00:00
+- actor: claude-code
+  id: 01m1abwje4h9pg5ekv6rx5v5zd
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 5 files, all under IntegrationTests/. Reported `stuck` on acceptance criterion 3, correctly (see below).
+    - test: green — swift test --package-path IntegrationTests: 2 tests in 2 suites, 0 warnings; swift test at root: 114 tests in 12 suites, unchanged, never reaching the nested package; swift package show-dependencies: `..` only
+    - commit: 64fb99c test(integration): add IntegrationTests package skeleton for real-model suite
+    - review: clean — 0 findings, 7 validators, task moved to done
+
+    ### Orchestrator correction: acceptance criterion 3 was wrong, not blocked
+    The card told the implementer to catch `LanguageModelSession.GenerationError`. That was MY planning error, carried in from a reading of the SDK interface that quoted the deprecated declarations.
+
+    The SDK marks that type `@available(macOS, introduced: 26.0, deprecated: 27.0)`, and this package's floor is macOS 27, so naming it warns on every build against a zero-warning bar. The implementer measured that the deprecation cannot be contained — a bare reference warns; wrapping it in a `@available(macOS, deprecated: 27.0)` helper silences that site but makes every non-deprecated caller warn instead. Three shapes probed with `xcrun swiftc -target arm64-apple-macos27.0 -typecheck`.
+
+    It is also stale on the merits: the SDK redirects all four environment faults to macOS 27 replacements — assets-unavailable to `SystemLanguageModel.Error`, and rate-limited / unsupported-language / guardrail-violation to `LanguageModelError`. A clause catching only `GenerationError` would likely catch nothing on this OS.
+
+    The implementer caught the current types instead, warning-free, and stopped rather than silently dropping the criterion. That was the right call on both counts. I amended the criterion; no code changed.
+
+    ### Two design points worth carrying to ^xmt6fmc and ^ddaxwaz
+    - Both helpers use `try #require(...)` rather than `Issue.record` followed by a throw. `#require` is the record-then-throw primitive and yields exactly one Swift Testing issue; record-plus-throw yields two, and the second buries the first. Verified by inverting the availability read: exactly one issue, and the line below never ran.
+    - `Tokenizer.tokenize(text:)` strips no stop words, so the three fixture groups share no token at all, function words included, rather than carrying a hand-maintained stop list.
+  timestamp: 2026-08-30T22:15:52.004410+00:00
+position_column: done
+position_ordinal: 9c80
 title: Create the nested IntegrationTests package with a loud availability precondition
 ---
 ## What

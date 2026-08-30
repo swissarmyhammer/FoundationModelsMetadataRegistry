@@ -151,10 +151,13 @@ let package = Package(
             ],
             path: "Sources/\(packageName)"
         ),
-        // This target holds the unit tests, and only the unit tests. This
-        // repository has no integration suite at all, so a bare `swift test`
-        // at the root runs every test it has (the org test contract in
-        // swissarmyhammer/workflows' README).
+        // This target holds the unit tests, and only the unit tests. The
+        // suite that needs a real model lives in the nested
+        // `IntegrationTests/` package, which this manifest never names, so a
+        // bare `swift test` at the root runs this target and nothing else
+        // (the org test contract in swissarmyhammer/workflows' README). CI
+        // reaches that package by its own path, through the shared
+        // workflow's `integration-package-path` input.
         .testTarget(
             name: "\(packageName)Tests",
             dependencies: [

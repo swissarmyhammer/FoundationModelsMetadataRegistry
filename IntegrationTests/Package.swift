@@ -52,9 +52,8 @@ private let productPackageName = "FoundationModelsMetadataRegistry"
 /// IntegrationTests` to the shared `swift-ci.yaml` workflow: that input makes
 /// the shared workflow's unit job build this package on **every** run, before
 /// the expensive integration-test step runs at all. A build of this package is
-/// cheap; only the run is expensive. That input is wired in a change of its
-/// own, and until it lands the command above is the only thing that compiles
-/// this package.
+/// cheap; only the run is expensive. `CIWorkflowTests` pins that input from
+/// the root package, so the coupling cannot be dropped unnoticed.
 let package = Package(
     name: "FoundationModelsMetadataRegistryIntegrationTests",
     // Commit to macOS 27 / FoundationModels v2, exactly as `../Package.swift`

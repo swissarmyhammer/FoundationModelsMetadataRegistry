@@ -1,21 +1,24 @@
 name: CI
 
 # The org test contract (swissarmyhammer/workflows' README) applies here in
-# full, and this repository satisfies it with unit tests only:
+# full, and this repository satisfies it with a nested integration package:
 #
-# - `swift test` at the root runs every test this repository has, and only
-#   unit tests. There is no integration suite: no test needs a real model, a
-#   network, a GPU, or much wall-clock time.
+# - `swift test` at the root runs every unit test this repository has, and
+#   only unit tests. The suite that needs a real model lives in the nested
+#   `IntegrationTests/` package, which the root manifest never names, so the
+#   root run cannot see it.
 # - No environment variable selects a suite. This workflow gives the shared
 #   workflow no `integration-gate-env` (a LEGACY input, kept only for
-#   callers that have not migrated).
-# - The shared workflow's integration job is gated on `integration-gate-env`,
-#   `integration-filter`, `integration-skip`, or `integration-package-path`
-#   being non-empty. This workflow passes none of them, so that job never
-#   runs and the unit job is the whole of CI. Every input of the shared
-#   workflow is optional, so the bare `uses:` below is a valid call.
-#   `CIWorkflowTests` pins the delegation, and the absence of every
-#   `integration-*` input, from this side.
+#   callers that have not migrated, and refused beside the input below);
+#   the package path selects the suite by build graph instead.
+# - The shared workflow's unit job builds the nested package on every run,
+#   because the root build does not compile it and a broken integration test
+#   must not stay unseen between runs. Its integration job then builds and
+#   runs that package, ordered after the unit job by the shared workflow's
+#   own internal `needs:` edge.
+# - No `integration-metallib-glob`: that input colocates an mlx-swift
+#   `default.metallib`, and no MLX package is in this dependency graph.
+#   `CIWorkflowTests` pins the delegation, and the one input, from this side.
 
 on:
   push:
@@ -30,3 +33,5 @@ concurrency:
 jobs:
   ci:
     uses: swissarmyhammer/workflows/.github/workflows/swift-ci.yaml@main
+    with:
+      integration-package-path: IntegrationTests
