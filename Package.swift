@@ -10,19 +10,6 @@ import PackageDescription
 /// FoundationModelsRouter and CodeContextKit packages.
 let packageName = "FoundationModelsMetadataRegistry"
 
-/// The name of the FoundationModelsRouter dependency package.
-///
-/// Wired as a remote dependency (`main` branch) the same way
-/// `../FoundationModelsMultitool/Package.swift` does, rather than a local
-/// path dependency, so this package's CI can use the family's shared
-/// `swift-ci.yaml` reusable workflow (which only checks out the calling
-/// repo). Router supplies `RoutedLLM`/`RoutedSession` (selection),
-/// `RoutedEmbedder` (cosine), and `Grammar` (xgrammar id enums) to the
-/// production conformers (plan.md §10); the core — catalog, signals, RRF,
-/// both seams — compiles and unit-tests without exercising Router at runtime
-/// (fakes conform to the seams).
-let routerDependencyName = "FoundationModelsRouter"
-
 /// The name of the FoundationModelsRanker dependency package.
 ///
 /// The shared search/ranking primitives library this package's ported
@@ -36,48 +23,11 @@ let routerDependencyName = "FoundationModelsRouter"
 /// existing pin.
 let foundationModelsRankerPackage = "FoundationModelsRanker"
 
-/// The `mlx-swift-lm` fork's package name.
-///
-/// The same remote dependency FoundationModelsRouter itself declares;
-/// re-declared here with the identical URL/branch so SwiftPM's dependency
-/// resolution unifies the two into a single resolved checkout, never a
-/// duplicate.
-///
-/// No target of this package names an MLX product any more: the live-Router
-/// path the `Examples/` demos once carried is gone, and the repository has no
-/// real-model suite left that would need one. Only the `dependencies:` entry
-/// below survives, and a later change removes it.
-let mlxPackage = "mlx-swift-lm"
-
-/// The Hugging Face Hub client package name.
-///
-/// Supplied `LiveModelLoader`'s `Downloader` while the `Examples/` demos
-/// resolved a live `Router`. No target of this package names its `HuggingFace`
-/// product any more, and no real-model suite is left anywhere in the
-/// repository to want it, so only the `dependencies:` entry below survives,
-/// and a later change removes it.
-let huggingFacePackage = "swift-huggingface"
-
-/// The Hugging Face Transformers package name.
-///
-/// Its `Tokenizers` product supplied `LiveModelLoader`'s `TokenizerLoader`
-/// alongside `huggingFacePackage`'s `Downloader`, on the same removed
-/// live-Router path. No target of this package names it any more; only the
-/// `dependencies:` entry below survives, and a later change removes it —
-/// though it also anchors the swift-jinja pin the test target keeps alive.
-let transformersPackage = "swift-transformers"
-
-/// The GitHub organization URL base the swissarmyhammer-family dependencies
-/// (`routerDependencyName`, `foundationModelsRankerPackage`, `mlxPackage`)
-/// resolve under — extracted so the org lives in one place instead of three
-/// dependency entries that could silently drift.
+/// The GitHub organization URL base the one swissarmyhammer-family
+/// dependency (`foundationModelsRankerPackage`) resolves under — extracted so
+/// the org and the package name stay separate names rather than one literal
+/// URL.
 let swissArmyHammerOrg = "git@github.com:swissarmyhammer/"
-
-/// The GitHub organization URL base the Hugging Face dependencies
-/// (`huggingFacePackage`, `transformersPackage`, swift-jinja) resolve
-/// under — extracted for the same single-source-of-truth reason as
-/// `swissArmyHammerOrg`.
-let huggingFaceOrg = "https://github.com/huggingface/"
 
 /// The name of the shared `Examples/ExamplesSupport` library target.
 ///
@@ -185,19 +135,7 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "\(swissArmyHammerOrg)\(routerDependencyName).git", branch: "main"),
         .package(url: "\(swissArmyHammerOrg)\(foundationModelsRankerPackage).git", branch: "main"),
-        .package(url: "\(swissArmyHammerOrg)\(mlxPackage).git", branch: "stable"),
-        .package(url: "\(huggingFaceOrg)\(huggingFacePackage)", from: "0.9.0"),
-        .package(url: "\(huggingFaceOrg)\(transformersPackage)", from: "1.3.0"),
-        // Pinned below swift-jinja 2.4.0: that release changed `Value.object`
-        // to key on `ObjectKey` instead of `String`, which the latest tagged
-        // swift-transformers (1.3.3, still HEAD as of this pin) never
-        // adopted -- `Sources/Hub/Config.swift` fails to compile against
-        // 2.4.0. transformersPackage only constrains jinja to `from: "2.0.0"`,
-        // so without this upper bound `swift package update` silently drifts
-        // onto the broken release.
-        .package(url: "\(huggingFaceOrg)swift-jinja.git", "2.0.0"..<"2.4.0"),
     ],
     targets: [
         .target(
@@ -207,6 +145,10 @@ let package = Package(
             ],
             path: "Sources/\(packageName)"
         ),
+        // This target holds the unit tests, and only the unit tests. This
+        // repository has no integration suite at all, so a bare `swift test`
+        // at the root runs every test it has (the org test contract in
+        // swissarmyhammer/workflows' README).
         .testTarget(
             name: "\(packageName)Tests",
             dependencies: [
@@ -224,18 +166,6 @@ let package = Package(
                 .target(name: "BigCatalogCore"),
                 .target(name: "HotReloadCore"),
                 .target(name: "LibrarianCore"),
-                // No target links `Tokenizers` any more, so this entry is now
-                // the only thing that marks the root-level swift-jinja pin
-                // (the `"2.0.0"..<"2.4.0"` upper bound above, which exists
-                // only to keep `swift package update` off the release that
-                // breaks swift-transformers) as used, so SwiftPM stops
-                // warning that the dependency is unused by any target.
-                //
-                // This target holds the unit tests, and only the unit tests.
-                // This repository has no integration suite at all, so a bare
-                // `swift test` at the root runs every test it has (the org
-                // test contract in swissarmyhammer/workflows' README).
-                .product(name: "Jinja", package: "swift-jinja"),
             ],
             path: "Tests/\(packageName)Tests"
         ),
