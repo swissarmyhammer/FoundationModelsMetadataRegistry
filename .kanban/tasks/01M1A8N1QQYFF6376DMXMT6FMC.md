@@ -9,14 +9,12 @@ title: 'Real-model test: a cold MetadataSearcher returns only catalog ids'
 ---
 ## What
 
-The first real-model test, and the highest-value card on the board: the only thing that would catch the class of defect FoundationModelsRanker hit in `d333d07`.
+The first real-model test, and the highest-value card on the board.
 
 File to create:
 - `IntegrationTests/Tests/FoundationModelsMetadataRegistryIntegrationTests/ColdSelectionRealModelTests.swift`
 
-Use **only the intents `^nwt7nz4` measured at 5/5**. Do not invent new ones here.
-
-Build a `MetadataSearcher` in `.selection` mode over `IntegrationCatalog`'s base group:
+Build a `MetadataSearcher` in `.selection` mode over `IntegrationCatalog.base`:
 
 ```swift
 SelectionConfig(
@@ -27,39 +25,51 @@ SelectionConfig(
 )
 ```
 
-Collect diagnostics through `onDiagnostic:`. Wrap the model call in `ModelAvailability.recordingEnvironmentFaults(_:)` so a `GenerationError` reads as an environment fault, not a product defect.
+Wrap the model call in `ModelAvailability.recordingEnvironmentFaults(_:)`; call `try ModelAvailability.requireAvailable()` first.
 
-### A FRESH searcher per query — the whole point
+### Use these intents — measured, do not invent new ones
 
-Construct the searcher **inside the test body**, per query. Not one searcher reused across a parameterized run.
+`^nwt7nz4` measured 125 cold runs against `.librarianDefault`. These scored **5/5 across three independent replications**:
 
-Ranker measured this exact defect: on a cold session the model returned `{"ids":[]}` for some queries, 0 of 5 runs succeeding, while the same query on a warm session succeeded every time. A suite that reuses one searcher **cannot see it**, because `LanguageModelSession.fork()` returns `self` (`LanguageModelSessionSupport.swift:100-102`), so the session is warm from call two onward.
+- `Pull me a shot of espresso from ground beans.` — imperative
+- `Fold a sheet of paper into a crane.` — imperative
+- `How do I tune my guitar to concert pitch?`
+- `How often should I water a potted orchid?`
+
+The off-topic control returned empty 5/5, so an empty result is reachable and the non-empty assertion is meaningful.
+
+**Measurement result worth knowing:** `.librarianDefault` did **not** reproduce the cold-empty behaviour FoundationModelsRanker measured against `.selectionDefault`. Imperatives were not weaker here — all three scored 5/5. The fresh-searcher-per-query design below still stands, because it is what makes the test capable of catching that defect if it ever appears.
+
+### A FRESH searcher per query
+
+Construct the searcher **inside the test body**, per query. Not one reused across a parameterized run. `LanguageModelSession.fork()` returns `self` (`LanguageModelSessionSupport.swift:100-102`), so a reused searcher is warm from call two onward and cannot see a cold-session defect.
+
+### Assert `.unknownSelectedId` specifically — never "no diagnostics"
+
+`^nwt7nz4` found that `MetadataDiagnostic.embeddingUnavailable` fires on **every** selection search — 55 of 55 runs. `SelectionTier`'s under-budget path calls `retrievalRanking` once per call to attach real `score`/`signals`, and that closure reports the missing embedder. An assertion of "no diagnostics were recorded" would fail on every run for a reason unrelated to the defect this test guards.
+
+Filter for `.unknownSelectedId`. It fired in **zero** of the 125 measured runs.
 
 ### What actually gets asserted
 
-**Membership is a tautology — do not make it the headline.** `SelectionTier` already filters every unresolvable id before returning and reports it via `.unknownSelectedId` (`SelectionTier.swift:286-289`), so `search(intent:limit:)` *cannot* return a non-catalog id. Keep the membership check as a cheap invariant, but the two observables that can genuinely change are:
-
-1. the result is **non-empty**, and
-2. **no `.unknownSelectedId` fired**.
-
-Those are the criteria.
+Membership is a tautology: `SelectionTier` already filters unresolvable ids before returning and reports them via `.unknownSelectedId` (`SelectionTier.swift:286-289`), so `search()` cannot return a non-catalog id. Keep it as a cheap invariant, but the two observables that can genuinely change are the **non-empty** result and the **absence of `.unknownSelectedId`**.
 
 ### Scope
 
-Under-budget cached-root path only. No over-budget case: those mechanics are at 97% line coverage via fakes, and the model-behavior half belongs to Ranker.
+Under-budget cached-root path only. No over-budget case.
 
 ## Acceptance Criteria
 
 - [ ] A new `MetadataSearcher` is constructed for every query, inside the test body.
-- [ ] Every intent used comes from `^nwt7nz4`'s 5/5 list, and at least one is an imperative.
-- [ ] Each on-topic query returns a **non-empty** result — empty is the exact symptom of the guarded defect.
-- [ ] No `.unknownSelectedId` diagnostic is recorded for any query.
-- [ ] Model calls are wrapped in `recordingEnvironmentFaults(_:)`, and the test calls `try ModelAvailability.requireAvailable()` first.
+- [ ] The four measured intents above are used verbatim, including both imperatives.
+- [ ] Each query returns a **non-empty** result — empty is the exact symptom of the guarded defect.
+- [ ] The diagnostic assertion filters for `.unknownSelectedId` and does **not** assert the absence of all diagnostics.
+- [ ] Model calls wrapped in `recordingEnvironmentFaults(_:)`; `try requireAvailable()` first.
 
 ## Tests
 
-- [ ] `ColdSelectionRealModelTests.swift` — a parameterized `@Test(arguments:)` over the chosen intents.
-- [ ] Run `swift test --package-path IntegrationTests` three times. All queries non-empty every run. Record the rate in a comment; a query not stable across three runs is replaced from `^nwt7nz4`'s list, never retried in a loop.
+- [ ] `ColdSelectionRealModelTests.swift` — a parameterized `@Test(arguments:)` over the four intents.
+- [ ] Run `swift test --package-path IntegrationTests` three times. All queries non-empty every run. Record the rate in a comment.
 - [ ] Prove the non-empty assertion can fail: temporarily point the searcher at an empty catalog, confirm failure, revert. This mutates the product input, not the expectation.
 
 ## Workflow
