@@ -2,7 +2,7 @@ import Foundation
 
 /// Reads files out of the repository's own working tree, for the suites that
 /// assert on what the repository *says* rather than on what its code does —
-/// the manifest and the README.
+/// the manifest, the README, and the plan.
 ///
 /// The root is resolved from `#filePath`, never from the working directory: a
 /// test process inherits whatever directory its runner started in, and

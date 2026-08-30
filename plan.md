@@ -23,8 +23,11 @@ embedders come from [`../FoundationModelsRouter`](../FoundationModelsRouter/plan
 > **Update 2026-08-30 — decision #14.** The `FoundationModelsRouter` dependency
 > and the gated integration suite (M7) are removed; the package depends on
 > `FoundationModelsRanker` alone. The library (M1–M4) and the `Examples/` suite
-> (M8) still ship, now GPU-free throughout. Every section below that describes a
-> Router-backed path is history, and says so.
+> (M8) still ship, now GPU-free throughout. The summary above and every section
+> below that describes a Router-backed path — the Router dependency itself,
+> `RoutedSession`/`RoutedEmbedder`, `RoutedEmbedderAdapter`/`RoutedAgentSession`,
+> `Grammar`/`idEnumGrammar`, `LiveRouterSupport`, the `IntegrationTests/`
+> package — is history, and says so where it stands.
 
 ---
 
@@ -63,6 +66,9 @@ embedders come from [`../FoundationModelsRouter`](../FoundationModelsRouter/plan
 - **Seams for testability.** `AgentSession` (session) and `TextEmbedding` (vectors) are
   narrow protocols; production conformers wrap Router (`RoutedSession`,
   `RoutedEmbedder`); unit tests run scripted fakes with zero GPU.
+  *(Superseded 2026-08-30 — decision #14: both seams are unchanged and still the whole
+  contract, but this package ships no production conformer for either — a caller brings
+  its own. The scripted fakes and the zero-GPU unit tier are unchanged.)*
 
 ## 2. Prior art in-tree — what each contributes
 
@@ -73,6 +79,12 @@ embedders come from [`../FoundationModelsRouter`](../FoundationModelsRouter/plan
 | Skills `SkillSearchAgent` (plan §7) | planned | the reload requirement (registry re-injection), visibility pre-filtering as the caller's job, `search skill` as the consuming op |
 | Agents plan | opted out (small catalogs, descriptions baked into `AgentsTool`) | a future opt-in consumer when agent catalogs outgrow the baked-in surface — this plan must not contradict theirs |
 | FoundationModelsMCP | planned | the churn case: tool catalogs hot-load (`listChanged`) — hundreds of entries appearing mid-session |
+
+*(Superseded in part, 2026-08-30 — decision #14: the two production conformers this
+table credits to the prior art — `RoutedAgentSession` on the session seam and
+`RoutedEmbedderAdapter` on the embedding seam — are deleted upstream and ship nowhere
+in this package. Everything else each row lists is still what that prior art
+contributed.)*
 
 Multitool's `lexicallyFilter` (substring keep/drop) is the one piece deliberately **not**
 lifted — it is superseded by real ranked retrieval (§5).
@@ -97,6 +109,10 @@ lifted — it is superseded by real ranked retrieval (§5).
      Session substrate:  AgentSession seam → RoutedSession   (Router)
      Vector substrate:   TextEmbedding seam → RoutedEmbedder (Router .embedding)
 ```
+
+*(Superseded 2026-08-30 — decision #14: the two substrate lines are history. Both
+seams stand exactly as drawn, but no `RoutedSession` or `RoutedEmbedder` conformer
+ships here — the caller supplies each one. Everything inside the box is current.)*
 
 ## 4. The catalog contract
 
@@ -132,6 +148,15 @@ compute for it, plan.md §3a of `FoundationModelsRanker`'s own plan.)*
   MCP resources whose full description is large.
 
 ## 5. Retrieval tier — signals & rank fusion *(from CodeContextKit)*
+
+> *(Superseded in part, 2026-08-30 — decision #14. The three signals, the RRF rule,
+> the absent-signal rule and the [0,1] normalization are all current.
+> `RoutedEmbedderAdapter` is not, and this section names it three times: as the
+> cosine seam's production wiring, in the "port, don't depend" file list, and in the
+> re-export list of the shipped-refinement note below. It is deleted upstream, so the
+> cosine seam has no production conformer in this package — a caller supplies its own
+> `TextEmbedding` — and what the re-export keeps visible to consumers unchanged is
+> `RRF`/`BM25`/`Trigram`/`Tokenizer`/`Hit`/`Signals`/`TextEmbedding` alone.)*
 
 Three independent signals per query, each producing a **ranking**, fused by rank —
 never by raw score (the scales are incomparable: BM25 unbounded, Dice aggregate can
@@ -191,6 +216,15 @@ behind it unchanged. Embedding is the *slow* path — it happens at `update()` t
 incrementally (§8), never at query time (only the query itself is embedded per search).
 
 ## 6. Selection tier — the dynamic session *(from Multitool's Librarian)*
+
+> *(Superseded in part, 2026-08-30 — decision #14. The tier's mechanics are current:
+> cached root plus fork per call, the capacity budget, the over-budget top-M cut,
+> ids-only grammar-enforced output, verbatim lookup, and the one diagnostics channel.
+> Every Router-named detail below is history — `idEnumGrammar(ids:)` is now
+> `idEnumSchema(ids:) throws -> String`, `SelectionConfig.model` takes the assembled
+> prefix alone with no `Grammar` parameter, and `RoutedAgentSession` and
+> `LiveRouterSupport` are gone, so the caller's own factory does the wiring. Grammar
+> ownership still sits with the tier.)*
 
 The LLM's job is **selection among candidates, never retrieval**: given an intent and a
 set of rendered blocks, return the fewest items that suffice, in call order when order
@@ -276,7 +310,9 @@ notifications, a Multitool rebuild. Semantics:
 4. Rebuild the id-enum grammar with the new id set — `idEnumGrammar(ids:)` is a pure
    function of the ids, and (post-migration, §6) the rebuilt selection tier derives it
    itself and hands it to the session factory per call, so callers refresh nothing
-   alongside `update(items:)`.
+   alongside `update(items:)`. *(Superseded 2026-08-30 — decision #14: the pure
+   function is now `idEnumSchema(ids:) throws -> String`; the ownership and the
+   callers-refresh-nothing guarantee are unchanged.)*
 5. Surface the interim gap: `.embedCatchUp(pending:total:)` diagnostics report how many
    items are still serving keyword-only while embedding catches up.
 
@@ -299,7 +335,10 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
   becomes formatting in `FindAPITool` over verbatim `Match.block`s; `AgentSession` +
   `RoutedAgentSession` have **moved here (shipped, §6)** for Multitool to re-import.
   Behavior deltas Multitool gains: ids-only selection, id-enum grammar, RRF instead of
-  `lexicallyFilter`.
+  `lexicallyFilter`. *(Superseded 2026-08-30 — decision #14: only the `AgentSession`
+  seam waits here, by way of `FoundationModelsRanker`'s re-export;
+  `RoutedAgentSession` is deleted upstream, so the migration re-imports the seam and
+  brings its own conformer. The behavior deltas are unchanged.)*
 - **FoundationModelsMCP** — tool catalogs and **resource catalogs** as
   `SearchableMetadata` (id = tool name / resource URI; block = rendered
   name+description+schema/mime summary). Hot-loads on `listChanged`; churn, not
@@ -314,9 +353,10 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
 > *(Superseded in part, 2026-08-30 — decision #14. The `FoundationModelsRouter`
 > bullet below no longer holds: that dependency is gone, and with it
 > `RoutedEmbedderAdapter` from the list of what `FoundationModelsRanker`
-> supplies. The macOS 27 floor is unchanged but now stands on
-> FoundationModelsRanker's own, which is identical. The rest of this section is
-> current.)*
+> supplies, and with it `RoutedAgentSession` from the naming note's list of what
+> this package ships — only the `AgentSession` half of that pair still exists. The
+> macOS 27 floor is unchanged but now stands on FoundationModelsRanker's own, which
+> is identical. The rest of this section is current.)*
 
 - **Single SwiftPM library target `FoundationModelsMetadataRegistry`**, macOS 27+ (the
   Router floor; same platform commitment as Multitool/Agents, no fallback paths), plus
@@ -366,6 +406,8 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
    Required by Skills (file watch) *and* MCP (`listChanged`).
 8. **Seams → `AgentSession` + `TextEmbedding`**, production conformers wrap Router;
    both lifted from the shipped implementations (Multitool, CodeContextKit).
+   *(Superseded 2026-08-30 — decision #14: the two seams stand; the production
+   conformers that wrapped Router are deleted, and a caller supplies its own.)*
 9. **Port, don't depend** for the CodeContextKit search files; extract a shared
    micro-package only if a third copy appears. *(Superseded as shipped: the third copy
    appeared — the ports are replaced by the shared `FoundationModelsRanker`
@@ -387,6 +429,9 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
     `makeGuidedSession(grammar: grammar, instructions:)`), while grammar ownership
     now lives with the tier — the party that owns the id set's lifecycle across
     over-budget cuts and `update(items:)` rebuilds.
+    *(Superseded in part, 2026-08-30 — decision #14: the factory is now
+    `@Sendable (String) -> any AgentSession`, with no `Grammar` parameter, and the
+    production conformer named here is deleted. Grammar ownership is unchanged.)*
 13. *(shipped refinement)* **One diagnostics channel, not per-event closures** —
     `onDiagnostic: (MetadataDiagnostic) -> Void` with a typed case per event
     (`.duplicateId`, `.embeddingUnavailable`, `.unknownSelectedId`, `.retrievalCut`,
@@ -394,7 +439,9 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
     not a parameter.
 14. *(2026-08-30 — supersedes §10's `FoundationModelsRouter` bullet, §1's
     `RoutedSession`/`RoutedEmbedder` seam note, and every "Router-backed" reading of
-    §6, §12, §13 and §14/M7)* **The Router dependency is removed.** This package now
+    the summary above and of §2, §3, §5, §6, §8, §9, §12, §13, decision #8,
+    decision #12 and §14's M2, M5, M7 and M8 — each of which carries its own dated
+    marker)* **The Router dependency is removed.** This package now
     declares exactly one dependency, `FoundationModelsRanker`, and names Router
     nowhere. Ranker itself declares `dependencies: []`, so that single entry is the
     whole resolved graph, and a clean build takes seconds instead of compiling a
@@ -419,8 +466,8 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
       all and `ci.yml` calls the shared `swift-ci.yaml` with no inputs. A bare
       `swift test` at the root is now the whole suite.
 
-    Two API changes came with Ranker's Router-free release, and §6/§12's signatures
-    predate them: `SelectionConfig` takes a one-argument
+    Two API changes came with Ranker's Router-free release, and the signatures in
+    §6, §12 and decision #12 predate them: `SelectionConfig` takes a one-argument
     `@Sendable (String) -> any AgentSession` and stores a `sessionSource:
     SelectionSessionSource` (`.factory` / `.session`) — no `Grammar` parameter,
     because `Grammar` was a Router type; and grammar construction is now
@@ -544,7 +591,9 @@ Each example doubles as the acceptance demo for its milestone (`CatalogSearch`
   `FoundationModelsRanker` dependency, §5)*, two-field indexing, keyword-only
   `search(mode: .retrieval)`. Pure unit tests, no Router, no GPU.
 - ✅ **M2 — Embedding signal.** `TextEmbedding` seam + `RoutedEmbedderAdapter` port
-  *(likewise now supplied by `FoundationModelsRanker`, §5)*, cosine signal,
+  *(the `TextEmbedding` seam is likewise now supplied by `FoundationModelsRanker`,
+  §5; the `RoutedEmbedderAdapter` port went away 2026-08-30 — decision #14, and
+  nothing replaced it: a caller supplies its own conformer)*, cosine signal,
   absent-signal degradation, incremental embed keyed by block hash. `FakeEmbedder`
   tests.
 - ✅ **M3 — Selection tier.** `AgentSession` seam (lifted), cached-root + fork-per-call,
@@ -557,7 +606,9 @@ Each example doubles as the acceptance demo for its milestone (`CatalogSearch`
   `AgentSession` moves here; `FoundAPIs` becomes `FindAPITool` formatting; Multitool's
   existing librarian tests keep passing against the wrapper. *(Lands in the Multitool
   repo — `AgentSession`/`RoutedAgentSession` already ship here, waiting to be
-  imported.)*
+  imported.)* *(Superseded 2026-08-30 — decision #14: only `AgentSession` waits
+  here; `RoutedAgentSession` is deleted upstream and Multitool brings its own
+  conformer.)*
 - ⬜ **M6 — Skills adoption.** `MetadataSearcher<SkillMetadata>` behind the `search skill`
   op *(lands with Skills M4; the Skills plan already records the delegation as its
   decision #26)*.
@@ -576,6 +627,8 @@ Each example doubles as the acceptance demo for its milestone (`CatalogSearch`
   executable target (`swift run <Name>`) over a unit-tested `<Name>Core`, compiled
   in CI; the Router-backed ones run locally on the M7 tiny-model setup.
   `CatalogSearch` and `Librarian` double as the human-facing E2E.
+  *(Superseded 2026-08-30 — decision #14: no example is Router-backed and there is no
+  tiny-model setup; all five run GPU-free, so `swift run <Name>` needs no model, §13.)*
 
 ## 15. Testing
 
