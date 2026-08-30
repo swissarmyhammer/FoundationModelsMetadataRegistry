@@ -1,0 +1,1 @@
+{"id":"01M1A9951GX0YWAKKCMGF8FW23","timestamp":"2026-08-30T21:30:18.544778Z","op":"create","item_id":"01M1A9951D9VKTWW3J13SASBMD","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: '008672'\n+tag_name: '15'\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: '008672'\n-tag_name: '15'\n","transaction_id":null}
