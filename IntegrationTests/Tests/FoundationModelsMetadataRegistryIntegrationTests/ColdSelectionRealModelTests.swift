@@ -1,4 +1,3 @@
-import FoundationModels
 import FoundationModelsMetadataRegistry
 import Testing
 import os
@@ -81,27 +80,10 @@ struct ColdSelectionRealModelTests {
         // can drift apart. Pointing it at an empty catalog is also how the
         // non-empty assertion below was proved able to fail.
         let catalog = IntegrationCatalog.base
-        // Collected through an `OSAllocatedUnfairLock` rather than a recorder
-        // class: the lock is `Sendable` and `Copyable`, so the `@escaping
-        // @Sendable` callback captures it directly and this suite needs no
-        // `@unchecked Sendable` conformance of its own to justify.
         let recorded = OSAllocatedUnfairLock<[MetadataDiagnostic]>(initialState: [])
         // Built here, per query. See the suite's note on why a reused searcher
         // would be warm and could not see the defect this scenario guards.
-        let searcher = MetadataSearcher(
-            items: catalog,
-            mode: .selection,
-            selection: SelectionConfig(
-                model: { instructions in
-                    LanguageModelSession(model: .default, instructions: instructions)
-                },
-                // Ranker defaults `preamble` to the neutral `.selectionDefault`,
-                // so the librarian text this package ships is stated rather than
-                // inherited -- it is the preamble `^nwt7nz4` measured.
-                preamble: .librarianDefault
-            ),
-            onDiagnostic: { diagnostic in recorded.withLock { $0.append(diagnostic) } }
-        )
+        let searcher = SelectionScenario.makeSearcher(over: catalog, reporting: recorded)
 
         let matches = try await ModelAvailability.recordingEnvironmentFaults {
             try await searcher.search(intent: intent, limit: catalog.count)
@@ -128,38 +110,6 @@ struct ColdSelectionRealModelTests {
             """
         )
 
-        let invented = Self.unknownSelectedIds(among: recorded.withLock { $0 })
-        #expect(
-            invented.isEmpty,
-            """
-            the model answered "\(intent)" with \(invented), which is no id of this catalog. \
-            That diagnostic fired in none of the 125 cold runs measured on `^nwt7nz4`.
-            """
-        )
-    }
-
-    /// The ids `MetadataDiagnostic.unknownSelectedId` named among `diagnostics`,
-    /// as one comma-separated clause for a failure message.
-    ///
-    /// **Filter for the case; never test the collection for emptiness.**
-    /// `.embeddingUnavailable` fires on **every** selection search this package
-    /// makes — 55 of 55 runs measured on `^nwt7nz4` — because `SelectionTier`'s
-    /// under-budget path calls `retrievalRanking` once per call to attach a real
-    /// `score` and `signals`, and that closure reports the missing embedder.
-    /// This package wires no embedder, so an assertion that no diagnostic was
-    /// recorded would fail on every run, for a reason that has nothing to do
-    /// with the defect this suite guards.
-    ///
-    /// - Parameter diagnostics: everything the searcher reported for one search.
-    /// - Returns: the invented ids, sorted and joined; empty when there were
-    ///   none.
-    private static func unknownSelectedIds(among diagnostics: [MetadataDiagnostic]) -> String {
-        diagnostics
-            .compactMap { diagnostic -> String? in
-                guard case .unknownSelectedId(let id) = diagnostic else { return nil }
-                return id
-            }
-            .sorted()
-            .joined(separator: ", ")
+        SelectionScenario.expectNoUnknownSelectedId(among: recorded.withLock { $0 }, answering: intent)
     }
 }

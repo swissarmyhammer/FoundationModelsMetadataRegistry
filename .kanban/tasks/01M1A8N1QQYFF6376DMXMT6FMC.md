@@ -55,10 +55,37 @@ comments:
     - evidence: 2 files — `IntegrationTests/Tests/FoundationModelsMetadataRegistryIntegrationTests/ColdSelectionRealModelTests.swift` (new), `IntegrationTests/Tests/FoundationModelsMetadataRegistryIntegrationTests/Support/ModelAvailability.swift` (the discharged `// periphery:ignore`). `swift test --package-path IntegrationTests` three times: 3 tests in 3 suites pass each run, the parameterized test 4 of 4 cases each run, 12 of 12 query outcomes non-empty, zero `.unknownSelectedId`. RED proved first with an empty catalog: 4 of 4 cases failed on `!matches.isEmpty` and on nothing else. `swift build --package-path IntegrationTests --build-tests` clean. Root `swift test` unchanged at 115 tests in 12 suites. No commit; `stash@{0}` untouched.
     - next: `/review`. Every acceptance criterion and every test box on the card is ticked.
   timestamp: 2026-08-30T22:52:42.546329+00:00
+- actor: claude-code
+  id: 01m1ae5ewtz3awep3dmr5gfkba
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit e687da5) — 0 findings, 0 confirmed, 0 refuted, 7 validators attempted, 0 failed, 0 skipped. 2 files reviewed; 6 `.kanban/` files excluded by `.reviewignore`. Zero new findings; all prior checklist items checked.
+    - next: none. Task moved to done.
+  timestamp: 2026-08-30T22:55:40.442961+00:00
+- actor: claude-code
+  id: 01m1ae6cz8njsn9f5zcgv6jfgd
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 2 files: IntegrationTests/Tests/.../ColdSelectionRealModelTests.swift (new), .../Support/ModelAvailability.swift (periphery:ignore discharged now that recordingEnvironmentFaults has a caller)
+    - test: green — RED first with an empty catalog: all 4 cases failed on `!matches.isEmpty` alone. Then 3 consecutive `swift test --package-path IntegrationTests` runs, 3 tests in 3 suites passing each, **12 of 12 query outcomes non-empty, zero .unknownSelectedId**. swift build --package-path IntegrationTests --build-tests: 0 warnings, 0 errors. Root swift test: 115 tests in 12 suites, unchanged.
+    - commit: e687da5 test(integration): add cold MetadataSearcher real-model selection test
+    - review: clean — 0 findings, 7 validators, task moved to done
+
+    ### The three things the reviewer verified, not assumed
+    1. **The searcher really is per query.** `catalog`, `recorded` and `searcher` are all locals of the test body. The only suite-level state is an immutable `[String]` of intents — no session. Each case's `LanguageModelSession` is built inside a `SelectionConfig` constructed fresh for that case. Nothing warm crosses cases, which is the whole point: `fork()` returns `self`, so a hoisted searcher would be warm from call two and blind to the defect this test guards.
+    2. **The non-empty assertion is reachable and ordered first**, so an empty return fails on that line alone.
+    3. **The diagnostic filter survives company.** `compactMap` with `guard case .unknownSelectedId` drops every other case, so an `.unknownSelectedId` sitting among 55 `.embeddingUnavailable` entries is still extracted and still fails.
+
+    ### One honest limit on the RED, recorded by the reviewer
+    `limit: catalog.count` binds the limit to the same catalog, so the empty-catalog RED also drives `limit: 0`. That proves the assertion is **reachable**, not specifically that a populated catalog with an empty model answer would fail it. The real-path evidence for that is `^nwt7nz4`'s off-topic control returning empty 5/5 over a populated catalog. Not a finding — the binding is deliberate and documented in the file — but worth knowing the proof is two-part.
+
+    ### Design note carried forward
+    The diagnostic sink is `OSAllocatedUnfairLock<[MetadataDiagnostic]>`, not the root suite's `DiagnosticRecorder` (unreachable — a test target is not a product) and not `Synchronization.Mutex`, which is `~Copyable` and so cannot be captured by the `@escaping @Sendable` `onDiagnostic` closure.
+  timestamp: 2026-08-30T22:56:11.240792+00:00
 depends_on:
 - 01M1A97K9T94SEZ0CA0NWT7NZ4
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: 9f80
 title: 'Real-model test: a cold MetadataSearcher returns only catalog ids'
 ---
 ## What
