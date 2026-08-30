@@ -34,10 +34,10 @@ for match in matches {
 
 This path does not need an embedder, a model, or a session. Retrieval alone fuses
 BM25 (id field ×5, block ×1) and character-trigram Dice by reciprocal rank fusion.
-Thus `commit` gets the first rank although its block does not contain the query's
-words. Add a `TextEmbedding` conformer to get a cosine signal. Add a
-`SelectionConfig` to let an LLM select verbatim ids from catalogs too large for
-one prompt.
+Thus `commit` gets the first rank although its own block never says the word
+`commit` — the ×5 id field carries that term. Add a `TextEmbedding` conformer to
+get a cosine signal. Add a `SelectionConfig` to let an LLM select verbatim ids
+from catalogs too large for one prompt.
 
 ## Install
 

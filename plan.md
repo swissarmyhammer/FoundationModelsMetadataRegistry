@@ -19,6 +19,12 @@ embedders come from [`../FoundationModelsRouter`](../FoundationModelsRouter/plan
 > adoption) are pending and land in their own repos. Where the implementation
 > refined the original design, the sections below describe what shipped and
 > mark the superseded idea inline.
+>
+> **Update 2026-08-30 — decision #14.** The `FoundationModelsRouter` dependency
+> and the gated integration suite (M7) are removed; the package depends on
+> `FoundationModelsRanker` alone. The library (M1–M4) and the `Examples/` suite
+> (M8) still ship, now GPU-free throughout. Every section below that describes a
+> Router-backed path is history, and says so.
 
 ---
 
@@ -305,6 +311,13 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
 
 ## 10. Dependencies & packaging
 
+> *(Superseded in part, 2026-08-30 — decision #14. The `FoundationModelsRouter`
+> bullet below no longer holds: that dependency is gone, and with it
+> `RoutedEmbedderAdapter` from the list of what `FoundationModelsRanker`
+> supplies. The macOS 27 floor is unchanged but now stands on
+> FoundationModelsRanker's own, which is identical. The rest of this section is
+> current.)*
+
 - **Single SwiftPM library target `FoundationModelsMetadataRegistry`**, macOS 27+ (the
   Router floor; same platform commitment as Multitool/Agents, no fallback paths), plus
   the `Examples/` executable targets (§13) — demos only, never a dependency of the
@@ -379,8 +392,55 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
     (`.duplicateId`, `.embeddingUnavailable`, `.unknownSelectedId`, `.retrievalCut`,
     `.embedCatchUp`), defaulting to an `os.Logger` sink. New diagnostics add a case,
     not a parameter.
+14. *(2026-08-30 — supersedes §10's `FoundationModelsRouter` bullet, §1's
+    `RoutedSession`/`RoutedEmbedder` seam note, and every "Router-backed" reading of
+    §6, §12, §13 and §14/M7)* **The Router dependency is removed.** This package now
+    declares exactly one dependency, `FoundationModelsRanker`, and names Router
+    nowhere. Ranker itself declares `dependencies: []`, so that single entry is the
+    whole resolved graph, and a clean build takes seconds instead of compiling a
+    model runtime.
+
+    What went with it:
+
+    - **The production conformers.** `RoutedEmbedderAdapter` (the `TextEmbedding`
+      seam's) and `RoutedAgentSession` (the `AgentSession` seam's) are deleted
+      upstream. Both seams remain, unchanged and still the whole contract — a caller
+      supplies its own conformer, as a caller always could. The library never
+      constructed a session itself, so nothing in the retrieval or selection tier
+      changed shape to lose them.
+    - **The live-model examples.** No `LiveRouterSupport` target, and no MLX or
+      Hugging Face product anywhere. All five demos are GPU-free: they rank through
+      `ExamplesSupport`'s `DeterministicEmbedder` and select through its scripted
+      `DemoAgentSession`. That embedder hashes text rather than modelling meaning, so
+      `SemanticSearch` now shows how the cosine signal is *wired in*, not how well it
+      ranks — read it for the plumbing, not for retrieval quality.
+    - **The gated integration suite (M7).** The nested `IntegrationTests/` package is
+      gone with the models it drove, so the repository has no integration suite at
+      all and `ci.yml` calls the shared `swift-ci.yaml` with no inputs. A bare
+      `swift test` at the root is now the whole suite.
+
+    Two API changes came with Ranker's Router-free release, and §6/§12's signatures
+    predate them: `SelectionConfig` takes a one-argument
+    `@Sendable (String) -> any AgentSession` and stores a `sessionSource:
+    SelectionSessionSource` (`.factory` / `.session`) — no `Grammar` parameter,
+    because `Grammar` was a Router type; and grammar construction is now
+    `idEnumSchema(ids:) throws -> String` in place of `idEnumGrammar(ids:) ->
+    Grammar`. Ownership is unchanged: the tier still derives the id set per call, and
+    the caller's factory still decides the model and the wiring.
+
+    Why: nothing left in the repository resolved a real model. The Router pin, and
+    the MLX/Hugging Face graph it dragged behind it, cost every build and every CI run
+    for a capability no code exercised. Consumers that do want a real model wire their
+    own conformer to the two seams, which is the shape §1 always asked for.
 
 ## 12. Public API (as shipped)
+
+> *(Superseded in part, 2026-08-30 — decision #14. The searcher, `Match`, the
+> modes, `update(items:)` and the three initializers are all current. The
+> selection half of the block below is not: `RoutedEmbedderAdapter` and
+> `RoutedAgentSession` no longer exist, and `SelectionConfig`'s factory now
+> takes the assembled prefix alone. A caller today passes its own
+> `TextEmbedding` and `AgentSession` conformers into the same two parameters.)*
 
 ```swift
 // Domain side — e.g. Skills:
@@ -427,6 +487,12 @@ Three initializers ship: `init(items:...)` (sync, keyword-only index),
 `.selection` mode without a `SelectionConfig` throws `SelectionTierUnavailable`.
 
 ## 13. Examples
+
+> *(Superseded in part, 2026-08-30 — decision #14. No example is Router-backed
+> any more, and there is no `LiveRouterSupport` target: all five run GPU-free
+> on `ExamplesSupport`'s `DeterministicEmbedder` and its scripted
+> `DemoAgentSession`, so `swift run <Name>` needs no model. Each example's
+> subject — what it demonstrates, and the milestone it proves — is unchanged.)*
 
 Examples are **explicit, runnable deliverables** — each a small executable
 target under `Examples/` (`swift run <Name>`), kept compiling in CI (the family
@@ -502,6 +568,9 @@ Each example doubles as the acceptance demo for its milestone (`CatalogSearch`
   (`swift test --package-path IntegrationTests`), per the org test contract in
   swissarmyhammer/workflows' README; CI runs it via the shared `swift-ci.yaml`
   workflow's `integration-package-path` input, not a repo-local job.
+  *(Removed 2026-08-30 — decision #14: the `IntegrationTests/` package is
+  deleted with the models it drove, and `ci.yml` now passes the shared workflow
+  no input at all.)*
 - ✅ **M8 — Examples.** The `Examples/` suite (§13): `CatalogSearch`,
   `SemanticSearch`, `Librarian`, `BigCatalog`, `HotReload` — each a runnable
   executable target (`swift run <Name>`) over a unit-tested `<Name>Core`, compiled
@@ -518,6 +587,11 @@ invalidation with a counting `FakeEmbedder`. The integration suite (M7) follows
 the Router pattern (`.serialized`, tiny real models) and lives in the nested
 `IntegrationTests/` package — no env var selects it; the root `swift test`
 runs the unit tests only (the org test contract).
+
+*(Superseded 2026-08-30 — decision #14: there is no integration suite. The unit
+tier above is the whole suite, and a bare `swift test` at the root runs every
+test this repository has. The org test contract is met by there being no second
+target to select, not by a package boundary — and still by no env var.)*
 
 ---
 

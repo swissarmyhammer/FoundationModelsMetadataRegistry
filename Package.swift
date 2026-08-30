@@ -6,21 +6,27 @@ import PackageDescription
 /// The package, library product, and library target name.
 ///
 /// Repeated identifiers are extracted to named constants so the manifest has
-/// a single source of truth, following the pattern established by the sibling
-/// FoundationModelsRouter and CodeContextKit packages.
+/// a single source of truth, the same convention the sibling
+/// FoundationModelsRanker package's manifest follows.
 let packageName = "FoundationModelsMetadataRegistry"
 
-/// The name of the FoundationModelsRanker dependency package.
+/// The name of the FoundationModelsRanker dependency package — the only
+/// package this manifest declares.
 ///
-/// The shared search/ranking primitives library this package's ported
-/// copies were extracted into (plan.md decision #9). Supplies `BM25`,
-/// `BM25Corpus`, `Trigram`, `Tokenizer`, `RRF`, `Hit`, `Signals`,
-/// `TextEmbedding`, and `RoutedEmbedderAdapter`, re-exported to this
-/// package's consumers via `FoundationModelsRankerReexport.swift`. Wired as a remote
-/// dependency (`main` branch) rather than a local path dependency, for the
-/// same CI reason as `routerDependencyName` above. FoundationModelsRanker itself depends
-/// on FoundationModelsRouter `main`, so SwiftPM unifies it with the
-/// existing pin.
+/// The shared search/ranking library this package's ported copies were
+/// extracted into (plan.md decision #9). It supplies the retrieval
+/// primitives (`BM25`, `BM25Corpus`, `Trigram`, `Tokenizer`, `RRF`, `Hit`,
+/// `Signals`), the embedding seam (`TextEmbedding`), and the whole selection
+/// tier (`SelectionTier`, `SelectionConfig`, `AgentSession`, and the types
+/// they carry) — all re-exported to this package's consumers via
+/// `FoundationModelsRankerReexport.swift`.
+///
+/// Wired as a remote dependency (`main` branch) rather than a local path
+/// dependency: a `../FoundationModelsRanker` path resolves only where the
+/// sibling repository is already checked out beside this one, so a fresh
+/// clone and CI could not build it. FoundationModelsRanker's own manifest
+/// declares `dependencies: []`, so this single entry is also the whole
+/// resolved graph.
 let foundationModelsRankerPackage = "FoundationModelsRanker"
 
 /// The GitHub organization URL base the one swissarmyhammer-family
@@ -83,12 +89,11 @@ func exampleExecutableTarget(name: String, coreName: String) -> Target {
 /// logic as a plain library, depending on the main library target plus
 /// `ExamplesSupport` and nothing else, rooted at `Examples/<name>`.
 ///
-/// Every core now has the GPU-free, Router-free shape `CatalogSearchCore`
-/// always had. The four that once resolved a real embedder or session through
-/// a live `Router` do so no longer — the demos run against `ExamplesSupport`'s
-/// deterministic embedder and scripted `DemoAgentSession`, and no real-model
-/// path is left anywhere in the repository. So no core links MLX or Hugging
-/// Face, and no core needs a Router product.
+/// Every core is GPU-free. A core that needs a vector uses
+/// `ExamplesSupport`'s `DeterministicEmbedder`, and a core that needs a
+/// session uses its scripted `DemoAgentSession`; no core resolves a real
+/// model. So no core links a model-loading product, and `swift build` needs
+/// no GPU, no network, and no weights on disk.
 ///
 /// `CatalogSearchCore`, `SemanticSearchCore`, `LibrarianCore`,
 /// `BigCatalogCore`, and `HotReloadCore` each declared this identical shape
@@ -123,8 +128,9 @@ func exampleCoreTarget(name: String) -> Target {
 /// when a test target depends on an executable target directly.
 let package = Package(
     name: packageName,
-    // Commit to macOS 27 / FoundationModels v2; floor inherited from
-    // FoundationModelsRouter, no pre-27 fallback (plan.md §10).
+    // Commit to macOS 27 / FoundationModels v2, no pre-27 fallback (plan.md
+    // §10). FoundationModelsRanker declares the same floor, so the one
+    // dependency imposes no higher one.
     platforms: [
         .macOS("27.0")
     ],

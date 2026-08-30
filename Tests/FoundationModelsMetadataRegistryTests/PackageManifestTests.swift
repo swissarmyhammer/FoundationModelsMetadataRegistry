@@ -18,6 +18,13 @@ import Testing
 /// library is built over FoundationModelsRanker alone, so the manifest
 /// declares that one package and no other. A later edit that adds one of the
 /// live-Router packages back fails this suite too.
+///
+/// Last, the suite pins the *prose*: `Package.swift` and the files under
+/// `Sources/` may not so much as spell `FoundationModelsRouter`,
+/// `RoutedEmbedderAdapter`, or `RoutedAgentSession`. A comment describing a
+/// dependency the package does not have, or a type that no longer exists,
+/// misleads a reader exactly as a stale API doc does, and nothing else in
+/// the build catches it.
 @Suite("Package manifest")
 struct PackageManifestTests {
     /// The products that pull the live-Router path into a target: MLX's
@@ -49,8 +56,30 @@ struct PackageManifestTests {
     /// The one package this library depends on.
     private static let rankerPackageName = "FoundationModelsRanker"
 
+    /// The names the Router removal retired, which no covered file may spell
+    /// even in prose.
+    ///
+    /// `FoundationModelsRouter` is the package this library no longer
+    /// depends on. `RoutedEmbedderAdapter` and `RoutedAgentSession` were the
+    /// two production conformers that wrapped it — the embedding seam's and
+    /// the session seam's — and both are deleted upstream, so a comment that
+    /// still offers either one sends a reader after a type that no compiler
+    /// will find.
+    private static let removedRouterNames = [
+        "FoundationModelsRouter",
+        "RoutedEmbedderAdapter",
+        "RoutedAgentSession",
+    ]
+
     /// The suffix a Git URL ends in, removed to read the package name.
     private static let gitURLSuffix = ".git"
+
+    /// The manifest, relative to the repository root.
+    private static let manifestFileName = "Package.swift"
+
+    /// The directory holding the library's own sources, relative to the
+    /// repository root.
+    private static let sourcesDirectoryName = "Sources"
 
     @Test("Package.swift names no MLX or Hugging Face product")
     func namesNoLiveRouterProduct() throws {
@@ -90,6 +119,19 @@ struct PackageManifestTests {
             """
             Package.swift must declare exactly one dependency, \(Self.rankerPackageName); \
             found: \(declared)
+            """
+        )
+    }
+
+    @Test("Package.swift and Sources/ spell none of the removed Router names")
+    func spellsNoRemovedRouterName() throws {
+        let offenders = try Self.filesSpellingARemovedRouterName()
+        #expect(
+            offenders.isEmpty,
+            """
+            Package.swift and every file under Sources/ must spell none of \
+            \(Self.removedRouterNames) — this package does not depend on that package, and \
+            those two types no longer exist; found: \(offenders)
             """
         )
     }
@@ -220,19 +262,67 @@ struct PackageManifestTests {
         text.matches(of: pattern).compactMap { $0[1].substring.map(String.init) }
     }
 
-    /// Reads `Package.swift`, resolving it relative to this source file's own
-    /// path (`#filePath` is
-    /// `Tests/FoundationModelsMetadataRegistryTests/PackageManifestTests.swift`,
-    /// two directories below the root).
+    /// Reads each covered file and reports the ones that spell a removed
+    /// name.
+    ///
+    /// This is a plain text read, and deliberately so. `declaredPackageNames()`
+    /// reads the manifest's entries precisely because a doc comment naming a
+    /// package is not a dependency on it; here the prose *is* the subject, so
+    /// the comment naming it is exactly what must be caught.
+    ///
+    /// - Returns: `"<repository-relative path>: <names>"` for each offending
+    ///   file, sorted by path.
+    /// - Throws: an error when `Sources/` cannot be listed, or when a covered
+    ///   file cannot be read.
+    private static func filesSpellingARemovedRouterName() throws -> [String] {
+        try coveredFiles()
+            .compactMap { file in
+                let text = try String(contentsOf: file, encoding: .utf8)
+                let spelled = removedRouterNames.filter { text.contains($0) }
+                guard !spelled.isEmpty else { return nil }
+                return "\(repositoryRelativePath(of: file)): \(spelled.joined(separator: ", "))"
+            }
+            .sorted()
+    }
+
+    /// Lists the files the removed-name ban covers: the manifest, plus every
+    /// regular file under `Sources/` at any depth.
+    ///
+    /// Directories are dropped rather than read; `Sources/` is nested, so the
+    /// listing contains both.
+    ///
+    /// - Returns: the covered files.
+    /// - Throws: an error when `Sources/` cannot be listed.
+    private static func coveredFiles() throws -> [URL] {
+        let fileManager = FileManager.default
+        let sources = RepositoryFiles.root.appendingPathComponent(sourcesDirectoryName)
+        let sourceFiles = try fileManager.subpathsOfDirectory(atPath: sources.path)
+            .map { sources.appendingPathComponent($0) }
+            .filter { file in
+                var isDirectory: ObjCBool = false
+                let exists = fileManager.fileExists(atPath: file.path, isDirectory: &isDirectory)
+                return exists && !isDirectory.boolValue
+            }
+        return [RepositoryFiles.root.appendingPathComponent(manifestFileName)] + sourceFiles
+    }
+
+    /// Names a covered file the way the repository does, so a failure message
+    /// points at a path a reader can open.
+    ///
+    /// - Parameter file: a file at or below the repository root.
+    /// - Returns: the path relative to the repository root, or the absolute
+    ///   path when the file lies outside it.
+    private static func repositoryRelativePath(of file: URL) -> String {
+        let rootPrefix = RepositoryFiles.root.path + "/"
+        guard file.path.hasPrefix(rootPrefix) else { return file.path }
+        return String(file.path.dropFirst(rootPrefix.count))
+    }
+
+    /// Reads `Package.swift` from the repository root.
     ///
     /// - Returns: the whole text of the manifest.
     /// - Throws: an error when the manifest cannot be read.
     private static func manifestText() throws -> String {
-        let manifest = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()  // Tests/FoundationModelsMetadataRegistryTests/
-            .deletingLastPathComponent()  // Tests/
-            .deletingLastPathComponent()  // repository root
-            .appendingPathComponent("Package.swift")
-        return try String(contentsOf: manifest, encoding: .utf8)
+        try RepositoryFiles.text(at: manifestFileName)
     }
 }
