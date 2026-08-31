@@ -35,12 +35,54 @@ comments:
     - not done, by the card: no push. The CI-run criterion is the orchestrator's, post-push.
     - next: `/review`
   timestamp: 2026-08-30T23:18:50.277226+00:00
+- actor: claude-code
+  id: 01m1aft6gcgq8yjtcm5bwkksxw
+  text: |
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` — 0 findings (7 attempted, 0 confirmed, 0 refuted, 0 failed). Zero new findings, no prior findings sections.
+    - scope note: the engine reviewed the two Swift files and reported `plan.md` as "no validator matches this file". The truth of that file is the substance of this card, so its claims were checked by hand against the code.
+    - doc-truth audit, decision #15 (plan.md:506, dated 2026-08-30) — every claim true:
+      - `IntegrationTests/` package exists; 4 `@Suite` and 5 `@Test` declarations = "five tests in four suites".
+      - `ColdSelectionRealModelTests` and `HotReloadRealModelTests` drive the model; `ModelAvailabilityTests` and `IntegrationCatalogTests` hold the availability gate and the fixture catalog — exactly as written.
+      - `ci.yml:37` passes `integration-package-path: IntegrationTests`.
+      - "no `.serialized` trait on any of its suites" — no match for `serialized` in the package.
+      - "FoundationModels exposes no embedding API" — consistent: Ranker's `TextEmbedding` is a caller-supplied protocol seam that imports nothing and ships no embedder.
+      - "Ranker's own four real-model tests" — four `*RealModelTests` files exist in Ranker's nested integration package.
+    - absence-claim sweep of `Package.swift`, `plan.md`, `README.md`, `.github/` and all of `Tests/`: three residual "no integration suite" statements remain, at plan.md:40, plan.md:485 and plan.md:730. Each is retained history and each carries a dated decision #15 marker immediately after it (plan.md:32, 488, 735). No unmarked misleading claim found. Per the card's note, marked history is not staleness.
+    - decision #15 markers stand at plan.md:32 (§1 status), 372 (§10), 488 (§13 M7 bullet), 700 (§14 M7), 735 (§15 closing), plus the entry at 506.
+    - `PlanDocumentTests`: `"IntegrationTests"` removed from `retiredNameStems`; `Router`, `Routed`, `Grammar` retained and the enforcement path unchanged, so the kept stems are still guarded.
+    - `PackageManifestTests` doc comment now reads true: the Router-backed suite is gone, and the nested package that stands in its place drives Apple Intelligence.
+    - next: CI's `Integration` job conclusion is deferred to the orchestrator after the push, per the card.
+  timestamp: 2026-08-30T23:24:28.556389+00:00
+- actor: claude-code
+  id: 01m1afv433yxb3tsvsm8xrysty
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 3 files: Tests/.../PlanDocumentTests.swift, Tests/.../PackageManifestTests.swift, plan.md
+    - test: green — swift test 115 tests in 12 suites; swift test --package-path IntegrationTests 5 tests in 4 suites; swift build --build-tests on both packages, 0 warnings. Two mutation probes run and reverted.
+    - commit: eed1753 docs(plan): reconcile docs and guard tests with the reinstated integration suite
+    - review: clean — 0 findings, 7 validators, task moved to done. This closes the board.
+
+    ### The trap was proven in both directions
+    Before the fix, an unmarked and **true** present-tense sentence about the live `IntegrationTests/` directory in plan.md §7 made `PlanDocumentTests` fail — demanding a decision #14 history marker on a directory that exists. After removing the stem, an unmarked `Router` mention still fails, so the kept stems are genuinely still guarded. That is the right pair of probes: one shows the old rule was wrong, the other shows the new rule still bites.
+
+    ### The reviewer checked plan.md by hand
+    The engine reported plan.md as "no validator matches this file". Since the truth of that file is this card's whole substance, the reviewer verified decision #15's claims against the code rather than let them pass unreviewed. All true: the nested package exists with 4 @Suite and 5 @Test declarations; ci.yml:37 passes integration-package-path; no `.serialized` trait anywhere in the package; Ranker really has four *RealModelTests files.
+
+    The absence-claim sweep found three surviving "no integration suite" statements at plan.md:40, :485 and :730 — each retained history, each carrying a dated decision #15 marker immediately after it. No reader meets an unmarked false claim.
+
+    ### One file beyond the card's list
+    `PackageManifestTests`'s suite doc comment claimed "the real-model suite that did is gone". The card's own acceptance criterion greps the whole test suite for that claim, so fixing it was in scope, not creep.
+
+    ### Still deferred
+    CI's `Integration` job conclusion. `/finish` never pushes, so the orchestrator verifies the live run after the user pushes.
+  timestamp: 2026-08-30T23:24:58.851012+00:00
 depends_on:
 - 01M1A8N1QQYFF6376DMXMT6FMC
 - 01M1A8NKPNMZJCCMJFHDDAXWAZ
 - 01M1A96ZZCKAB5SE03AF10JVV9
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: a180
 title: Reconcile the docs and guard tests that still say the integration suite is gone
 ---
 ## What
