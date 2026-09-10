@@ -70,7 +70,34 @@ comments:
     - evidence: 2 files — Sources/FoundationModelsMetadataRegistry/MetadataSearcher+Search.swift, Tests/FoundationModelsMetadataRegistryTests/EmbeddingCatchUpTests.swift. `swift build` clean, `swift test` 120 tests in 12 suites passed, `swiftlint lint` on both files exits 0. All 3 review findings are now `- [x]`.
     - next: `/review`
   timestamp: 2026-09-10T07:35:17.794517+00:00
-position_column: doing
+- actor: claude-code
+  id: 01m2549ajvaksm6sy1y4q4cnpv
+  text: |-
+    ### finish iteration 2 — stuck
+    - implement: changed — 2 files, all 3 review findings worked
+    - test: stuck — swift test 120 passed, 0 failed, 0 skipped, 0 compiler warnings; swiftlint reports 44 `trailing_comma` warnings
+    - commit: 1f7f4f8
+    - review: not run
+
+    ## Blocker — a rule conflict a person must settle
+
+    SwiftFormat's default `trailingCommas` rule adds a trailing comma to the last item of a
+    multi-line array, dictionary or argument list. SwiftLint's default `trailing_comma` rule
+    (`mandatory_comma: false`) reports that same comma as a violation. The repository holds no
+    `.swiftformat` file and no `.swiftlint.yml` file, so nothing makes the two tools agree.
+
+    Proof, both directions:
+    - After a clean `swiftformat` run, `swiftlint` reports 44 `trailing_comma` warnings.
+    - After a clean `swiftlint --fix` run, `swiftformat --lint` reports 20 files that need a change.
+
+    No setting inside the code makes both tools pass. A person must pick one side and add the
+    matching config file:
+    - `.swiftlint.yml` with `trailing_comma: { mandatory_comma: true }`, or the rule disabled; or
+    - `.swiftformat` that turns the trailing-comma behavior off.
+
+    Then start this task again.
+  timestamp: 2026-09-10T07:42:31.003126+00:00
+position_column: review
 position_ordinal: '80'
 title: 'MetadataSearcher: move to SelectionTier.init(catalog:config:onDiagnostic:) and drop candidateLimit from the tests'
 ---
