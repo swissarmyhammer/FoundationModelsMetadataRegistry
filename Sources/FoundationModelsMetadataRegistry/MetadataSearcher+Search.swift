@@ -171,7 +171,7 @@ extension MetadataSearcher {
         switch firstSearchCatchUp {
         case .done:
             return
-        case let .running(task):
+        case .running(let task):
             await task.value
         case .pending:
             let task = Task { await self.runFirstSearchCatchUp() }

@@ -1,0 +1,19 @@
+# SwiftFormat options for this package.
+#
+# The review gate runs SwiftFormat with these four options. This file states the
+# same four options, so a bare `swiftformat` run agrees with the gate.
+#
+# Give the paths before `--lint`, because SwiftFormat reads the word after
+# `--lint` as a value for that option:
+#
+#     swiftformat Sources Tests Examples --lint
+#
+# This file does not change the trailing-comma behavior. SwiftFormat writes a
+# trailing comma at the last item of a multi-line list, and `.swiftlint.yml`
+# holds `trailing_comma: { mandatory_comma: true }` so that SwiftLint accepts
+# that comma. The two files must stay in agreement.
+
+--pattern-let inline
+--short-optionals always
+--single-line-for-each convert
+--guard-like-if-statements convert

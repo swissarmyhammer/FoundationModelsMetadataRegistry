@@ -146,6 +146,99 @@ comments:
     - evidence: 4 files — .swiftlint.yml (new), Examples/LibrarianCore/LibrarianCore.swift, Sources/FoundationModelsMetadataRegistry/Catalog/Diagnostics.swift, Sources/FoundationModelsMetadataRegistry/MetadataSearcher+Search.swift. `swift build` exit 0 with 0 warnings; `swift test` 120 tests in 12 suites passed, 0 failed, 0 skipped; `swiftlint lint --quiet Sources Tests Examples IntegrationTests` 0 violations in this package's own files (0 `trailing_comma`); `swiftformat Sources Tests Examples --lint` 0 of 48 files need a change.
     - next: `/review`
   timestamp: 2026-09-10T12:13:57.991837+00:00
+- actor: claude-code
+  id: 01m25m6s1ncwf24qwj4pxpratr
+  text: |
+    ### review — findings
+    - evidence: 7 findings, 7 confirmed, 0 refuted — Sources/FoundationModelsMetadataRegistry/Catalog/Diagnostics.swift:21, :23, :72, :80, :82, :89, Sources/FoundationModelsMetadataRegistry/MetadataSearcher+Search.swift:174
+    - scope: `review sha HEAD~1..HEAD` (commit db6dc0b). 3 files reviewed. `.swiftlint.yml` has no validator. The `.kanban/` files are in the ignore rule.
+    - next: correct the 7 findings, then run the review again. The task stays in the review column.
+
+    ## Note on the direction of the hoistPatternLet rule
+
+    All 7 findings are on the lines that the last step hoisted. Read the direction
+    before you make the edit, because the two tools do not use the same default.
+
+    - The review gate runs SwiftFormat with the option `--pattern-let inline`. It
+      wants `case .retrievalCut(let considered, let kept)`.
+    - This repository has no `.swiftformat` file, so the SwiftFormat default
+      `hoist` applies. It wants `case let .retrievalCut(considered, kept)`, which
+      is the form in the code now.
+
+    Measurement made at this review, with SwiftFormat 0.62.1:
+
+    - `swiftformat Sources Examples Tests --lint` — 0 of 48 files need a change.
+    - `swiftlint lint --quiet Sources Examples` — 0 violations.
+    - A probe file with the hoisted form, and a `.swiftformat` file that holds
+      `--patternlet inline`: SwiftFormat then reports 1 of 1 files need a change.
+
+    So a configuration file makes the two tools agree, and this is not a rule
+    conflict. This is the same shape as the trailing-comma decision the user
+    settled: make the repository configuration agree with the gate.
+
+    Action for the implement step:
+
+    1. Add `.swiftformat` at the repository root with the line `--patternlet inline`.
+    2. Run SwiftFormat on the two named files, so every pattern-let in each whole
+       file takes the inline form, not only the 7 named lines.
+    3. Verify: `swiftformat Sources Tests Examples --lint` reports 0 files that
+       need a change, `swiftlint lint --quiet Sources Tests Examples` reports no
+       violation in this package's own files, `swift build` gives no warning, and
+       `swift test` passes.
+
+    SwiftLint has no opinion here. Its `pattern_matching_keywords` rule is opt-in
+    and `.swiftlint.yml` does not turn it on, so SwiftLint stays quiet for both
+    forms.
+  timestamp: 2026-09-10T12:20:44.725041+00:00
+- actor: claude-code
+  id: 01m25m7c2r57hjkpb8hj94bnfm
+  text: |
+    ### finish iteration 3 — findings
+    - implement: changed — 4 files, the `.swiftlint.yml` the user asked for
+    - test: green — swift test, 120 tests in 12 suites passed, 0 failed, 0 skipped; swiftformat --lint 0 of 48 files; swiftlint 0 violations in this package's own files
+    - commit: db6dc0b
+    - review: findings — 7 `hoistPatternLet` findings: Sources/FoundationModelsMetadataRegistry/Catalog/Diagnostics.swift:21, :23, :72, :80, :82, :89, Sources/FoundationModelsMetadataRegistry/MetadataSearcher+Search.swift:174
+  timestamp: 2026-09-10T12:21:04.216295+00:00
+- actor: claude-code
+  id: 01m25mbz9had786dz4c4c1w3kf
+  text: |
+    Worked the 7 `hoistPatternLet` findings the way the review note said. The cause was a missing configuration file, not the code.
+
+    1. Added `.swiftformat` at the repository root. It holds the four options the project guidelines name, so a bare `swiftformat` run agrees with the review gate:
+
+    ```
+    --pattern-let inline
+    --short-optionals always
+    --single-line-for-each convert
+    --guard-like-if-statements convert
+    ```
+
+    SwiftFormat 0.62.1 knows all four names. `swiftformat --options` lists them in this hyphenated spelling. The earlier review note wrote `--patternlet inline`; the correct spelling for this version is `--pattern-let inline`.
+
+    2. Ran `swiftformat Sources Tests Examples` with the new file. The run changed 2 of 48 files, and it changed only the pattern-let bindings. Every pattern-let of each whole file is now inline, not only the 7 named lines:
+       - `Catalog/Diagnostics.swift` — 6 cases: `.embeddingUnavailable`, `.unknownSelectedId`, `.retrievalCut`, `.embedCatchUp` in the two functions of the file.
+       - `MetadataSearcher+Search.swift` — 1 case: `.running(let task)`.
+
+    3. No trailing comma moved. The diff holds only the `case let X(a, b)` to `case .X(let a, let b)` change. The new `.swiftformat` says nothing about the trailing comma, so SwiftFormat keeps its default behavior and `.swiftlint.yml` (`trailing_comma: { mandatory_comma: true }`) still agrees with it. The two tools do not fight. There is no blocker.
+
+    4. Checked every file of the package, not only the two named. `swiftformat Sources Tests Examples --lint` reports 0 of 48 files need a change, and `swiftformat IntegrationTests/Tests --lint` reports 0 of 7.
+
+    The other three options change nothing in this package today. They stand in the file because the gate states them, so a future edit gets the same answer from a local run as from the gate.
+
+    Verification, all from the repository root:
+    - `swift build` — exit 0. `swift build 2>&1 | grep -ciE "warning|error"` reports 0.
+    - `swift test` — 120 tests in 12 suites passed. `swift test 2>&1 | grep -icE "failed|skipped|warning:"` reports 0.
+    - `swift build --package-path IntegrationTests --build-tests` — Build complete, and the same grep reports 0.
+    - `swiftformat Sources Tests Examples --lint` — 0 of 48 files require formatting. The paths must come before `--lint`, because SwiftFormat 0.62.1 reads the next word as a value for that option.
+    - `swiftlint lint --quiet Sources Tests Examples IntegrationTests` — 187 violation lines, and all 187 hold a `/.build/` path. Those belong to the dependency checkouts, not to this package. This package's own files give 0 violations.
+  timestamp: 2026-09-10T12:23:34.961536+00:00
+- actor: claude-code
+  id: 01m25mc3v625k0vnf3mtq8cczz
+  text: |
+    ### implement — changed
+    - evidence: 3 files — .swiftformat (new), Sources/FoundationModelsMetadataRegistry/Catalog/Diagnostics.swift, Sources/FoundationModelsMetadataRegistry/MetadataSearcher+Search.swift. `swift build` exit 0 with 0 warning lines; `swift test` 120 tests in 12 suites passed, 0 failed, 0 skipped; `swift build --package-path IntegrationTests --build-tests` complete with 0 warning lines; `swiftformat Sources Tests Examples --lint` 0 of 48 files require formatting; `swiftlint lint --quiet Sources Tests Examples IntegrationTests` 0 violations in this package's own files (all 187 lines hold a `/.build/` path). All 7 review findings are now `- [x]`.
+    - next: `/review`
+  timestamp: 2026-09-10T12:23:39.622603+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'MetadataSearcher: move to SelectionTier.init(catalog:config:onDiagnostic:) and drop candidateLimit from the tests'
@@ -192,3 +285,21 @@ The ranker board holds the same record as card `^6kd63xc`. This card is the copy
 - [x] `Sources/FoundationModelsMetadataRegistry/MetadataSearcher+Search.swift:246` `code-hygiene/idioms-swift` — isEmpty: Prefer isEmpty over comparing count against zero.
 - [x] `Tests/FoundationModelsMetadataRegistryTests/EmbeddingCatchUpTests.swift:29` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
 - [x] `Tests/FoundationModelsMetadataRegistryTests/EmbeddingCatchUpTests.swift:125` `code-hygiene/idioms-swift` — preferCountWhere: Prefer count(where:) over filter(_:).count.
+
+## Review Findings (2026-09-10 07:17)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 3 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `.swiftlint.yml` — no validator matches this file
+
+- [x] `Sources/FoundationModelsMetadataRegistry/Catalog/Diagnostics.swift:21` `code-hygiene/idioms-swift` — hoistPatternLet: Reposition let or var bindings within pattern.
+- [x] `Sources/FoundationModelsMetadataRegistry/Catalog/Diagnostics.swift:23` `code-hygiene/idioms-swift` — hoistPatternLet: Reposition let or var bindings within pattern.
+- [x] `Sources/FoundationModelsMetadataRegistry/Catalog/Diagnostics.swift:72` `code-hygiene/idioms-swift` — hoistPatternLet: Reposition let or var bindings within pattern.
+- [x] `Sources/FoundationModelsMetadataRegistry/Catalog/Diagnostics.swift:80` `code-hygiene/idioms-swift` — hoistPatternLet: Reposition let or var bindings within pattern.
+- [x] `Sources/FoundationModelsMetadataRegistry/Catalog/Diagnostics.swift:82` `code-hygiene/idioms-swift` — hoistPatternLet: Reposition let or var bindings within pattern.
+- [x] `Sources/FoundationModelsMetadataRegistry/Catalog/Diagnostics.swift:89` `code-hygiene/idioms-swift` — hoistPatternLet: Reposition let or var bindings within pattern.
+- [x] `Sources/FoundationModelsMetadataRegistry/MetadataSearcher+Search.swift:174` `code-hygiene/idioms-swift` — hoistPatternLet: Reposition let or var bindings within pattern.
