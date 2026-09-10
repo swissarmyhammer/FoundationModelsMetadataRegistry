@@ -1,6 +1,5 @@
-import Testing
-
 @testable import FoundationModelsMetadataRegistry
+import Testing
 
 /// Tests for `MetadataSearcher`'s keyword-only `.retrieval` mode (plan.md
 /// §3, §5, §7): golden rankings over a fixture catalog, limit handling,
@@ -14,7 +13,9 @@ struct RetrievalSearchTests {
         let id: String
         let block: String
 
-        func renderBlock() -> String { block }
+        func renderBlock() -> String {
+            block
+        }
     }
 
     /// A ~20-item ops-command catalog. None of the blocks below repeat their
@@ -41,7 +42,7 @@ struct RetrievalSearchTests {
         FixtureItem(id: "secrets", block: "manages encrypted configuration values"),
         FixtureItem(id: "network", block: "configures virtual network topology"),
         FixtureItem(id: "firewall", block: "controls inbound and outbound traffic rules"),
-        FixtureItem(id: "dns", block: "manages domain name records"),
+        FixtureItem(id: "dns", block: "manages domain name records")
     ]
 
     // MARK: - Golden ranking: id-field weighting
@@ -159,7 +160,7 @@ struct RetrievalSearchTests {
     // MARK: - Diagnostic forwarding
 
     @Test
-    func searcherForwardsIndexBuildDiagnosticsThroughOnDiagnostic() async throws {
+    func searcherForwardsIndexBuildDiagnosticsThroughOnDiagnostic() {
         let recorder = DiagnosticRecorder()
         let duplicated = Self.catalog + [FixtureItem(id: "deploy", block: "a different deploy block")]
         _ = MetadataSearcher(items: duplicated, onDiagnostic: { recorder.record($0) })
@@ -168,7 +169,7 @@ struct RetrievalSearchTests {
     }
 
     @Test
-    func noDiagnosticEmittedWhenCatalogHasNoDuplicates() async throws {
+    func noDiagnosticEmittedWhenCatalogHasNoDuplicates() {
         let recorder = DiagnosticRecorder()
         _ = MetadataSearcher(items: Self.catalog, onDiagnostic: { recorder.record($0) })
 
@@ -232,7 +233,9 @@ struct RetrievalSearchTests {
         let secondMatches = try await secondOrder.search(intent: "twinword", limit: 2)
 
         #expect(secondMatches.map(\.id) == ["twinword", "twin-one"])
-        let secondScores = try #require(secondMatches.count == 2 ? (secondMatches[0].score, secondMatches[1].score) : nil)
+        let secondScores = try #require(
+            secondMatches.count == 2 ? (secondMatches[0].score, secondMatches[1].score) : nil
+        )
         #expect(abs(secondScores.0 - secondScores.1) < 1e-9)
     }
 

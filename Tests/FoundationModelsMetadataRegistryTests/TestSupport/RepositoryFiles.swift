@@ -13,10 +13,10 @@ enum RepositoryFiles {
     /// `Tests/FoundationModelsMetadataRegistryTests/TestSupport/RepositoryFiles.swift`,
     /// three directories below the root).
     static let root = URL(fileURLWithPath: #filePath)
-        .deletingLastPathComponent()  // TestSupport/
-        .deletingLastPathComponent()  // Tests/FoundationModelsMetadataRegistryTests/
-        .deletingLastPathComponent()  // Tests/
-        .deletingLastPathComponent()  // repository root
+        .deletingLastPathComponent() // TestSupport/
+        .deletingLastPathComponent() // Tests/FoundationModelsMetadataRegistryTests/
+        .deletingLastPathComponent() // Tests/
+        .deletingLastPathComponent() // repository root
 
     /// Reads one of the repository's files as text.
     ///

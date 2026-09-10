@@ -39,7 +39,7 @@ public struct DemoAgentSession: AgentSession {
     ///   `{"ids":["tripCities","weather"]}`.
     /// - Throws: an encoding error if `selectedIds` cannot be encoded, which
     ///   `JSONEncoder` never does for an array of `String`.
-    public func respond(to prompt: String) async throws -> String {
+    public func respond(to _: String) async throws -> String {
         let encoded = try JSONEncoder().encode(SelectedIds(ids: selectedIds))
         return String(decoding: encoded, as: UTF8.self)
     }

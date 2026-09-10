@@ -19,7 +19,9 @@ struct IntegrationItem: SearchableMetadata {
     /// Renders this entry to its search surface, which is `block` verbatim.
     ///
     /// - Returns: `block`.
-    func renderBlock() -> String { block }
+    func renderBlock() -> String {
+        block
+    }
 }
 
 /// The fixture every real-model scenario in this package ranks and selects
@@ -66,7 +68,7 @@ enum IntegrationCatalog {
         IntegrationItem(
             id: "foldOrigami",
             block: "Folds a square sheet of paper into an origami crane."
-        ),
+        )
     ]
 
     /// The entry reserved for the add half of a hot-reload scenario: absent
@@ -93,7 +95,7 @@ enum IntegrationCatalog {
     static let groups: [(name: String, items: [IntegrationItem])] = [
         (name: "base", items: base),
         (name: "add-only", items: [addOnly]),
-        (name: "remove-only", items: [removeOnly]),
+        (name: "remove-only", items: [removeOnly])
     ]
 
     /// The set of distinct terms `items` are retrieved by.

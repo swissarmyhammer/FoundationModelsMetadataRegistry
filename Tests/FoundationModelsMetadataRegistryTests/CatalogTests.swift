@@ -1,7 +1,6 @@
 import Foundation
-import Testing
-
 @testable import FoundationModelsMetadataRegistry
+import Testing
 
 /// Tests for the catalog contract (plan.md §4): `SearchableMetadata`,
 /// `Match`, `MetadataIndex`, and the shared `MetadataDiagnostic` surface.
@@ -15,7 +14,9 @@ struct CatalogTests {
         let id: String
         let block: String
 
-        func renderBlock() -> String { block }
+        func renderBlock() -> String {
+            block
+        }
     }
 
     /// A conformer that overrides `renderSummaryBlock()` with something
@@ -25,8 +26,13 @@ struct CatalogTests {
         let block: String
         let summary: String
 
-        func renderBlock() -> String { block }
-        func renderSummaryBlock() -> String { summary }
+        func renderBlock() -> String {
+            block
+        }
+
+        func renderSummaryBlock() -> String {
+            summary
+        }
     }
 
     /// A thread-safe call counter used to prove `MetadataIndex` renders a
@@ -72,7 +78,9 @@ struct CatalogTests {
 
     @Test
     func renderSummaryBlockIsOverridable() {
-        let item = OverridingFixtureMetadata(id: "deploy", block: "a very long full description", summary: "short summary")
+        let item = OverridingFixtureMetadata(
+            id: "deploy", block: "a very long full description", summary: "short summary"
+        )
         #expect(item.renderSummaryBlock() == "short summary")
         #expect(item.renderBlock() == "a very long full description")
     }
@@ -132,7 +140,7 @@ struct CatalogTests {
         let items = [
             FixtureMetadata(id: "deploy", block: "ships containers to a kubernetes cluster"),
             FixtureMetadata(id: "rollback", block: "reverts the last release"),
-            FixtureMetadata(id: "status", block: "reports current release health"),
+            FixtureMetadata(id: "status", block: "reports current release health")
         ]
         let index = MetadataIndex(items: items)
 
@@ -206,7 +214,7 @@ struct CatalogTests {
         let items = [
             FixtureMetadata(id: "deploy", block: "first block"),
             FixtureMetadata(id: "deploy", block: "second block"),
-            FixtureMetadata(id: "deploy", block: "third block"),
+            FixtureMetadata(id: "deploy", block: "third block")
         ]
         let index = MetadataIndex(items: items, onDiagnostic: { recorder.record($0) })
 

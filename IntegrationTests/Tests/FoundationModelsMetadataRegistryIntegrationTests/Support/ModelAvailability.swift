@@ -109,12 +109,12 @@ enum ModelAvailability {
     /// - Throws: Swift Testing's expectation failure.
     private static func recordEnvironmentFault(_ fault: any Error) throws -> Never {
         let explanation = """
-            The model call failed with an environment fault, not a product failure: \
-            \(type(of: fault)) — \(fault.localizedDescription). Apple Intelligence \
-            answered the availability gate and then declined to serve this request, so \
-            this run measures the machine rather than this package. Re-run once the \
-            condition clears.
-            """
+        The model call failed with an environment fault, not a product failure: \
+        \(type(of: fault)) — \(fault.localizedDescription). Apple Intelligence \
+        answered the availability gate and then declined to serve this request, so \
+        this run measures the machine rather than this package. Re-run once the \
+        condition clears.
+        """
 
         try #require(Bool(false), "\(explanation)")
         throw fault
@@ -128,9 +128,9 @@ enum ModelAvailability {
     private static func explanation(of availability: SystemLanguageModel.Availability) -> String {
         switch availability {
         case .available:
-            return "the system language model reports itself available"
+            "the system language model reports itself available"
         case .unavailable(let reason):
-            return "the system language model is unavailable: \(Self.explanation(of: reason))"
+            "the system language model is unavailable: \(Self.explanation(of: reason))"
         }
     }
 

@@ -123,9 +123,9 @@ struct CIWorkflowTests {
     /// - Throws: an error when the file cannot be read.
     private static func workflowLines() throws -> [Substring] {
         let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()  // Tests/FoundationModelsMetadataRegistryTests/
-            .deletingLastPathComponent()  // Tests/
-            .deletingLastPathComponent()  // repository root
+            .deletingLastPathComponent() // Tests/FoundationModelsMetadataRegistryTests/
+            .deletingLastPathComponent() // Tests/
+            .deletingLastPathComponent() // repository root
         let workflow = repoRoot
             .appendingPathComponent(".github/workflows/ci.yml")
         let text = try String(contentsOf: workflow, encoding: .utf8)

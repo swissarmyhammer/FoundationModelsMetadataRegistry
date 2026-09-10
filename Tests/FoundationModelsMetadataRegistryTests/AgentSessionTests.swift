@@ -1,7 +1,6 @@
 import FoundationModels
-import Testing
-
 @testable import FoundationModelsMetadataRegistry
+import Testing
 
 /// Tests for the `AgentSession` seam (plan.md §6, §8 "Seams"): the default
 /// `respond(to:generating:)` decode over `GeneratedContent(json:)`, and

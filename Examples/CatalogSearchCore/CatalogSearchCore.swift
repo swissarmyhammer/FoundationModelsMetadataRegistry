@@ -2,19 +2,19 @@ import ExamplesSupport
 import Foundation
 import FoundationModelsMetadataRegistry
 
-/// # `CatalogSearch`'s entry logic (plan.md §13 M1).
-///
-/// The ~30-line hello world: fixture items conformed to `SearchableMetadata`,
-/// a keyword-only `MetadataSearcher(mode: .retrieval)` — no embedder, no
-/// model, no session — one query, `Match`es with their per-signal
-/// `Signals`. Factored into this library target (rather than living
-/// directly in `CatalogSearch`'s `main.swift`) so `ExamplesSmokeTests` can
-/// import and invoke it directly, GPU-free, with no `swift run` subprocess
-/// spawning.
-///
-/// The `GitCommand` fixture type and the match formatter are shared with
-/// `SemanticSearchCore` via `ExamplesSupport`; only the fixture catalog and
-/// the search entry point live here.
+// # `CatalogSearch`'s entry logic (plan.md §13 M1).
+//
+// The ~30-line hello world: fixture items conformed to `SearchableMetadata`,
+// a keyword-only `MetadataSearcher(mode: .retrieval)` — no embedder, no
+// model, no session — one query, `Match`es with their per-signal
+// `Signals`. Factored into this library target (rather than living
+// directly in `CatalogSearch`'s `main.swift`) so `ExamplesSmokeTests` can
+// import and invoke it directly, GPU-free, with no `swift run` subprocess
+// spawning.
+//
+// The `GitCommand` fixture type and the match formatter are shared with
+// `SemanticSearchCore` via `ExamplesSupport`; only the fixture catalog and
+// the search entry point live here.
 
 /// The fixture catalog `CatalogSearch` searches: five common git
 /// subcommands — the shared `ExamplesSupport.baseGitCommands` prefix as-is.

@@ -2,24 +2,24 @@ import ExamplesSupport
 import Foundation
 import FoundationModelsMetadataRegistry
 
-/// # `SemanticSearch`'s entry logic (plan.md §13 M2).
-///
-/// `CatalogSearch` plus a third signal: `ExamplesSupport`'s
-/// `DeterministicEmbedder` embeds every catalog block and the query, so
-/// cosine joins BM25 and trigram in RRF fusion and appears in each match's
-/// per-signal breakdown. That embedder hashes text rather than modelling
-/// meaning, so this example demonstrates how the cosine signal is wired in,
-/// not how well a real model ranks -- which is what keeps it free of network
-/// and GPU. `--no-embedder` drops the embedder entirely and demonstrates the
-/// graceful keyword-only degradation and its `.embeddingUnavailable`
-/// diagnostic.
-///
-/// Factored into this library target (rather than living directly in
-/// `SemanticSearch`'s `main.swift`) so `ExamplesSmokeTests` can import and
-/// invoke both paths directly, with no `swift run` subprocess spawning.
-///
-/// The `GitCommand` fixture type, the `DeterministicEmbedder`, and the match
-/// formatter are shared with the other examples via `ExamplesSupport`.
+// # `SemanticSearch`'s entry logic (plan.md §13 M2).
+//
+// `CatalogSearch` plus a third signal: `ExamplesSupport`'s
+// `DeterministicEmbedder` embeds every catalog block and the query, so
+// cosine joins BM25 and trigram in RRF fusion and appears in each match's
+// per-signal breakdown. That embedder hashes text rather than modelling
+// meaning, so this example demonstrates how the cosine signal is wired in,
+// not how well a real model ranks -- which is what keeps it free of network
+// and GPU. `--no-embedder` drops the embedder entirely and demonstrates the
+// graceful keyword-only degradation and its `.embeddingUnavailable`
+// diagnostic.
+//
+// Factored into this library target (rather than living directly in
+// `SemanticSearch`'s `main.swift`) so `ExamplesSmokeTests` can import and
+// invoke both paths directly, with no `swift run` subprocess spawning.
+//
+// The `GitCommand` fixture type, the `DeterministicEmbedder`, and the match
+// formatter are shared with the other examples via `ExamplesSupport`.
 
 /// The fixture catalog this example searches — `ExamplesSupport.baseGitCommands`
 /// (`CatalogSearch`'s five git subcommands) plus `status`, whose block shares

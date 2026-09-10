@@ -1,6 +1,5 @@
-import Testing
-
 import FoundationModelsMetadataRegistry
+import Testing
 
 /// Runs the README's usage example and asserts the ranking it advertises.
 ///
@@ -32,7 +31,9 @@ struct ReadmeExampleTests {
         /// Renders the block retrieval indexes, per `SearchableMetadata`.
         ///
         /// - Returns: the block, verbatim.
-        func renderBlock() -> String { block }
+        func renderBlock() -> String {
+            block
+        }
     }
 
     /// The catalog the README's example searches, transcribed from it.
@@ -41,7 +42,7 @@ struct ReadmeExampleTests {
         GitCommand(id: "push", block: "Upload local branch history to a remote server."),
         GitCommand(id: "pull", block: "Download and merge remote branch history."),
         GitCommand(id: "branch", block: "List, create, or delete lines of independent development."),
-        GitCommand(id: "stash", block: "Temporarily set aside uncommitted edits to switch tasks."),
+        GitCommand(id: "stash", block: "Temporarily set aside uncommitted edits to switch tasks.")
     ]
 
     /// The intent the README's example searches for.
@@ -104,7 +105,7 @@ struct ReadmeExampleTests {
         commands.map { #"GitCommand(id: "\#($0.id)", block: "\#($0.block)")"# }
             + [
                 "let searcher = MetadataSearcher(items: commands, mode: .retrieval)",
-                #"let matches = try await searcher.search(intent: "\#(intent)", limit: \#(limit))"#,
+                #"let matches = try await searcher.search(intent: "\#(intent)", limit: \#(limit))"#
             ]
     }
 }

@@ -51,7 +51,7 @@ struct PlanDocumentTests {
     private static let retiredNameStems = [
         "Router",
         "Routed",
-        "Grammar",
+        "Grammar"
     ]
 
     /// The text a section carries to mark its Router-era statements as

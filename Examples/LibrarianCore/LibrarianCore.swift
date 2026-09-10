@@ -1,28 +1,28 @@
 import ExamplesSupport
 import FoundationModelsMetadataRegistry
 
-/// # `Librarian`'s entry logic (plan.md §13 M8): `.selection` mode end-to-end.
-///
-/// Generalizes Multitool's shipped `Librarian` (plan.md §6's namesake) over
-/// this package's own catalog: a cached root session, seeded once with the
-/// whole (under-budget) trip-planning catalog, `fork()`s a fresh child per
-/// query so the prefix's KV cache is prefilled once and inherited per call
-/// (plan.md §6). Output is ids-only, constrained by an id-enum grammar the
-/// tier derives per call so the session is structurally incapable of
-/// inventing a tool that doesn't exist; `MetadataSearcher` maps the returned
-/// ids back through the catalog to verbatim blocks -- never generated text.
-///
-/// `librarianQuery` ("the warmest city on my trip") is an intent-level query:
-/// no single catalog item answers it directly, so answering it requires
-/// picking *both* `tripCities` (to know which cities to check) and
-/// `weather` (to compare their conditions) -- exactly the task-decomposition
-/// reasoning plan.md §6 says lexical/semantic ranking alone can't do.
-///
-/// The session is `ExamplesSupport`'s scripted `DemoAgentSession`, which
-/// names exactly those two ids: this example demonstrates how the cached-root
-/// selection path is wired and what it returns, not how well a real model
-/// decomposes a task -- which is what keeps the whole example free of network
-/// and GPU.
+// # `Librarian`'s entry logic (plan.md §13 M8): `.selection` mode end-to-end.
+//
+// Generalizes Multitool's shipped `Librarian` (plan.md §6's namesake) over
+// this package's own catalog: a cached root session, seeded once with the
+// whole (under-budget) trip-planning catalog, `fork()`s a fresh child per
+// query so the prefix's KV cache is prefilled once and inherited per call
+// (plan.md §6). Output is ids-only, constrained by an id-enum grammar the
+// tier derives per call so the session is structurally incapable of
+// inventing a tool that doesn't exist; `MetadataSearcher` maps the returned
+// ids back through the catalog to verbatim blocks -- never generated text.
+//
+// `librarianQuery` ("the warmest city on my trip") is an intent-level query:
+// no single catalog item answers it directly, so answering it requires
+// picking *both* `tripCities` (to know which cities to check) and
+// `weather` (to compare their conditions) -- exactly the task-decomposition
+// reasoning plan.md §6 says lexical/semantic ranking alone can't do.
+//
+// The session is `ExamplesSupport`'s scripted `DemoAgentSession`, which
+// names exactly those two ids: this example demonstrates how the cached-root
+// selection path is wired and what it returns, not how well a real model
+// decomposes a task -- which is what keeps the whole example free of network
+// and GPU.
 
 // MARK: - Fixture catalog
 
@@ -41,7 +41,7 @@ public let tripPlanningCatalog: [TripPlanningTool] = [
     TripPlanningTool(id: "weather", block: "Looks up the current weather conditions, including temperature, for a named city."),
     TripPlanningTool(id: "currency", block: "Converts an amount between two currencies for trip budgeting."),
     TripPlanningTool(id: "packingList", block: "Suggests a packing list based on trip destinations and expected weather."),
-    TripPlanningTool(id: "flightStatus", block: "Checks the current status of a booked flight by its confirmation number."),
+    TripPlanningTool(id: "flightStatus", block: "Checks the current status of a booked flight by its confirmation number.")
 ]
 
 /// The intent-level query this example is built around: answering it
@@ -90,4 +90,3 @@ public func runLibrarianSelection(
     let searcher = MetadataSearcher(items: tripPlanningCatalog, mode: .selection, selection: config)
     return try await searcher.search(intent: query, limit: limit)
 }
-

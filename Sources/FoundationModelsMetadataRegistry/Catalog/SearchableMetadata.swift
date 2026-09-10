@@ -22,8 +22,10 @@ public protocol SearchableMetadata: Sendable {
     func renderSummaryBlock() -> String
 }
 
-extension SearchableMetadata {
+public extension SearchableMetadata {
     /// The default `renderSummaryBlock()`: identical to `renderBlock()`, for
     /// domains with no shorter summary to offer.
-    public func renderSummaryBlock() -> String { renderBlock() }
+    func renderSummaryBlock() -> String {
+        renderBlock()
+    }
 }

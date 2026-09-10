@@ -37,7 +37,7 @@ struct PackageManifestTests {
         "MLXHuggingFace",
         "MLXLMCommon",
         "HuggingFace",
-        "Tokenizers",
+        "Tokenizers"
     ]
 
     /// The packages the manifest declared while this library resolved a live
@@ -53,7 +53,7 @@ struct PackageManifestTests {
         "mlx-swift-lm",
         "swift-huggingface",
         "swift-transformers",
-        "swift-jinja",
+        "swift-jinja"
     ]
 
     /// The one package this library depends on.
@@ -71,7 +71,7 @@ struct PackageManifestTests {
     private static let removedRouterNames = [
         "FoundationModelsRouter",
         "RoutedEmbedderAdapter",
-        "RoutedAgentSession",
+        "RoutedAgentSession"
     ]
 
     /// The suffix a Git URL ends in, removed to read the package name.
@@ -99,7 +99,7 @@ struct PackageManifestTests {
 
     @Test("Package.swift declares none of the removed dependencies")
     func declaresNoRemovedDependency() throws {
-        let named = Set(try Self.declaredPackageNames() + Self.productPackageNames())
+        let named = try Set(Self.declaredPackageNames() + Self.productPackageNames())
         let removed = named.intersection(Self.removedPackageNames).sorted()
         #expect(
             removed.isEmpty,
@@ -175,7 +175,7 @@ struct PackageManifestTests {
         let constants = try manifestConstants(in: text)
         let urlPattern = try Regex(#"\.package\(\s*url:\s*"([^"]+)""#)
         return try firstCaptures(of: urlPattern, in: text)
-            .map { url in packageName(fromURL: try expanded(url, with: constants)) }
+            .map { url in try packageName(fromURL: expanded(url, with: constants)) }
     }
 
     /// Reads the package name of every `.product(package:)` entry the
@@ -204,7 +204,7 @@ struct PackageManifestTests {
         var constants: [String: String] = [:]
         for match in text.matches(of: constantPattern) {
             guard let name = match[1].substring.map(String.init),
-                let value = match[2].substring.map(String.init)
+                  let value = match[2].substring.map(String.init)
             else { continue }
             constants[name] = value
         }
@@ -231,7 +231,7 @@ struct PackageManifestTests {
         var expandedText = ""
         var readFrom = literal.startIndex
         for match in literal.matches(of: interpolationPattern) {
-            expandedText += literal[readFrom..<match.range.lowerBound]
+            expandedText += literal[readFrom ..< match.range.lowerBound]
             let name = match[1].substring.map(String.init) ?? ""
             expandedText += constants[name] ?? String(literal[match.range])
             readFrom = match.range.upperBound

@@ -1,5 +1,4 @@
 import Foundation
-
 @testable import FoundationModelsMetadataRegistry
 
 /// A deterministic `TextEmbedding` test double, shared by `EmbeddingTests`
@@ -57,10 +56,14 @@ struct FakeEmbedder: TextEmbedding {
 
     /// The total number of texts passed to `embed(_:)` across every call so
     /// far.
-    var embeddedTextCount: Int { counter.count }
+    var embeddedTextCount: Int {
+        counter.count
+    }
 
     /// The texts of every `embed(_:)` call so far, in call order.
-    var embeddedBatches: [[String]] { counter.batches }
+    var embeddedBatches: [[String]] {
+        counter.batches
+    }
 
     func embed(_ texts: [String]) async throws -> [[Float]] {
         counter.record(texts)
@@ -76,8 +79,8 @@ struct FakeEmbedder: TextEmbedding {
 /// Sendable` pattern as `CatalogTests.CallCounter`.
 ///
 /// Synchronization: `recorded` is only ever read (via `count` and
-/// `batches`) or mutated (via `record(_:)`) while holding `lock`.
-// swiftlint:disable:next no_unchecked_sendable  every access to recorded holds lock
+/// `batches`) or mutated (via `record(_:)`) while holding `lock`, so every
+/// access to `recorded` holds `lock`.
 final class EmbedCallCounter: @unchecked Sendable {
     private let lock = NSLock()
 

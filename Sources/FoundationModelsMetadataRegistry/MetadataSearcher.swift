@@ -1,5 +1,3 @@
-import os
-
 /// Per-signal fusion weights for `MetadataSearcher`'s retrieval tier (plan.md §5).
 ///
 /// FoundationModelsRanker's `SignalWeights` under this package's
@@ -52,13 +50,13 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     ///
     /// Replaced wholesale by `update(items:)` (plan.md §8, hot reload) on
     /// every real change.
-    private var index: MetadataIndex<Item>
+    var index: MetadataIndex<Item>
 
     /// The per-signal fusion weights this searcher's retrieval tier uses.
-    private let weights: Weights
+    let weights: Weights
 
     /// Which tier `search(intent:limit:)` uses.
-    private let mode: SearchMode
+    let mode: SearchMode
 
     /// The embedder used to embed the *query* text at search time, or `nil` for keyword-only searches.
     ///
@@ -72,48 +70,39 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// search for a synchronously built index (see `FirstSearchCatchUp`).
     /// The same embedder instance is reused for both roles across every
     /// `update`.
-    private let embedder: (any TextEmbedding)?
+    let embedder: (any TextEmbedding)?
 
     /// Called for every diagnostic emitted while building the index and while searching.
     ///
     /// Currently `.duplicateId`, `.embeddingUnavailable`,
     /// `.unknownSelectedId`, and `.embedCatchUp`.
-    private let onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
+    let onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
 
     /// This searcher's selection tier configuration (plan.md §6), or `nil` when none was supplied at `init`.
     ///
     /// Kept around (rather than only
     /// building `selectionTier` once) so `update(items:)` can rebuild the
     /// tier from the same configuration whenever the index changes.
-    private let selectionConfig: SelectionConfig?
+    let selectionConfig: SelectionConfig?
 
-    /// A selection tier paired with the refreshable index snapshot it ranks over.
+    /// A selection tier paired with the index snapshot it answers over.
     ///
-    /// The tier's `retrievalRanking` closure reads `snapshot` at call
-    /// time, and `selectionSearch(_:intent:limit:)` re-attaches each
-    /// returned id's typed `item` from it. Boxed in an
-    /// `OSAllocatedUnfairLock` (rather than captured as a plain value) so
-    /// `update(items:)` can refresh it in place after an embed catch-up
-    /// merges new vectors into the live index — the freshened embeddings
-    /// reach the tier's over-budget candidate ranking without rebuilding
-    /// the tier (and needlessly dropping its cached root session).
+    /// `selectionSearch(_:intent:limit:)` re-attaches each returned id's
+    /// typed `item` from `snapshot`. A plain value, not a box: the pair is
+    /// immutable for the tier's whole lifetime, because every real content
+    /// change replaces the pair outright.
     ///
     /// Invariant: a pair's snapshot always has content (ids, blocks)
-    /// identical to its tier's own catalog. Every real content change
-    /// replaces the whole pair, and
-    /// `MetadataIndex.mergingEmbeddings(ids:vectors:embeddedFrom:into:)`
-    /// only ever changes stored vectors (hash-guarded), never content — so
-    /// refreshing the snapshot after a merge can never make the ranking or
-    /// the `item` lookups disagree with the catalog generation the tier
-    /// answers over.
-    private typealias ConfiguredSelectionTier = (tier: SelectionTier, snapshot: OSAllocatedUnfairLock<MetadataIndex<Item>>)
+    /// identical to its tier's own catalog, so an `item` lookup can never
+    /// disagree with the catalog generation the tier answered over.
+    typealias ConfiguredSelectionTier = (tier: SelectionTier, snapshot: MetadataIndex<Item>)
 
     /// This searcher's selection tier (plan.md §6), or `nil` when no `SelectionConfig` was supplied at `init`.
     ///
     /// FoundationModelsRanker's
     /// `SelectionTier` over this searcher's index (its `SelectionCatalog`
-    /// conformance), paired with the refreshable index snapshot it ranks
-    /// over (see `ConfiguredSelectionTier`). Without one, `.selection` throws
+    /// conformance), paired with the index snapshot it answers over (see
+    /// `ConfiguredSelectionTier`). Without one, `.selection` throws
     /// `SelectionTierUnavailable`, exactly as it did before a
     /// selection tier existed at all. The snapshot keeps
     /// `Match.item`/`Match.block` consistent even if a concurrent
@@ -122,7 +111,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// (plan.md §8): a fresh `SelectionTier` starts with no cached root
     /// session, a prefix assembled from the new index, and an id-enum
     /// grammar derived from the new id set.
-    private var selectionTier: ConfiguredSelectionTier?
+    var selectionTier: ConfiguredSelectionTier?
 
     /// Where the one-time embed catch-up a synchronously built searcher runs at its first search stands.
     ///
@@ -134,7 +123,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// pending block itself, one time, before it ranks (plan.md §5, §8).
     /// One enum rather than a flag beside an optional task, so "not started",
     /// "in flight" and "finished" can never hold at once.
-    private enum FirstSearchCatchUp {
+    enum FirstSearchCatchUp {
         /// No search has run yet; the first one runs the catch-up.
         case pending
 
@@ -153,7 +142,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// Starts `.done` when no embedder is configured — a keyword-only
     /// searcher has nothing to catch up, and its behavior is unchanged —
     /// and `.pending` otherwise.
-    private var firstSearchCatchUp: FirstSearchCatchUp
+    var firstSearchCatchUp: FirstSearchCatchUp
 
     /// Builds a searcher over `items`, indexing them once at `init` with no embedder.
     ///
@@ -191,7 +180,8 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         )
     }
 
-    /// Builds a searcher over `items`, embedding every item's rendered block through `embedder` at index-build time (plan.md §5, §8).
+    /// Builds a searcher over `items`, embedding every item's rendered block
+    /// through `embedder` at index-build time (plan.md §5, §8).
     ///
     /// The stored embeddings are what let cosine join the fused ranking in
     /// `search(intent:limit:)`.
@@ -222,8 +212,8 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         selection: SelectionConfig? = nil,
         onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) }
     ) async {
-        self.init(
-            index: await MetadataIndex.build(items: items, embedder: embedder, onDiagnostic: onDiagnostic),
+        await self.init(
+            index: MetadataIndex.build(items: items, embedder: embedder, onDiagnostic: onDiagnostic),
             mode: mode,
             weights: weights,
             embedder: embedder,
@@ -273,28 +263,29 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         self.weights = weights
         self.embedder = embedder
         self.onDiagnostic = onDiagnostic
-        self.selectionConfig = selection
-        self.firstSearchCatchUp = embedder == nil ? .done : .pending
-        self.selectionTier = Self.buildSelectionTierIfConfigured(
-            config: selection, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic
+        selectionConfig = selection
+        firstSearchCatchUp = embedder == nil ? .done : .pending
+        selectionTier = Self.buildSelectionTierIfConfigured(
+            config: selection, index: index, onDiagnostic: onDiagnostic
         )
     }
 
-    /// Builds FoundationModelsRanker's `SelectionTier` over `index` when `config` is non-`nil`, or returns `nil` otherwise.
+    /// Builds FoundationModelsRanker's `SelectionTier` over `index` when
+    /// `config` is non-`nil`, or returns `nil` otherwise.
     ///
     /// The tier is built over `index`'s `SelectionCatalog` conformance, paired
-    /// with `index` boxed as the refreshable snapshot the tier's
-    /// `retrievalRanking` reads at call time and
+    /// with `index` itself as the snapshot
     /// `selectionSearch(_:intent:limit:)` re-attaches typed items from
     /// (see `ConfiguredSelectionTier`) — the one piece of tier construction
     /// both the designated initializer and `update(items:)` (plan.md §8,
     /// hot reload) need whenever the underlying index changes: a fresh tier
     /// starts with no cached root session and a prefix assembled from
     /// `index`. The tier's `RankDiagnostic`s are mapped into the same-named
-    /// `MetadataDiagnostic` cases, and its `retrievalRanking` closure is
-    /// wired to `rankEntireCatalog(intent:index:weights:embedder:
-    /// onDiagnostic:)` over the snapshot's current value (each `Match`
-    /// reduced to the item-less `SelectionMatch` the tier ranks with).
+    /// `MetadataDiagnostic` cases.
+    ///
+    /// The tier itself ranks nothing: it makes one prompt that picks, so it
+    /// needs neither the fusion weights nor the embedder this searcher's
+    /// retrieval tier uses.
     ///
     /// `static`, not an instance method: the synchronous designated
     /// initializer builds the pair from its own parameters, and SE-0327's
@@ -306,456 +297,23 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     ///   - config: the selection tier configuration to build against, or
     ///     `nil` when this searcher has no selection tier.
     ///   - index: the catalog index the new tier answers `search(intent:
-    ///     limit:)` calls over, and the snapshot's initial value.
-    ///   - weights: the per-signal fusion weights `retrievalRanking` scores
-    ///     the over-budget candidate ranking with.
-    ///   - embedder: the embedder `retrievalRanking` embeds the intent with
-    ///     for the cosine signal.
-    ///   - onDiagnostic: called for every diagnostic the new tier, and its
-    ///     `retrievalRanking` closure, emit.
+    ///     limit:)` calls over, and the paired snapshot.
+    ///   - onDiagnostic: called for every diagnostic the new tier emits.
     /// - Returns: a freshly constructed selection tier over `index`, paired
-    ///   with its refreshable snapshot — or `nil` when `config` is `nil`.
-    private static func buildSelectionTierIfConfigured(
+    ///   with its snapshot — or `nil` when `config` is `nil`.
+    static func buildSelectionTierIfConfigured(
         config: SelectionConfig?,
         index: MetadataIndex<Item>,
-        weights: Weights,
-        embedder: (any TextEmbedding)?,
         onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void
     ) -> ConfiguredSelectionTier? {
         guard let config else { return nil }
-        let snapshot = OSAllocatedUnfairLock(initialState: index)
         return (
             tier: SelectionTier(
                 catalog: index,
                 config: config,
-                onDiagnostic: { onDiagnostic(MetadataDiagnostic($0)) },
-                retrievalRanking: { intent in
-                    await Self.rankEntireCatalog(
-                        intent: intent,
-                        index: snapshot.withLock { $0 },
-                        weights: weights,
-                        embedder: embedder,
-                        onDiagnostic: onDiagnostic
-                    ).map { match in
-                        SelectionMatch(id: match.id, block: match.block, score: match.score, signals: match.signals)
-                    }
-                }
+                onDiagnostic: { onDiagnostic(MetadataDiagnostic($0)) }
             ),
-            snapshot: snapshot
+            snapshot: index
         )
-    }
-
-    // MARK: - Hot reload (plan.md §8)
-
-    /// Hot-reloads this searcher's catalog from `items`.
-    ///
-    /// 1. Re-renders blocks and rebuilds the tokenized/trigram indexes
-    ///    synchronously (`MetadataIndex.incrementalBaseline(items:previous:
-    ///    onDiagnostic:)`) and assigns the result to `index` immediately —
-    ///    items are keyword-searchable (`.retrieval`/`.auto`'s BM25 +
-    ///    trigram signals) before this call even reaches the embedder.
-    /// 2. Re-embeds incrementally: only items whose `(id, block-hash)`
-    ///    changed since the previous index are embedded, reusing every other
-    ///    item's stored embedding. This step awaits `embedder.embed(_:)` —
-    ///    an actor reentrancy point, so a concurrent `search(intent:limit:)`
-    ///    interleaves and sees the already-rebuilt keyword indexes with cosine
-    ///    absent for the still-pending items (the absent-signal rule, plan.md
-    ///    §5), never blocked behind the whole re-embed. The pending/total gap
-    ///    is reported once via `MetadataDiagnostic.embedCatchUp(pending:
-    ///    total:)`. This call also takes over the first-search catch-up of a
-    ///    synchronously built searcher (see `FirstSearchCatchUp`): once a
-    ///    reload owns the embedding, a search that lands in this interim
-    ///    window serves keyword-only rather than embedding the same pending
-    ///    blocks a second time.
-    /// 3. Drops the cached selection-tier root session by rebuilding the
-    ///    whole tier over the new index: the next under-budget `.selection`/
-    ///    `.auto` search re-prefills against the new catalog (one prefix
-    ///    re-prefill), and any id-enum grammar a caller derives from the
-    ///    tier's candidate ids reflects the new id set. Once the re-embed's
-    ///    vectors merge in, the tier's refreshable ranking snapshot is
-    ///    updated in place (see `ConfiguredSelectionTier`), so the caught-up
-    ///    embeddings reach the over-budget candidate ranking immediately —
-    ///    not only after the next content change.
-    ///
-    /// Hash-guarded: if `items` renders to content identical to what's
-    /// already indexed (same ids, same block hashes) *and* nothing is
-    /// pending an embed (every entry already carries a real embedding, or
-    /// none is expected), this call is a complete no-op — no re-embedding,
-    /// no selection-tier rebuild, no diagnostics — so callers may forward
-    /// every upstream change notification (file watcher, MCP `listChanged`)
-    /// without coalescing them first. Content-identical but still catching
-    /// up (e.g. a prior embed call failed transiently) still re-embeds, just
-    /// without rebuilding the selection tier — nothing keyword/selection-
-    /// relevant changed, only the still-missing embedding is worth
-    /// finishing, and it reaches the tier through the snapshot refresh
-    /// above rather than a rebuild that would pointlessly drop the cached
-    /// root session.
-    ///
-    /// - Parameter items: the catalog's new/refreshed items, in first-seen-
-    ///   wins duplicate-id order (forwarded to `MetadataIndex`'s duplicate-id
-    ///   policy).
-    public func update(items: [Item]) async {
-        // A reload owns the catch-up from here on: whatever this call leaves
-        // pending is served keyword-only in the interim and embedded by this
-        // call (or the next reload), never by a first search embedding the
-        // same blocks a second time behind it.
-        firstSearchCatchUp = .done
-        let previous = index
-        let (baseline, pendingEmbedIDs, textsToEmbed) = MetadataIndex.incrementalBaseline(
-            items: items,
-            previous: previous,
-            onDiagnostic: onDiagnostic
-        )
-
-        let contentChanged = !baseline.hasIdenticalContent(to: previous)
-        guard contentChanged || !pendingEmbedIDs.isEmpty else { return }
-
-        index = baseline
-        // Only a genuine content change warrants dropping the cached root
-        // session -- catching up an embedding for otherwise-unchanged
-        // content doesn't affect keyword search or the selection prefix at
-        // all, so forcing a re-prefill for it would be pure waste.
-        if contentChanged {
-            selectionTier = Self.buildSelectionTierIfConfigured(
-                config: selectionConfig, index: baseline, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic
-            )
-        }
-
-        guard !pendingEmbedIDs.isEmpty, let embedder else { return }
-        await catchUpEmbeddings(ids: pendingEmbedIDs, texts: textsToEmbed, embeddedFrom: baseline, with: embedder)
-    }
-
-    /// Embeds `texts` through `embedder`, then merges the vectors into the live `index` under `ids` and refreshes the selection tier's ranking snapshot.
-    ///
-    /// The one place a catch-up batch lands, shared by `update(items:)` and
-    /// the first-search catch-up (`runFirstSearchCatchUp()`). Reports the
-    /// pending/total gap via `.embedCatchUp` before the embedder call, once.
-    ///
-    /// Merges into `index` as it stands *after* the suspension -- not into
-    /// the stale `baseline` this batch was embedded from -- and only where
-    /// `index`'s current entry still matches `baseline`'s block hash for
-    /// that id (`MetadataIndex.mergingEmbeddings(ids:vectors:embeddedFrom:
-    /// into:)`'s hash check). A concurrent `update(items:)` call may have
-    /// moved the catalog on in the meantime (actor reentrancy across the
-    /// `await`); its result must win, never be silently clobbered by this
-    /// call's now-stale vector finishing late -- including when that
-    /// concurrent call re-embedded the *same* id with different content,
-    /// not just when it removed the id outright.
-    ///
-    /// The tier's ranking snapshot is refreshed in place so the freshly
-    /// merged embeddings reach the over-budget candidate ranking now, not
-    /// only after the next content change -- without rebuilding the tier,
-    /// which would drop its cached root session for no reason (nothing
-    /// content-relevant changed). Safe across the reentrancy for the same
-    /// reason the merge is: the merge never changes content, so `merged`
-    /// always matches the *current* tier's own catalog generation,
-    /// whichever call installed it.
-    ///
-    /// An embedder that throws, or returns a vector count other than
-    /// `ids.count`, leaves every entry with whatever embedding it had --
-    /// graceful degradation, the same as `MetadataIndex.build(items:
-    /// embedder:previous:onDiagnostic:)`; a later search then reports the
-    /// still-absent embeddings via `.embeddingUnavailable`.
-    ///
-    /// - Parameters:
-    ///   - ids: the ids to embed, positionally aligned with `texts`.
-    ///   - texts: the rendered blocks to embed, one per id.
-    ///   - baseline: the index this batch was read from -- `ids`' block
-    ///     hashes there are what `index`'s current entries must still match
-    ///     for the merge to apply.
-    ///   - embedder: the embedder to embed `texts` with.
-    private func catchUpEmbeddings(
-        ids: [String],
-        texts: [String],
-        embeddedFrom baseline: MetadataIndex<Item>,
-        with embedder: any TextEmbedding
-    ) async {
-        onDiagnostic(.embedCatchUp(pending: ids.count, total: baseline.count))
-        guard let vectors = try? await embedder.embed(texts), vectors.count == ids.count else { return }
-        let merged = MetadataIndex.mergingEmbeddings(ids: ids, vectors: vectors, embeddedFrom: baseline, into: index)
-        index = merged
-        selectionTier?.snapshot.withLock { $0 = merged }
-    }
-
-    /// Searches the catalog for `intent`, returning at most `limit` matches ordered by descending fused score.
-    ///
-    /// The first call on a searcher built synchronously with an embedder
-    /// embeds every not-yet-embedded catalog entry before it ranks, one
-    /// time, whichever tier `mode` selects (see `FirstSearchCatchUp`); every
-    /// later call ranks straight away.
-    ///
-    /// - Parameters:
-    ///   - intent: the search query.
-    ///   - limit: the maximum number of matches to return. `limit <= 0`
-    ///     yields an empty result rather than throwing or crashing.
-    /// - Returns: `.retrieval`'s fused, `[0, 1]`-normalized matches;
-    ///   `.selection`'s verbatim matches when a selection tier is configured
-    ///   (plan.md §6); `.auto`'s resolution of whichever of those applies
-    ///   (plan.md §7).
-    /// - Throws: `SelectionTierUnavailable` when `mode == .selection` and no
-    ///   selection tier is configured (`init(..., selection:)`); otherwise
-    ///   whatever the underlying selection session throws.
-    public func search(intent: String, limit: Int) async throws -> [Match<Item>] {
-        await catchUpEmbeddingsBeforeFirstSearch()
-        switch mode {
-        case .retrieval:
-            return await retrievalSearch(intent: intent, limit: limit)
-        case .selection:
-            guard let selectionTier else { throw SelectionTierUnavailable() }
-            return try await Self.selectionSearch(selectionTier, intent: intent, limit: limit)
-        case .auto:
-            if let selectionTier {
-                return try await Self.selectionSearch(selectionTier, intent: intent, limit: limit)
-            }
-            return await retrievalSearch(intent: intent, limit: limit)
-        }
-    }
-
-    // MARK: - First-search embed catch-up (plan.md §5, §8)
-
-    /// Runs the first-search catch-up (see `FirstSearchCatchUp`) if it is still pending, or awaits the one in flight.
-    ///
-    /// Returns at once when the catch-up is `.done`. The stored `Task` is
-    /// what makes two searches that arrive before the first embed resolves
-    /// share one embedder call: the second one awaits the first one's task
-    /// instead of embedding the same blocks again. The task is created here,
-    /// stored in `firstSearchCatchUp`, and awaited by every caller, so it
-    /// never outlives the catch-up it runs.
-    private func catchUpEmbeddingsBeforeFirstSearch() async {
-        switch firstSearchCatchUp {
-        case .done:
-            return
-        case .running(let task):
-            await task.value
-        case .pending:
-            let task = Task { await self.runFirstSearchCatchUp() }
-            firstSearchCatchUp = .running(task)
-            await task.value
-        }
-    }
-
-    /// Embeds every catalog entry that carries no embedding yet, then marks the first-search catch-up `.done`.
-    ///
-    /// A no-op -- no diagnostic, no embedder call -- when no embedder is
-    /// configured or nothing is pending (an index the async initializer
-    /// already embedded), so a searcher that needs no catch-up pays nothing
-    /// beyond this check on its first search. Marks `.done` on every exit,
-    /// a transient embed failure included: the catch-up runs one time, and
-    /// the next `update(items:)` retries whatever is still pending.
-    private func runFirstSearchCatchUp() async {
-        defer { firstSearchCatchUp = .done }
-        guard let embedder else { return }
-        let pending = index.pendingEmbeddings()
-        guard !pending.ids.isEmpty else { return }
-        await catchUpEmbeddings(ids: pending.ids, texts: pending.texts, embeddedFrom: index, with: embedder)
-    }
-
-    // MARK: - Selection tier (plan.md §6, via FoundationModelsRanker)
-
-    /// Answers one `.selection`/`.auto` search through FoundationModelsRanker's `SelectionTier`.
-    ///
-    /// Maps each returned `SelectionMatch` into this
-    /// package's typed `Match<Item>` by looking its id up in the tier's
-    /// paired index snapshot — the tier's `SelectionCatalog` carries no item
-    /// type, so the typed `item` is re-attached here. The lookup is against
-    /// `selection.snapshot` (not the actor's live `index`) so `Match.item`
-    /// always pairs with the same catalog generation that produced
-    /// `Match.block`, even if a concurrent `update(items:)` swapped the
-    /// live index while this call was suspended in the tier (the snapshot's
-    /// content always matches the tier's own catalog — see
-    /// `ConfiguredSelectionTier`'s invariant). Every id the tier returns
-    /// resolves in that snapshot by construction (the tier filters unknown
-    /// ids itself); the `compactMap` is defensive.
-    ///
-    /// - Parameters:
-    ///   - selection: the tier to search, paired with the refreshable index
-    ///     snapshot it ranks over.
-    ///   - intent: the plain-language search intent.
-    ///   - limit: the maximum number of matches to return.
-    /// - Returns: the selected items' verbatim `Match`es, at most `limit`.
-    /// - Throws: whatever the tier's underlying session throws.
-    private static func selectionSearch(
-        _ selection: ConfiguredSelectionTier,
-        intent: String,
-        limit: Int
-    ) async throws -> [Match<Item>] {
-        let selectionMatches = try await selection.tier.search(intent: intent, limit: limit)
-        let snapshot = selection.snapshot.withLock { $0 }
-        return selectionMatches.compactMap { match in
-            guard let item = snapshot.item(forID: match.id) else { return nil }
-            return Match(id: match.id, block: match.block, score: match.score, signals: match.signals, item: item)
-        }
-    }
-
-    // MARK: - Retrieval tier (plan.md §5, via FoundationModelsRanker)
-
-    /// Runs the `.retrieval` tier through FoundationModelsRanker's `HybridRanker.topMatches`.
-    ///
-    /// `HybridRanker.topMatches(ids:documents:query:cosineScores:weights:
-    /// limit:)` fuses the BM25 + trigram + cosine rankings and normalizes to
-    /// `[0, 1]`; the hits map back through the catalog to verbatim `Match`es
-    /// (plan.md §5). Only ever returns documents at least one signal
-    /// actually ranked — contrast `rankEntireCatalog(intent:index:weights:
-    /// embedder:onDiagnostic:)`, which the over-budget selection path needs
-    /// a full, always-`index.count`-long ordering from.
-    private func retrievalSearch(intent: String, limit: Int) async -> [Match<Item>] {
-        guard limit > 0, index.count > 0 else { return [] }
-
-        let cosineScores = await Self.computeCosineScores(
-            intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic
-        )
-        let hits = HybridRanker.topMatches(
-            ids: index.ids,
-            documents: Self.rankedDocuments(in: index),
-            query: intent,
-            cosineScores: cosineScores,
-            weights: weights,
-            limit: limit
-        )
-        return Self.matches(fromHits: hits, in: index)
-    }
-
-    // MARK: - Over-budget candidate ranking (plan.md §6)
-
-    /// Ranks the entire catalog for `intent`, best-first, always returning exactly `index.count` matches.
-    ///
-    /// Runs through FoundationModelsRanker's
-    /// `HybridRanker.fullOrdering(ids:documents:query:cosineScores:weights:)`:
-    /// documents any signal actually ranked come first, ordered exactly like
-    /// `retrievalSearch(intent:limit:)`'s own fused/normalized ranking;
-    /// every other document follows in catalog order, scored `0.0` with
-    /// all-absent `Signals` (the absent-signal rule, plan.md §5, extended to
-    /// "no signal ranked this document at all"). This is `SelectionTier`'s
-    /// over-budget top-M candidate source (`SelectionTier.init(index:config:
-    /// onDiagnostic:retrievalRanking:)`) — unlike `retrievalSearch(intent:
-    /// limit:)`, which only ever returns real matches, the over-budget path
-    /// needs a full ordering so its top-M candidate count is always
-    /// `min(candidateLimit, index.count)`, never fewer just because a
-    /// query's signal overlap with the catalog happens to be sparse.
-    ///
-    /// - Parameters:
-    ///   - intent: the search query.
-    ///   - index: the catalog index to rank.
-    ///   - weights: the per-signal fusion weights.
-    ///   - embedder: the embedder to embed `intent` with for the cosine
-    ///     signal, or `nil` to skip it.
-    ///   - onDiagnostic: called for every diagnostic emitted while ranking
-    ///     (currently only `.embeddingUnavailable`).
-    /// - Returns: exactly `index.count` matches, best-first.
-    private static func rankEntireCatalog(
-        intent: String,
-        index: MetadataIndex<Item>,
-        weights: Weights,
-        embedder: (any TextEmbedding)?,
-        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
-    ) async -> [Match<Item>] {
-        guard index.count > 0 else { return [] }
-
-        let cosineScores = await computeCosineScores(
-            intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic
-        )
-        let hits = HybridRanker.fullOrdering(
-            ids: index.ids,
-            documents: rankedDocuments(in: index),
-            query: intent,
-            cosineScores: cosineScores,
-            weights: weights
-        )
-        return matches(fromHits: hits, in: index)
-    }
-
-    // MARK: - Shared ranking inputs and Hit -> Match mapping
-
-    /// Every indexed entry's precomputed `RankedDocument`, positionally aligned with `index.ids`.
-    ///
-    /// This is the `documents` array both `HybridRanker`
-    /// entry points score. Every id in `index.ids` resolves by construction
-    /// (`ids` is exactly the set `rankedDocument(forID:)` can answer for),
-    /// so the `compactMap` never drops anything; `HybridRanker`'s own
-    /// `ids.count == documents.count` precondition would trap if that
-    /// invariant ever broke.
-    ///
-    /// - Parameter index: the catalog index to gather documents from.
-    /// - Returns: one `RankedDocument` per indexed id, in `ids` order.
-    private static func rankedDocuments(in index: MetadataIndex<Item>) -> [RankedDocument] {
-        index.ids.compactMap { index.rankedDocument(forID: $0) }
-    }
-
-    /// Computes the raw per-document cosine scores `HybridRanker` fuses as its cosine signal, or `nil` to skip the signal entirely.
-    ///
-    /// `intent` is embedded through `embedder` and scored
-    /// against each catalog entry's stored block embedding via
-    /// `CosineScoring.cosineSimilarity(_:_:)` (plan.md §5 "brute-force
-    /// scoring — plain per-row dot products for cosine — is exact and
-    /// effectively instant" at metadata scale; decision #10, no vector
-    /// store).
-    ///
-    /// Degrades to keyword-only (`nil`) and reports `.embeddingUnavailable`
-    /// via `onDiagnostic` — exactly once per search — whenever cosine can't
-    /// contribute: no `embedder` is configured, none of the catalog's items
-    /// carry an embedding yet, or embedding the query itself fails
-    /// (including a misbehaving embedder returning no vector at all for a
-    /// one-element input — a degradation worth reporting, not a silent
-    /// skip; plan.md §1 "every degradation is reported, never silent").
-    /// A zero `weights.cosine` also returns `nil`, but *without* the
-    /// diagnostic: the caller doesn't want the signal, so there's no reason
-    /// to embed the query or warn about a missing embedder for it. An item
-    /// with no stored embedding scores `0.0` — the absent-signal rule
-    /// (plan.md §5): it contributes nothing to cosine but still ranks via
-    /// BM25 + trigram.
-    ///
-    /// - Parameters:
-    ///   - intent: the search query.
-    ///   - index: the catalog index whose stored embeddings are scored.
-    ///   - weights: the per-signal fusion weights (cosine is only computed
-    ///     when `weights.cosine > 0.0`).
-    ///   - embedder: the embedder to embed `intent` with, or `nil` to
-    ///     degrade to keyword-only.
-    ///   - onDiagnostic: called with `.embeddingUnavailable` when cosine
-    ///     was wanted but can't contribute.
-    /// - Returns: one raw cosine score per document, positionally aligned
-    ///   with `index.ids`, or `nil` to skip the cosine signal.
-    private static func computeCosineScores(
-        intent: String,
-        index: MetadataIndex<Item>,
-        weights: Weights,
-        embedder: (any TextEmbedding)?,
-        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
-    ) async -> [Double]? {
-        // Cosine only runs when configured to actually count: a zero weight
-        // means the caller doesn't want the signal, so there's no reason to
-        // embed the query or warn about a missing embedder for it.
-        guard weights.cosine > 0.0 else { return nil }
-        guard let embedder, index.ids.contains(where: { index.embedding(forID: $0) != nil }),
-            let queryEmbedding = try? await embedder.embed([intent]).first
-        else {
-            onDiagnostic(.embeddingUnavailable)
-            return nil
-        }
-
-        return index.ids.map { id in
-            guard let itemEmbedding = index.embedding(forID: id) else { return 0.0 }
-            return CosineScoring.cosineSimilarity(queryEmbedding, itemEmbedding)
-        }
-    }
-
-    /// Maps FoundationModelsRanker's `Hit`s back into this package's typed `Match<Item>`es.
-    ///
-    /// Each hit's id is looked up in `index` — the id,
-    /// fused score, and raw per-signal `Signals` carry over verbatim, and
-    /// the catalog's stored block and typed `item` are re-attached here (a
-    /// `Hit` carries neither). Every id a hit carries resolves in `index`
-    /// by construction (the hits were ranked over `index.ids`); the
-    /// `compactMap` is defensive.
-    ///
-    /// - Parameters:
-    ///   - hits: the ranked hits to map, in the order the result preserves.
-    ///   - index: the catalog index to look items/blocks up in.
-    /// - Returns: one `Match` per resolvable hit, in order.
-    private static func matches(fromHits hits: [Hit], in index: MetadataIndex<Item>) -> [Match<Item>] {
-        hits.compactMap { hit in
-            guard let item = index.item(forID: hit.id), let block = index.block(forID: hit.id) else { return nil }
-            return Match(id: hit.id, block: block, score: hit.score, signals: hit.signals, item: item)
-        }
     }
 }

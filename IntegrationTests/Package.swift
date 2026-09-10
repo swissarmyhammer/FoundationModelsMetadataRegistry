@@ -62,7 +62,7 @@ let package = Package(
         .macOS("27.0")
     ],
     dependencies: [
-        .package(path: ".."),
+        .package(path: "..")
     ],
     targets: [
         // The real-model suite. One dependency, one product: no Router, no
@@ -73,7 +73,7 @@ let package = Package(
         .testTarget(
             name: "\(productPackageName)IntegrationTests",
             dependencies: [
-                .product(name: productPackageName, package: productPackageName),
+                .product(name: productPackageName, package: productPackageName)
             ],
             path: "Tests/\(productPackageName)IntegrationTests"
         )

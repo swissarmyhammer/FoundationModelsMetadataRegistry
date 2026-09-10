@@ -1,6 +1,6 @@
 import FoundationModelsMetadataRegistry
-import Testing
 import os
+import Testing
 
 /// The first scenario in this package that drives Apple Intelligence: a **cold**
 /// `MetadataSearcher` in `.selection` mode answers a plain-language intent, and
@@ -58,7 +58,7 @@ struct ColdSelectionRealModelTests {
         "Pull me a shot of espresso from ground beans.",
         "Fold a sheet of paper into a crane.",
         "How do I tune my guitar to concert pitch?",
-        "How often should I water a potted orchid?",
+        "How often should I water a potted orchid?"
     ]
 
     /// Drives one measured intent through a searcher built for it alone, and

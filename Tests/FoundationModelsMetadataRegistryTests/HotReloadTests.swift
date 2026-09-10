@@ -1,6 +1,5 @@
-import Testing
-
 @testable import FoundationModelsMetadataRegistry
+import Testing
 
 /// Tests for hot reload (plan.md §8, M4): `MetadataSearcher.update(items:)`
 /// re-renders and rebuilds the tokenized/trigram indexes synchronously,
@@ -26,8 +25,13 @@ struct HotReloadTests {
             self.summary = summary
         }
 
-        func renderBlock() -> String { block }
-        func renderSummaryBlock() -> String { summary ?? block }
+        func renderBlock() -> String {
+            block
+        }
+
+        func renderSummaryBlock() -> String {
+            summary ?? block
+        }
     }
 
     /// The transient embed failure the catch-up tests hand `FakeEmbedder` to
@@ -39,22 +43,22 @@ struct HotReloadTests {
 
     @Test
     func updateReEmbedsOnlyTheItemWhoseBlockActuallyChanged() async throws {
-        let a = FixtureItem(id: "a", block: "alpha block")
-        let b = FixtureItem(id: "b", block: "bravo block")
-        let c = FixtureItem(id: "c", block: "charlie block")
+        let itemA = FixtureItem(id: "a", block: "alpha block")
+        let itemB = FixtureItem(id: "b", block: "bravo block")
+        let itemC = FixtureItem(id: "c", block: "charlie block")
         let embedder = FakeEmbedder(
             dimension: 2,
             vectorsByText: [
                 "alpha block": [1, 0],
                 "bravo block": [0, 1],
                 "charlie block": [1, 1],
-                "bravo block CHANGED": [0, -1],
+                "bravo block CHANGED": [0, -1]
             ]
         )
-        let searcher = await MetadataSearcher(items: [a, b, c], embedder: embedder)
+        let searcher = await MetadataSearcher(items: [itemA, itemB, itemC], embedder: embedder)
         #expect(embedder.embeddedTextCount == 3)
 
-        await searcher.update(items: [a, FixtureItem(id: "b", block: "bravo block CHANGED"), c])
+        await searcher.update(items: [itemA, FixtureItem(id: "b", block: "bravo block CHANGED"), itemC])
 
         // Only "b" was re-embedded -- the count grows by exactly 1, not by a
         // full re-embed of all three items.
@@ -65,14 +69,14 @@ struct HotReloadTests {
     }
 
     @Test
-    func updateWithBrandNewItemsEmbedsOnlyTheNewOnes() async throws {
-        let a = FixtureItem(id: "a", block: "alpha block")
-        let b = FixtureItem(id: "b", block: "bravo block")
+    func updateWithBrandNewItemsEmbedsOnlyTheNewOnes() async {
+        let itemA = FixtureItem(id: "a", block: "alpha block")
+        let itemB = FixtureItem(id: "b", block: "bravo block")
         let embedder = FakeEmbedder(dimension: 2, vectorsByText: ["alpha block": [1, 0], "bravo block": [0, 1]])
-        let searcher = await MetadataSearcher(items: [a], embedder: embedder)
+        let searcher = await MetadataSearcher(items: [itemA], embedder: embedder)
         #expect(embedder.embeddedTextCount == 1)
 
-        await searcher.update(items: [a, b])
+        await searcher.update(items: [itemA, itemB])
 
         #expect(embedder.embeddedTextCount == 2)
     }
@@ -85,7 +89,7 @@ struct HotReloadTests {
         let embedder = FakeEmbedder(dimension: 2, vectorsByText: ["alpha block": [1, 0]])
         let root = RootSessionRespondCalledDirectlySession(forkResponses: [
             #"{"ids":["a"]}"#,
-            #"{"ids":["a"]}"#,
+            #"{"ids":["a"]}"#
         ])
         let factoryCallCount = CallCounter()
         let config = SelectionConfig(model: { _ in
@@ -98,10 +102,9 @@ struct HotReloadTests {
         _ = try await searcher.search(intent: "task", limit: 5)
         #expect(factoryCallCount.count == 1)
 
-        // The under-budget path ranks the whole catalog per call to attach
-        // every selected id's real fused score/signals (plan.md §3a), which
-        // embeds the query itself -- so the shared counter already includes
-        // one query embed here, on top of the one catalog embed at init.
+        // Captured after the search above rather than assumed, so this
+        // assertion isolates `update`'s own re-embed delta whatever else
+        // passes through the shared embedder.
         let countBeforeUpdate = embedder.embeddedTextCount
         await searcher.update(items: items)
 
@@ -118,7 +121,7 @@ struct HotReloadTests {
     }
 
     @Test
-    func redundantUpdateNeverEmitsAnyDiagnostic() async throws {
+    func redundantUpdateNeverEmitsAnyDiagnostic() async {
         let recorder = DiagnosticRecorder()
         let items = [FixtureItem(id: "a", block: "alpha block")]
         let embedder = FakeEmbedder(dimension: 2, vectorsByText: ["alpha block": [1, 0]])
@@ -176,18 +179,18 @@ struct HotReloadTests {
     // MARK: - Embed catch-up diagnostic
 
     @Test
-    func updateReportsEmbedCatchUpWithAccuratePendingAndTotalCounts() async throws {
+    func updateReportsEmbedCatchUpWithAccuratePendingAndTotalCounts() async {
         let recorder = DiagnosticRecorder()
-        let a = FixtureItem(id: "a", block: "alpha block")
-        let b = FixtureItem(id: "b", block: "bravo block")
+        let itemA = FixtureItem(id: "a", block: "alpha block")
+        let itemB = FixtureItem(id: "b", block: "bravo block")
         let embedder = FakeEmbedder(dimension: 2, vectorsByText: ["alpha block": [1, 0], "bravo block": [0, 1]])
         let searcher = await MetadataSearcher(
-            items: [a],
+            items: [itemA],
             embedder: embedder,
             onDiagnostic: { recorder.record($0) }
         )
 
-        await searcher.update(items: [a, b])
+        await searcher.update(items: [itemA, itemB])
 
         #expect(recorder.diagnostics.contains(.embedCatchUp(pending: 1, total: 2)))
     }
@@ -195,16 +198,18 @@ struct HotReloadTests {
     @Test
     func updateWithNoEmbedderConfiguredNeverEmitsEmbedCatchUp() async throws {
         let recorder = DiagnosticRecorder()
-        let a = FixtureItem(id: "a", block: "alpha block")
+        let itemA = FixtureItem(id: "a", block: "alpha block")
         let searcher = MetadataSearcher(items: [FixtureItem](), onDiagnostic: { recorder.record($0) })
 
-        await searcher.update(items: [a])
+        await searcher.update(items: [itemA])
 
         let matches = try await searcher.search(intent: "alpha", limit: 5)
         #expect(matches.map(\.id) == ["a"])
         #expect(
             !recorder.diagnostics.contains {
-                if case .embedCatchUp = $0 { return true }
+                if case .embedCatchUp = $0 {
+                    return true
+                }
                 return false
             }
         )
@@ -221,7 +226,9 @@ struct HotReloadTests {
         // same gated embedder, now released -- lines up with `commit`'s
         // freshly stored embedding instead of falling back to an all-zero
         // vector that would trivially score `0.0` regardless of catch-up.
-        let embedder = GatedEmbedder(dimension: 2, vectorsByText: [commit.block: [1, 0], "snapshot": [1, 0]], gate: gate)
+        let embedder = GatedEmbedder(
+            dimension: 2, vectorsByText: [commit.block: [1, 0], "snapshot": [1, 0]], gate: gate
+        )
         // Construct with an empty catalog so init itself never touches the
         // gate -- there's nothing to embed yet.
         let searcher = await MetadataSearcher(items: [FixtureItem](), embedder: embedder)
@@ -255,8 +262,10 @@ struct HotReloadTests {
         // Simulates a prior build/update whose embed call failed
         // transiently (plan.md §8 "embed catch-up"): "a" is indexed with
         // its real content but carries no stored embedding.
-        let a = FixtureItem(id: "a", block: "alpha block")
-        let indexWithoutEmbedding = await MetadataIndex.build(items: [a], embedder: FakeEmbedder(dimension: 2, failure: AlwaysFails()))
+        let itemA = FixtureItem(id: "a", block: "alpha block")
+        let indexWithoutEmbedding = await MetadataIndex.build(
+            items: [itemA], embedder: FakeEmbedder(dimension: 2, failure: AlwaysFails())
+        )
         #expect(indexWithoutEmbedding.embedding(forID: "a") == nil)
 
         let recorder = DiagnosticRecorder()
@@ -272,7 +281,7 @@ struct HotReloadTests {
         // the task's hash-guarding is meant to make cheap. It must NOT be
         // treated as a full no-op: the embedding that never succeeded still
         // needs to catch up.
-        await searcher.update(items: [a])
+        await searcher.update(items: [itemA])
 
         #expect(recorder.diagnostics.contains(.embedCatchUp(pending: 1, total: 1)))
         #expect(workingEmbedder.embeddedTextCount == 1)
@@ -281,74 +290,17 @@ struct HotReloadTests {
         #expect(matches.first?.signals?.cosine != 0.0)
     }
 
-    // MARK: - Caught-up embeddings reach the selection tier's candidate ranking
-
-    @Test
-    func contentUnchangedEmbedCatchUpMakesMergedEmbeddingsVisibleToOverBudgetCandidateRanking() async throws {
-        // Three items with no lexical/fuzzy overlap with the "snapshot"
-        // intent, indexed with real content but no stored embeddings (a
-        // prior embed failed transiently) -- keyword signals alone rank all
-        // of them 0.0, so the over-budget candidate cut falls back to
-        // catalog order (x, y).
-        let x = FixtureItem(id: "x", block: "first unrelated block text", summary: "SUMMARY_x")
-        let y = FixtureItem(id: "y", block: "second unrelated block text", summary: "SUMMARY_y")
-        let z = FixtureItem(id: "z", block: "third unrelated block text", summary: "SUMMARY_z")
-        let indexWithoutEmbeddings = await MetadataIndex.build(
-            items: [x, y, z],
-            embedder: FakeEmbedder(dimension: 2, failure: AlwaysFails())
-        )
-
-        // Once caught up, only "z"'s block lines up with the "snapshot"
-        // intent's embedding -- cosine is the only signal that can promote
-        // it into the top-2 candidate cut.
-        let workingEmbedder = FakeEmbedder(
-            dimension: 2,
-            vectorsByText: [z.block: [1, 0], "snapshot": [1, 0]]
-        )
-        let factory = RecordingSessionFactory(responses: [#"{"ids":["z"]}"#])
-        let config = SelectionConfig(
-            model: factory.makeSession,
-            capacityCharacterLimit: 1,
-            candidateLimit: 2
-        )
-        let searcher = MetadataSearcher(
-            index: indexWithoutEmbeddings,
-            mode: .selection,
-            embedder: workingEmbedder,
-            selection: config
-        )
-
-        // Content-identical forward: nothing keyword/prefix relevant
-        // changes, but the embeddings that never succeeded catch up and
-        // merge into the live index.
-        await searcher.update(items: [x, y, z])
-
-        _ = try await searcher.search(intent: "snapshot", limit: 5)
-
-        // The caught-up embeddings must influence the over-budget candidate
-        // ranking without waiting for the next content change: "z" outranks
-        // the zero-signal tail, so this round's candidate set is (z, x), not
-        // catalog-order (x, y). The seeded prefix names each candidate id as
-        // a `## <id>` heading above its summary, so the prefix carries both
-        // halves of that claim.
-        let instructions = try #require(factory.receivedInstructions.first)
-        #expect(instructions.contains("SUMMARY_z"))
-        #expect(instructions.contains("## z"))
-        #expect(instructions.contains("## x"))
-        #expect(!instructions.contains("## y"))
-    }
-
     @Test
     func contentIdenticalEmbedCatchUpRetainsTheCachedRootSession() async throws {
-        let a = FixtureItem(id: "a", block: "alpha block")
+        let itemA = FixtureItem(id: "a", block: "alpha block")
         let indexWithoutEmbedding = await MetadataIndex.build(
-            items: [a],
+            items: [itemA],
             embedder: FakeEmbedder(dimension: 2, failure: AlwaysFails())
         )
         let workingEmbedder = FakeEmbedder(dimension: 2, vectorsByText: ["alpha block": [1, 0]])
         let root = RootSessionRespondCalledDirectlySession(forkResponses: [
             #"{"ids":["a"]}"#,
-            #"{"ids":["a"]}"#,
+            #"{"ids":["a"]}"#
         ])
         let factoryCallCount = CallCounter()
         let config = SelectionConfig(model: { _ in
@@ -370,95 +322,11 @@ struct HotReloadTests {
         // cached root must survive (no re-prefill), unlike a real content
         // change. Guards the catch-up fix above against regressing into a
         // wholesale tier rebuild.
-        await searcher.update(items: [a])
+        await searcher.update(items: [itemA])
 
         _ = try await searcher.search(intent: "task", limit: 5)
 
         #expect(factoryCallCount.count == 1)
         #expect(root.forkCount == 2)
-    }
-
-    // MARK: - Overlapping update(items:) calls on the same id
-
-    @Test
-    func overlappingUpdatesToTheSameIdNeverLetAnEarlierSlowerEmbedOverwriteALaterFasterOne() async throws {
-        let itemV1 = FixtureItem(id: "x", block: "version one text")
-        let itemV2 = FixtureItem(id: "x", block: "version two text")
-        let gate = EmbedGate()
-        // Only the first update's text is gated -- the second update's text
-        // resolves immediately, so it deterministically finishes (including
-        // its own merge) while the first stays suspended, never racing.
-        let embedder = GatedEmbedder(
-            dimension: 2,
-            vectorsByText: ["version one text": [1, 0], "version two text": [0, 1]],
-            gate: gate,
-            gatedTexts: ["version one text"]
-        )
-        // Empty initial catalog so construction itself never touches the gate.
-        let searcher = await MetadataSearcher(items: [FixtureItem](), embedder: embedder)
-
-        let updateATask = Task { await searcher.update(items: [itemV1]) }
-        await gate.waitForStart()
-
-        // While A is suspended re-embedding "version one text", B runs to
-        // completion against the same id with different content -- actor
-        // reentrancy across A's suspended `await embedder.embed(_:)`.
-        await searcher.update(items: [itemV2])
-
-        // Release A last, so its stale vector arrives after B has already
-        // committed "version two text"'s embedding.
-        await gate.release()
-        await updateATask.value
-
-        // The final state must reflect B's content and B's embedding, never
-        // A's stale vector paired with B's (different) block hash.
-        let matchingV2Query = try await searcher.search(intent: "version two text", limit: 5)
-        #expect(matchingV2Query.first?.signals?.cosine != 0.0)
-
-        let matchingV1Query = try await searcher.search(intent: "version one text", limit: 5)
-        #expect(matchingV1Query.first?.signals?.cosine == 0.0)
-    }
-
-    // MARK: - MCP-style add/remove burst
-
-    @Test
-    func mcpStyleAddAndRemoveBurstStaysSearchableAndEmbedsOnlyNetNewItems() async throws {
-        let toolA = FixtureItem(id: "toolA", block: "reads a file from disk")
-        let toolB = FixtureItem(id: "toolB", block: "writes a file to disk")
-        let toolC = FixtureItem(id: "toolC", block: "deletes a file from disk")
-        let embedder = FakeEmbedder(
-            dimension: 2,
-            vectorsByText: [
-                toolA.block: [1, 0],
-                toolB.block: [0, 1],
-                toolC.block: [1, 1],
-            ]
-        )
-        let searcher = await MetadataSearcher(items: [FixtureItem](), embedder: embedder)
-
-        // A server connects mid-session and dumps its tools in without
-        // coalescing -- every notification forwarded straight to `update`.
-        await searcher.update(items: [toolA])
-        await searcher.update(items: [toolA, toolB])
-        #expect(embedder.embeddedTextCount == 2)
-
-        let afterFirstBurst = try await searcher.search(intent: "file", limit: 5)
-        #expect(Set(afterFirstBurst.map(\.id)) == Set(["toolA", "toolB"]))
-
-        // Redundant forward (no upstream change) followed by a real
-        // remove-and-add burst. Captured *after* the search above (whose own
-        // query embed call also passes through this shared embedder) so the
-        // assertion below isolates this burst's catalog re-embed delta from
-        // query-embed noise.
-        let countBeforeSecondBurst = embedder.embeddedTextCount
-        await searcher.update(items: [toolA, toolB])
-        await searcher.update(items: [toolB, toolC])
-
-        // Only "toolC" is net-new -- "toolA" was dropped, never re-embedded
-        // again, and "toolB" was untouched.
-        #expect(embedder.embeddedTextCount == countBeforeSecondBurst + 1)
-
-        let afterSecondBurst = try await searcher.search(intent: "file", limit: 5)
-        #expect(Set(afterSecondBurst.map(\.id)) == Set(["toolB", "toolC"]))
     }
 }

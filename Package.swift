@@ -58,7 +58,7 @@ let examplesSupportName = "ExamplesSupport"
 func exampleDependencies(on libraryName: String) -> [Target.Dependency] {
     [
         .target(name: libraryName),
-        .target(name: examplesSupportName),
+        .target(name: examplesSupportName)
     ]
 }
 
@@ -138,16 +138,16 @@ let package = Package(
         .library(
             name: packageName,
             targets: [packageName]
-        ),
+        )
     ],
     dependencies: [
-        .package(url: "\(swissArmyHammerOrg)\(foundationModelsRankerPackage).git", branch: "main"),
+        .package(url: "\(swissArmyHammerOrg)\(foundationModelsRankerPackage).git", branch: "main")
     ],
     targets: [
         .target(
             name: packageName,
             dependencies: [
-                .product(name: foundationModelsRankerPackage, package: foundationModelsRankerPackage),
+                .product(name: foundationModelsRankerPackage, package: foundationModelsRankerPackage)
             ],
             path: "Sources/\(packageName)"
         ),
@@ -174,7 +174,7 @@ let package = Package(
                 // `CatalogSearchCore`/`SemanticSearchCore` above.
                 .target(name: "BigCatalogCore"),
                 .target(name: "HotReloadCore"),
-                .target(name: "LibrarianCore"),
+                .target(name: "LibrarianCore")
             ],
             path: "Tests/\(packageName)Tests"
         ),
@@ -224,9 +224,9 @@ let package = Package(
         // `BigCatalog`'s entry logic (plan.md §13 M8): the headroom story --
         // a synthetic ~10^3-entry catalog (ids = URIs), in-memory retrieval
         // with printed timings, then a selection query that overflows the
-        // assembled-prefix budget -> top-M candidates -> a fresh one-off
-        // session, printing the `.retrievalCut` diagnostic. Both paths are
-        // GPU-free (the one-off session is `ExamplesSupport`'s scripted
+        // assembled-prefix budget -> one run of candidates for each prompt,
+        // each on a fresh one-off session. Both paths are GPU-free (each
+        // one-off session is `ExamplesSupport`'s scripted
         // `DemoAgentSession`). A plain library (not the executable itself) so
         // `ExamplesSmokeTests`/`OverBudgetTests` can invoke both directly.
         exampleCoreTarget(name: "BigCatalogCore"),
@@ -242,6 +242,6 @@ let package = Package(
         // index-rebuild path directly.
         exampleCoreTarget(name: "HotReloadCore"),
         // A thin runnable entry point over `HotReloadCore`.
-        exampleExecutableTarget(name: "HotReload", coreName: "HotReloadCore"),
+        exampleExecutableTarget(name: "HotReload", coreName: "HotReloadCore")
     ]
 )

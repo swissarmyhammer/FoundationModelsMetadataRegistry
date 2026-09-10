@@ -1,6 +1,5 @@
-import os
-
 @testable import FoundationModelsMetadataRegistry
+import os
 
 /// Thrown by `ScriptedAgentSession.respond(to:)` when it receives more calls
 /// than it was scripted with — a test bug (an under-scripted fixture), never
@@ -50,18 +49,24 @@ final class ScriptedAgentSession: AgentSession, Sendable {
     /// - Parameter responses: the canned responses to return, in call order.
     init(_ responses: [String]) {
         self.responses = responses
-        self.stateBox = OSAllocatedUnfairLock(initialState: State())
+        stateBox = OSAllocatedUnfairLock(initialState: State())
     }
 
     /// Every prompt this session received, in call order — lets a test
     /// assert on what a caller fed back as the next turn's prompt.
-    var receivedPrompts: [String] { stateBox.withLock { $0.receivedPrompts } }
+    var receivedPrompts: [String] {
+        stateBox.withLock { $0.receivedPrompts }
+    }
 
     /// How many calls this session has handled so far.
-    var callCount: Int { stateBox.withLock { $0.callCount } }
+    var callCount: Int {
+        stateBox.withLock { $0.callCount }
+    }
 
     /// How many times `fork()` has been called on this session.
-    var forkCount: Int { stateBox.withLock { $0.forkCount } }
+    var forkCount: Int {
+        stateBox.withLock { $0.forkCount }
+    }
 
     func respond(to prompt: String) async throws -> String {
         let index = stateBox.withLock { state -> Int in

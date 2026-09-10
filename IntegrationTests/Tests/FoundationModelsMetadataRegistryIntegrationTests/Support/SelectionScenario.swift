@@ -1,7 +1,7 @@
 import FoundationModels
 import FoundationModelsMetadataRegistry
-import Testing
 import os
+import Testing
 
 /// The selection-tier wiring every real-model scenario in this package drives,
 /// and the one diagnostic reading each of them makes.

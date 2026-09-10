@@ -1,6 +1,5 @@
-import Testing
-
 @testable import FoundationModelsMetadataRegistry
+import Testing
 
 /// Tests for the selection tier's under-budget path (plan.md §6, M3): a
 /// cached root session seeded once with the assembled prefix, `fork()` per
@@ -27,13 +26,18 @@ struct SelectionTests {
             self.summary = summary
         }
 
-        func renderBlock() -> String { block }
-        func renderSummaryBlock() -> String { summary ?? block }
+        func renderBlock() -> String {
+            block
+        }
+
+        func renderSummaryBlock() -> String {
+            summary ?? block
+        }
     }
 
     static let catalog: [FixtureItem] = [
         FixtureItem(id: "deploy", block: "ships containers to a kubernetes cluster"),
-        FixtureItem(id: "rollback", block: "reverts the last release"),
+        FixtureItem(id: "rollback", block: "reverts the last release")
     ]
 
     // MARK: - Cached root + fork-per-call
@@ -42,7 +46,7 @@ struct SelectionTests {
     func eachSearchCallForksTheCachedRootSessionExactlyOnce() async throws {
         let root = RootSessionRespondCalledDirectlySession(forkResponses: [
             #"{"ids":["deploy"]}"#,
-            #"{"ids":["rollback"]}"#,
+            #"{"ids":["rollback"]}"#
         ])
         let factoryCallCount = CallCounter()
         let config = SelectionConfig(model: { _ in
@@ -79,31 +83,12 @@ struct SelectionTests {
 
         let match = try #require(matches.first)
         #expect(match.block == "the full, long rendered block text")
-        // The under-budget path now ranks the whole catalog too, so a
-        // selected id carries the same real fused score/signals the
-        // retrieval tier would compute for it (FoundationModelsRanker's
-        // `SelectionTier`, plan.md §3a) -- never the fixed 1.0/nil a
-        // pure-selection result carried before that tier existed.
-        let expected = try #require(Self.expectedRetrievalHit(id: "deploy", intent: "task", catalog: [item]))
-        #expect(match.score == expected.score)
-        #expect(match.signals == expected.signals)
-    }
-
-    /// The real fused score/signals `MetadataSearcher`'s retrieval tier
-    /// would compute for `id`, independently of the selection tier, so a
-    /// selection test can assert its `Match` carries exactly that rather
-    /// than a hardcoded value that would drift out of sync with
-    /// `HybridRanker`'s own scoring.
-    private static func expectedRetrievalHit(id: String, intent: String, catalog: [FixtureItem]) -> Hit? {
-        let index = MetadataIndex(items: catalog)
-        let hits = HybridRanker.fullOrdering(
-            ids: index.ids,
-            documents: index.ids.compactMap { index.rankedDocument(forID: $0) },
-            query: intent,
-            cosineScores: nil,
-            weights: Weights()
-        )
-        return hits.first { $0.id == id }
+        // No retrieval signal enters a selection: the tier makes one prompt
+        // that picks, and a pick's score is the reciprocal of its rank in
+        // the answer -- 1/1 for the only pick here -- with no per-signal
+        // breakdown to carry.
+        #expect(match.score == 1.0)
+        #expect(match.signals == nil)
     }
 
     // MARK: - Ids-only decode + verbatim lookup identity
@@ -118,21 +103,11 @@ struct SelectionTests {
 
         #expect(matches.map(\.id) == ["rollback", "deploy"])
         #expect(matches.map(\.block) == ["reverts the last release", "ships containers to a kubernetes cluster"])
-        // Same real-fused-score-and-signals rule as
-        // `sessionPrefixUsesSummaryBlockWhileMatchesCarryTheFullRenderedBlock`.
-        let index = MetadataIndex(items: Self.catalog)
-        let expectedHits = HybridRanker.fullOrdering(
-            ids: index.ids,
-            documents: index.ids.compactMap { index.rankedDocument(forID: $0) },
-            query: "roll back the last deploy",
-            cosineScores: nil,
-            weights: Weights()
-        )
-        let expectedByID = Dictionary(uniqueKeysWithValues: expectedHits.map { ($0.id, $0) })
-        #expect(matches.allSatisfy { match in
-            guard let expected = expectedByID[match.id] else { return false }
-            return match.score == expected.score && match.signals == expected.signals
-        })
+        // Same order-score rule as
+        // `sessionPrefixUsesSummaryBlockWhileMatchesCarryTheFullRenderedBlock`:
+        // the reciprocal of each pick's rank in the answer, and no signals.
+        #expect(matches.map(\.score) == [1.0, 1.0 / 2.0])
+        #expect(matches.allSatisfy { $0.signals == nil })
     }
 
     @Test
@@ -153,15 +128,9 @@ struct SelectionTests {
         let recorder = DiagnosticRecorder()
         let factory = RecordingSessionFactory(responses: [#"{"ids":["deploy","deploy","rollback"]}"#])
         let config = SelectionConfig(model: factory.makeSession)
-        // Cosine damped to zero -- no embedder is configured, and this test
-        // only cares about deduplication being diagnostic-free, not the
-        // unrelated `.embeddingUnavailable` a default cosine weight would
-        // also report now that the under-budget path ranks the whole
-        // catalog per call (plan.md §3a).
         let searcher = MetadataSearcher(
             items: Self.catalog,
             mode: .selection,
-            weights: Weights(cosine: 0.0),
             selection: config,
             onDiagnostic: { recorder.record($0) }
         )
@@ -194,12 +163,9 @@ struct SelectionTests {
         let recorder = DiagnosticRecorder()
         let factory = RecordingSessionFactory(responses: [#"{"ids":[]}"#])
         let config = SelectionConfig(model: factory.makeSession)
-        // Cosine damped to zero, same rationale as
-        // `duplicateIdFromAMisbehavingFakeIsDeduplicatedWithoutADiagnostic`.
         let searcher = MetadataSearcher(
             items: Self.catalog,
             mode: .selection,
-            weights: Weights(cosine: 0.0),
             selection: config,
             onDiagnostic: { recorder.record($0) }
         )
@@ -230,14 +196,9 @@ struct SelectionTests {
         let recorder = DiagnosticRecorder()
         let factory = RecordingSessionFactory(responses: [#"{"ids":["deploy","not-a-real-id"]}"#])
         let config = SelectionConfig(model: factory.makeSession)
-        // Cosine damped to zero, same rationale as
-        // `duplicateIdFromAMisbehavingFakeIsDeduplicatedWithoutADiagnostic` --
-        // this test's exact-diagnostics assertion below cares only about
-        // `.unknownSelectedId`.
         let searcher = MetadataSearcher(
             items: Self.catalog,
             mode: .selection,
-            weights: Weights(cosine: 0.0),
             selection: config,
             onDiagnostic: { recorder.record($0) }
         )

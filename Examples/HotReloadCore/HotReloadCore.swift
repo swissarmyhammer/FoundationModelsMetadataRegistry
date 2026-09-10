@@ -2,28 +2,28 @@ import ExamplesSupport
 import Foundation
 import FoundationModelsMetadataRegistry
 
-/// # `HotReload`'s entry logic (plan.md §13 M8): `update(items:)` bursts.
-///
-/// An MCP-style add/remove burst (`update(items:)` calls forwarded without
-/// coalescing, exactly like an MCP `listChanged` handler would) driven
-/// against a `MetadataSearcher`, GPU-free: `runHotReloadBurst(burst:query:
-/// limit:embedder:)` replays the burst and, after every step, immediately
-/// searches -- proving items are keyword-searchable right away -- while
-/// capturing every diagnostic that step emitted, including
-/// `.embedCatchUp(pending:total:)`'s progress. `runSelectionRootRebuildDemo()`
-/// shows the companion story for the `.selection` tier: a real catalog
-/// change drops the cached root session and its candidate-id grammar,
-/// rebuilding both against the new catalog on the next search (plan.md §8).
-///
-/// Both paths run against a small deterministic embedder
-/// (`ExamplesSupport.DeterministicEmbedder`) -- a `FakeEmbedder`-style test
-/// double, but defined in `ExamplesSupport` since production code (a library
-/// target) can't import a test-target type. That is the only embedder this
-/// example ever builds, so it touches no network and no GPU.
-///
-/// Factored into this library target (rather than living directly in
-/// `HotReload`'s `main.swift`) so `ExamplesSmokeTests` can invoke both
-/// paths directly, with no `swift run` subprocess spawning.
+// # `HotReload`'s entry logic (plan.md §13 M8): `update(items:)` bursts.
+//
+// An MCP-style add/remove burst (`update(items:)` calls forwarded without
+// coalescing, exactly like an MCP `listChanged` handler would) driven
+// against a `MetadataSearcher`, GPU-free: `runHotReloadBurst(burst:query:
+// limit:embedder:)` replays the burst and, after every step, immediately
+// searches -- proving items are keyword-searchable right away -- while
+// capturing every diagnostic that step emitted, including
+// `.embedCatchUp(pending:total:)`'s progress. `runSelectionRootRebuildDemo()`
+// shows the companion story for the `.selection` tier: a real catalog
+// change drops the cached root session and its candidate-id grammar,
+// rebuilding both against the new catalog on the next search (plan.md §8).
+//
+// Both paths run against a small deterministic embedder
+// (`ExamplesSupport.DeterministicEmbedder`) -- a `FakeEmbedder`-style test
+// double, but defined in `ExamplesSupport` since production code (a library
+// target) can't import a test-target type. That is the only embedder this
+// example ever builds, so it touches no network and no GPU.
+//
+// Factored into this library target (rather than living directly in
+// `HotReload`'s `main.swift`) so `ExamplesSmokeTests` can invoke both
+// paths directly, with no `swift run` subprocess spawning.
 
 // MARK: - Fixture catalog
 
@@ -54,7 +54,7 @@ public let hotReloadBurst: [[HotReloadTool]] = [
     [hotReloadToolA],
     [hotReloadToolA, hotReloadToolB],
     [hotReloadToolA, hotReloadToolB],
-    [hotReloadToolB, hotReloadToolC],
+    [hotReloadToolB, hotReloadToolC]
 ]
 
 // MARK: - GPU-free burst replay
@@ -225,7 +225,7 @@ public func runSelectionRootRebuildDemo() async throws -> SelectionRebuildDemoRe
 /// touches no model or network -- this demo only cares about *how many
 /// times*, and *against what candidate ids*, the tier constructs a session.
 private struct ScriptedSelectionSession: AgentSession {
-    func respond(to prompt: String) async throws -> String {
+    func respond(to _: String) async throws -> String {
         #"{"ids":[]}"#
     }
 }

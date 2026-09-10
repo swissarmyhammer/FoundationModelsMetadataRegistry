@@ -43,7 +43,9 @@ actor EmbedGate {
     /// must give up with the cancellation rather than hold the failed test
     /// open forever.
     func waitForStart() async {
-        if started { return }
+        if started {
+            return
+        }
         await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 if Task.isCancelled {
@@ -76,7 +78,9 @@ actor EmbedGate {
     /// already has — what `GatedEmbedder.embed(_:)` blocks on to hold the
     /// interim window open until the test says otherwise.
     func waitForRelease() async {
-        if released { return }
+        if released {
+            return
+        }
         await withCheckedContinuation { releaseContinuation = $0 }
     }
 
@@ -149,7 +153,9 @@ struct GatedEmbedder: TextEmbedding {
     }
 
     /// The texts of every `embed(_:)` call so far, in call order.
-    var embeddedBatches: [[String]] { counter.batches }
+    var embeddedBatches: [[String]] {
+        counter.batches
+    }
 
     func embed(_ texts: [String]) async throws -> [[Float]] {
         counter.record(texts)

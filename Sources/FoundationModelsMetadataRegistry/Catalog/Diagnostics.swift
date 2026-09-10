@@ -46,6 +46,12 @@ public enum MetadataDiagnostic: Sendable, Equatable {
     /// from `considered` items down to `kept` before seeding a one-off
     /// selection session — the `onPrefilterCut` pattern generalized to
     /// ranked retrieval.
+    ///
+    /// Never reported. FoundationModelsRanker's `SelectionTier` stopped
+    /// cutting candidates: over budget it divides the catalog into runs and
+    /// gives every run one prompt, so every id reaches a prompt. The case
+    /// stays because `RankDiagnostic` keeps its own, and `init(_:)` maps
+    /// every case of it.
     case retrievalCut(considered: Int, kept: Int)
 
     /// Incremental re-embedding (plan.md §8) is still catching up: `pending`
@@ -75,10 +81,15 @@ public enum MetadataDiagnostic: Sendable, Equatable {
             logger.notice("selection model returned unknown id \"\(id, privacy: .public)\"; ignored.")
         case .retrievalCut(let considered, let kept):
             logger.notice(
-                "retrieval cut candidates from \(considered, privacy: .public) to \(kept, privacy: .public) before selection."
+                """
+                retrieval cut candidates from \(considered, privacy: .public) \
+                to \(kept, privacy: .public) before selection.
+                """
             )
         case .embedCatchUp(let pending, let total):
-            logger.notice("embedding catch-up: \(pending, privacy: .public)/\(total, privacy: .public) item(s) pending.")
+            logger.notice(
+                "embedding catch-up: \(pending, privacy: .public)/\(total, privacy: .public) item(s) pending."
+            )
         }
     }
 }

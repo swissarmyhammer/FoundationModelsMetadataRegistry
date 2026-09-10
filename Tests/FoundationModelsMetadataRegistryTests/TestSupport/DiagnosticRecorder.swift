@@ -1,5 +1,4 @@
 import Foundation
-
 @testable import FoundationModelsMetadataRegistry
 
 /// A thread-safe recorder for `onDiagnostic` callbacks, shared by

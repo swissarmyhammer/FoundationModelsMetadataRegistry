@@ -1,6 +1,6 @@
 import FoundationModelsMetadataRegistry
-import Testing
 import os
+import Testing
 
 /// The second scenario in this package that drives Apple Intelligence, and the
 /// one that covers a seam FoundationModelsRanker's own suite cannot reach:

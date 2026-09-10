@@ -1,12 +1,11 @@
-import Foundation
-import Testing
-
 @testable import BigCatalogCore
 @testable import CatalogSearchCore
 import ExamplesSupport
+import Foundation
 @testable import HotReloadCore
 @testable import LibrarianCore
 @testable import SemanticSearchCore
+import Testing
 
 /// Smoke tests for the `Examples/` executable targets (plan.md §13):
 /// `CatalogSearch` and `SemanticSearch` each factor their entry logic into a
@@ -180,7 +179,7 @@ struct ExamplesSmokeTests {
         let result = try await BigCatalogCore.runBigCatalogRetrieval(query: BigCatalogCore.bigCatalogNeedleQuery)
         let callWindow = Date().timeIntervalSince(callStart)
 
-        #expect(result.catalogCount == 1_000)
+        #expect(result.catalogCount == 1000)
         let first = try #require(result.matches.first)
         #expect(first.id == BigCatalogCore.bigCatalogNeedleId)
         // The reported timing must be a real measurement of this run, not a

@@ -3,12 +3,12 @@ import Testing
 
 // MARK: - Selection
 
-/// No environment variable selects this suite. The org test contract
-/// (swissarmyhammer/workflows' README) says an environment variable must not
-/// select tests. This suite runs when its own package runs:
-/// `swift test --package-path IntegrationTests` from the repository root. The
-/// root package does not name this package, so a bare `swift test` at the root
-/// runs the unit tests only.
+// No environment variable selects this suite. The org test contract
+// (swissarmyhammer/workflows' README) says an environment variable must not
+// select tests. This suite runs when its own package runs:
+// `swift test --package-path IntegrationTests` from the repository root. The
+// root package does not name this package, so a bare `swift test` at the root
+// runs the unit tests only.
 
 /// The precondition every real-model scenario in this package opens with.
 ///

@@ -1,8 +1,8 @@
 import Foundation
-
 @testable import FoundationModelsMetadataRegistry
 
 // MARK: - `SelectionTier.idEnumSchema(ids:)` assertions (plan.md §6, M3)
+
 //
 // `idEnumSchema(ids:)` hands back JSON Schema SOURCE TEXT, so a test decodes
 // it before asserting on it. Asserting on the raw text is not an option:
@@ -47,17 +47,17 @@ struct SelectionIDConstraints: Equatable {
     ///   a `maxItems`.
     init(schemaSource: String) throws {
         guard let data = schemaSource.data(using: .utf8),
-            let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let properties = root["properties"] as? [String: Any],
-            let idsSchema = properties["ids"] as? [String: Any],
-            let itemsSchema = idsSchema["items"] as? [String: Any],
-            let enumValues = itemsSchema["enum"] as? [String],
-            let uniqueItems = idsSchema["uniqueItems"] as? Bool,
-            let maxItems = idsSchema["maxItems"] as? Int
+              let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let properties = root["properties"] as? [String: Any],
+              let idsSchema = properties["ids"] as? [String: Any],
+              let itemsSchema = idsSchema["items"] as? [String: Any],
+              let enumValues = itemsSchema["enum"] as? [String],
+              let uniqueItems = idsSchema["uniqueItems"] as? Bool,
+              let maxItems = idsSchema["maxItems"] as? Int
         else {
             throw SelectionSchemaShapeUnexpected()
         }
-        self.allowedIDs = Set(enumValues)
+        allowedIDs = Set(enumValues)
         self.uniqueItems = uniqueItems
         self.maxItems = maxItems
     }

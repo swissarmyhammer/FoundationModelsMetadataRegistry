@@ -1,8 +1,8 @@
+@testable import FoundationModelsMetadataRegistry
 import os
 
-@testable import FoundationModelsMetadataRegistry
-
 // MARK: - Selection-tier `AgentSession` fixtures (plan.md §6, M3)
+
 //
 // Mirrors Multitool's own `LibrarianFixtures.swift`: `SelectionTests` never
 // touches a real model — the selection tier's root session is always
@@ -44,9 +44,11 @@ final class RootSessionRespondCalledDirectlySession: AgentSession, Sendable {
     }
 
     /// How many `fork()` calls this root has handled so far.
-    var forkCount: Int { forkCountBox.withLock { $0 } }
+    var forkCount: Int {
+        forkCountBox.withLock { $0 }
+    }
 
-    func respond(to prompt: String) async throws -> String {
+    func respond(to _: String) async throws -> String {
         throw RootSessionRespondCalledDirectlyError()
     }
 
@@ -95,7 +97,9 @@ final class RecordingSessionFactory: Sendable {
 
     /// Every `instructions` string this factory has been called with, in
     /// call order.
-    var receivedInstructions: [String] { receivedInstructionsBox.withLock { $0 } }
+    var receivedInstructions: [String] {
+        receivedInstructionsBox.withLock { $0 }
+    }
 
     /// Creates and records a new scripted session — `SelectionConfig`'s
     /// `model` factory parameter.
@@ -129,5 +133,7 @@ final class CallCounter: Sendable {
     }
 
     /// This counter's current count.
-    var count: Int { countBox.withLock { $0 } }
+    var count: Int {
+        countBox.withLock { $0 }
+    }
 }

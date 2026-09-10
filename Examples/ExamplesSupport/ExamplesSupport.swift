@@ -1,15 +1,15 @@
 import Foundation
 import FoundationModelsMetadataRegistry
 
-/// # Shared fixture types and helpers for `Examples/` (plan.md §13).
-///
-/// `CatalogSearchCore` and `SemanticSearchCore` both search the same tiny
-/// git-subcommand catalog and both print matches the same way. Rather than
-/// maintain two copies of the fixture type, the common fixture prefix, and
-/// the formatter, both `*Core` targets depend on this plain library target
-/// and share these pieces; each core still owns its own divergent/additional
-/// fixture items locally (`SemanticSearchCore` appends a `status` item so its
-/// keyword-only degradation path has something real to rank).
+// # Shared fixture types and helpers for `Examples/` (plan.md §13).
+//
+// `CatalogSearchCore` and `SemanticSearchCore` both search the same tiny
+// git-subcommand catalog and both print matches the same way. Rather than
+// maintain two copies of the fixture type, the common fixture prefix, and
+// the formatter, both `*Core` targets depend on this plain library target
+// and share these pieces; each core still owns its own divergent/additional
+// fixture items locally (`SemanticSearchCore` appends a `status` item so its
+// keyword-only degradation path has something real to rank).
 
 /// A generic `SearchableMetadata` fixture item: a stable id paired with a
 /// `block` of text that is both its description and its rendered search
@@ -42,7 +42,9 @@ public struct SearchableFixtureItem: SearchableMetadata {
     /// Renders this item to its search surface: its description block.
     ///
     /// - Returns: the item's block text.
-    public func renderBlock() -> String { block }
+    public func renderBlock() -> String {
+        block
+    }
 }
 
 /// `CatalogSearchCore`'s and `SemanticSearchCore`'s domain-flavored alias for
@@ -59,7 +61,7 @@ public let baseGitCommands: [GitCommand] = [
     GitCommand(id: "push", block: "Upload local branch history to a remote server."),
     GitCommand(id: "pull", block: "Download and merge remote branch history."),
     GitCommand(id: "branch", block: "List, create, or delete lines of independent development."),
-    GitCommand(id: "stash", block: "Temporarily set aside uncommitted edits to switch tasks."),
+    GitCommand(id: "stash", block: "Temporarily set aside uncommitted edits to switch tasks.")
 ]
 
 /// Formats ranked matches, one line each, with their per-signal breakdown.
@@ -72,7 +74,7 @@ public let baseGitCommands: [GitCommand] = [
 ///
 /// - Parameter matches: the matches to format, in ranked order.
 /// - Returns: one formatted line per match, joined by newlines.
-public func formattedMatches<Item: SearchableMetadata>(matches: [Match<Item>]) -> String {
+public func formattedMatches(matches: [Match<some SearchableMetadata>]) -> String {
     matches.enumerated().map { index, match in
         let breakdown =
             match.signals.map {
@@ -91,14 +93,14 @@ public func formattedMatches<Item: SearchableMetadata>(matches: [Match<Item>]) -
 /// every other diagnostic (plan.md §1 "every degradation is reported, never
 /// silent").
 ///
-/// `BigCatalogCore` (`.retrievalCut`) and `SemanticSearchCore`
-/// (`.embeddingUnavailable`) each defined their own `printDiagnostic(_:)`
-/// implementing this identical check-case/print-message/else-log pattern,
-/// differing only in which case they special-case and what they print for
-/// it. This shared helper is that pattern, parameterized: each `*Core`
-/// target's own `printDiagnostic(_:)` calls it with a closure that pattern-
-/// matches its one diagnostic case and returns the message to print, or
-/// `nil` for every other case.
+/// `SemanticSearchCore` (`.embeddingUnavailable`) and, before its own
+/// diagnostic stopped being reported, `BigCatalogCore` each defined their own
+/// `printDiagnostic(_:)` implementing this identical
+/// check-case/print-message/else-log pattern, differing only in which case
+/// they special-case and what they print for it. This shared helper is that
+/// pattern, parameterized: an example's own `printDiagnostic(_:)` calls it
+/// with a closure that pattern-matches its one diagnostic case and returns
+/// the message to print, or `nil` for every other case.
 ///
 /// - Parameters:
 ///   - diagnostic: the diagnostic to print.
