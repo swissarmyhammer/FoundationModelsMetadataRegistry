@@ -239,8 +239,24 @@ comments:
     - evidence: 3 files — .swiftformat (new), Sources/FoundationModelsMetadataRegistry/Catalog/Diagnostics.swift, Sources/FoundationModelsMetadataRegistry/MetadataSearcher+Search.swift. `swift build` exit 0 with 0 warning lines; `swift test` 120 tests in 12 suites passed, 0 failed, 0 skipped; `swift build --package-path IntegrationTests --build-tests` complete with 0 warning lines; `swiftformat Sources Tests Examples --lint` 0 of 48 files require formatting; `swiftlint lint --quiet Sources Tests Examples IntegrationTests` 0 violations in this package's own files (all 187 lines hold a `/.build/` path). All 7 review findings are now `- [x]`.
     - next: `/review`
   timestamp: 2026-09-10T12:23:39.622603+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m25mj6d22pa4sqfp9gkyahbd
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` on commit 753822f — 0 findings, 0 confirmed, 0 refuted, 7 validators attempted, 0 failed. All 10 prior findings are checked.
+    - next: none. The task moved to the done column.
+  timestamp: 2026-09-10T12:26:58.850505+00:00
+- actor: claude-code
+  id: 01m25mjjw2p780t2w6sem2ye2n
+  text: |
+    ### finish iteration 4 — clean
+    - implement: changed — 3 files, all 7 `hoistPatternLet` findings worked
+    - test: green — swift test, 120 tests in 12 suites passed, 0 failed, 0 skipped; swiftformat --lint 0 of 48 files; swiftlint 0 violations in this package's own files
+    - commit: 753822f
+    - review: clean — 0 findings, 7 validators attempted, 0 failed; 10 of 10 prior findings checked. The task is in `done`.
+  timestamp: 2026-09-10T12:27:11.618733+00:00
+position_column: done
+position_ordinal: a380
 title: 'MetadataSearcher: move to SelectionTier.init(catalog:config:onDiagnostic:) and drop candidateLimit from the tests'
 ---
 ## What
