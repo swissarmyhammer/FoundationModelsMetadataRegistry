@@ -104,8 +104,24 @@ comments:
     - evidence: 1 file — Sources/FoundationModelsMetadataRegistry/Catalog/RenderedTextDigests.swift. Both review findings are now `- [x]`. `swift test`: 132 tests in 13 suites, no failure, no warning. `swift test --package-path IntegrationTests`: 5 tests in 4 suites, passed. swiftformat --lint: 0 of 59 files need formatting. swiftlint: 0 violations in 59 files.
     - next: /review
   timestamp: 2026-09-10T23:34:40.849099+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m26tyykchdcqrvtestbr31sr
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings, 0 confirmed, 0 refuted; all prior findings checked
+    - next: task moved to done
+  timestamp: 2026-09-10T23:38:02.732066+00:00
+- actor: claude-code
+  id: 01m26tz6t047mpa4j4cmvnyfts
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 1 file (RenderedTextDigests.swift), both findings checked
+    - test: green — swift test 132 tests, swiftformat 0/50, swiftlint 0 violations
+    - commit: 35fd533
+    - review: clean — zero findings, task moved to done
+  timestamp: 2026-09-10T23:38:11.136769+00:00
+position_column: done
+position_ordinal: a480
 title: 'SearchableMetadata: give the keyword index and the embedder their own texts, apart from the verbatim block'
 ---
 ## What
