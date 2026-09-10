@@ -56,6 +56,54 @@ comments:
     - open point for the reviewer: the two new methods take the already-rendered block (`renderIndexedText(from:)`, `renderEmbeddedText(from:)`) instead of the card's no-argument spelling. The comment above states why the no-argument form cannot hold the card's one-render point, and which existing test measures it.
     - next: /review
   timestamp: 2026-09-10T23:26:06.883601+00:00
+- actor: claude-code
+  id: 01m26tjfxqz2zd9s5p4zmzfewh
+  text: |-
+    ### review — findings
+    - evidence: 2 findings (2 confirmed, 0 refuted) — Sources/FoundationModelsMetadataRegistry/Catalog/RenderedTextDigests.swift:25, Sources/FoundationModelsMetadataRegistry/Catalog/RenderedTextDigests.swift:28
+    - scope: review sha HEAD~1..HEAD
+    - next: correct the assign-only properties in RenderedTextDigests.swift, then review again.
+  timestamp: 2026-09-10T23:31:14.487925+00:00
+- actor: claude-code
+  id: 01m26tjssbfjqaspm4trqfg0e6
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 5 files (SearchableMetadata.swift, RenderedTextDigests.swift, MetadataIndex.swift, MetadataIndex+Embedding.swift, SearchableMetadataTextsTests.swift)
+    - test: green — swift test 132 tests in 13 suites, swiftformat 0/59, swiftlint 0 violations
+    - commit: a33ecaf
+    - review: findings — Sources/FoundationModelsMetadataRegistry/Catalog/RenderedTextDigests.swift:25, Sources/FoundationModelsMetadataRegistry/Catalog/RenderedTextDigests.swift:28
+  timestamp: 2026-09-10T23:31:24.587083+00:00
+- actor: claude-code
+  id: 01m26trp2q8yqaf6kaz8yfx65s
+  text: |
+    Both findings come from one cause: `RenderedTextDigests` declares `Equatable`
+    and writes no `==`, so the only readers of `block` and `indexedText` are the
+    synthesized `==` that `MetadataIndex.hasIdenticalContent(to:)` calls on whole
+    values. Periphery cannot see a synthesized body, so it hints
+    `assignOnlyProperty`. The `code-hygiene/dead-code-swift` rule names this exact
+    case and gives the correction: keep the property and write
+    `// periphery:ignore` above it, with the reason on its own comment line.
+    Deleting the properties is forbidden by the rule and would make `a == b` true
+    for two entries whose block or indexed text differ.
+
+    One point the rule text does not cover: the marker cannot stand between the
+    doc comment and the declaration. SwiftLint then reports
+    `orphaned_doc_comment` (measured: 2 violations on this file). The reason lines
+    and the marker therefore stand above the doc comment, and both tools are
+    clean.
+
+    Verification after the change: `review file` on
+    `Sources/FoundationModelsMetadataRegistry/Catalog/RenderedTextDigests.swift`
+    with the `code-hygiene` validator reports 0 findings, 7 checks attempted, 0
+    failed.
+  timestamp: 2026-09-10T23:34:37.399064+00:00
+- actor: claude-code
+  id: 01m26trsehqkf1wtmkwge4yg4z
+  text: |
+    ### implement — changed
+    - evidence: 1 file — Sources/FoundationModelsMetadataRegistry/Catalog/RenderedTextDigests.swift. Both review findings are now `- [x]`. `swift test`: 132 tests in 13 suites, no failure, no warning. `swift test --package-path IntegrationTests`: 5 tests in 4 suites, passed. swiftformat --lint: 0 of 59 files need formatting. swiftlint: 0 violations in 59 files.
+    - next: /review
+  timestamp: 2026-09-10T23:34:40.849099+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'SearchableMetadata: give the keyword index and the embedder their own texts, apart from the verbatim block'
@@ -150,3 +198,16 @@ Points to settle while doing it:
 - [x] `swift test --package-path IntegrationTests`: passes.
 
 #catalog #search-tools #metadata
+
+## Review Findings (2026-09-10 19:29)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 5 file(s) reviewed, 9 not reviewed.
+
+> 8 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 8 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `.swiftlint.yml` — no validator matches this file
+
+- [x] `Sources/FoundationModelsMetadataRegistry/Catalog/RenderedTextDigests.swift:25` `code-hygiene/dead-code-swift` — var.instance `block` is assignOnlyProperty.
+- [x] `Sources/FoundationModelsMetadataRegistry/Catalog/RenderedTextDigests.swift:28` `code-hygiene/dead-code-swift` — var.instance `indexedText` is assignOnlyProperty.

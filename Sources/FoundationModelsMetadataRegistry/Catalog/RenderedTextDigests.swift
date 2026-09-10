@@ -21,9 +21,17 @@ import Foundation
 /// `renderEmbeddedText(from:)` renders one text for all three jobs, and pays
 /// exactly the one hash it paid when an entry had a block hash alone.
 struct RenderedTextDigests: Sendable, Equatable {
+    // Read by the synthesized `Equatable` conformance, which
+    // `MetadataIndex.hasIdenticalContent(to:)` calls on whole values;
+    // periphery sees no caller.
+    // periphery:ignore
     /// The digest of the entry's verbatim `renderBlock()` text.
     let block: Data
 
+    // Read by the synthesized `Equatable` conformance, which
+    // `MetadataIndex.hasIdenticalContent(to:)` calls on whole values;
+    // periphery sees no caller.
+    // periphery:ignore
     /// The digest of the entry's `renderIndexedText(from:)` text.
     let indexedText: Data
 
