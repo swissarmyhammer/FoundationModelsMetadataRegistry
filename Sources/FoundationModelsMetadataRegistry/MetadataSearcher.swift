@@ -31,7 +31,13 @@ public typealias Weights = SignalWeights
 /// the same "no embedding available" value `Signals.cosine` documents, not a
 /// crash or a special case (plan.md §5 "absent-signal rule") — and
 /// `.embeddingUnavailable` is reported via `onDiagnostic` on every such
-/// search, never silently. `.selection` (plan.md §6) drives
+/// search, never silently. A searcher built synchronously with an embedder
+/// over not-yet-embedded items (`init(index:mode:weights:embedder:
+/// selection:onDiagnostic:)`) closes that gap itself: its first
+/// `search(intent:limit:)` embeds every pending block one time before it
+/// ranks (see `FirstSearchCatchUp`), so it never reports
+/// `.embeddingUnavailable` for a catalog its embedder could have embedded.
+/// `.selection` (plan.md §6) drives
 /// FoundationModelsRanker's `SelectionTier` when one is configured
 /// (`init(..., selection:)`), re-attaching each `SelectionMatch`'s typed
 /// `item` by id lookup and mapping its `RankDiagnostic`s into the same-named
@@ -58,11 +64,12 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     ///
     /// Only the query itself is embedded per search (plan.md §5); without an
     /// embedder, cosine ranking is skipped and every search
-    /// degrades to keyword-only. Catalog items are never embedded here; that
-    /// happens once, at index-build/update time, via `MetadataIndex.build(
-    /// items:embedder:previous:onDiagnostic:)` (or, for `update(items:)`,
-    /// `MetadataIndex.incrementalBaseline(items:previous:onDiagnostic:)` +
-    /// `MetadataIndex.mergingEmbeddings(ids:vectors:embeddedFrom:into:)`).
+    /// degrades to keyword-only. Catalog items are embedded in batches, not
+    /// per search: at index-build time via `MetadataIndex.build(items:
+    /// embedder:previous:onDiagnostic:)`, and by the two catch-ups that
+    /// share `catchUpEmbeddings(ids:texts:embeddedFrom:with:)` —
+    /// `update(items:)` for the blocks a reload changed, and the first
+    /// search for a synchronously built index (see `FirstSearchCatchUp`).
     /// The same embedder instance is reused for both roles across every
     /// `update`.
     private let embedder: (any TextEmbedding)?
@@ -116,6 +123,37 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// session, a prefix assembled from the new index, and an id-enum
     /// grammar derived from the new id set.
     private var selectionTier: ConfiguredSelectionTier?
+
+    /// Where the one-time embed catch-up a synchronously built searcher runs at its first search stands.
+    ///
+    /// `init(index:mode:weights:embedder:selection:onDiagnostic:)` cannot
+    /// await an embedder, so a searcher built that way over not-yet-embedded
+    /// items starts cosine-blind. Rather than reporting
+    /// `.embeddingUnavailable` on every search until a caller runs
+    /// `update(items:)`, the first `search(intent:limit:)` embeds every
+    /// pending block itself, one time, before it ranks (plan.md §5, §8).
+    /// One enum rather than a flag beside an optional task, so "not started",
+    /// "in flight" and "finished" can never hold at once.
+    private enum FirstSearchCatchUp {
+        /// No search has run yet; the first one runs the catch-up.
+        case pending
+
+        /// A search started the catch-up. Every search that arrives while
+        /// `task` runs awaits it instead of embedding the same blocks a
+        /// second time.
+        case running(Task<Void, Never>)
+
+        /// The catch-up ran, or `update(items:)` took the catch-up over, or
+        /// there is no embedder to run it with.
+        case done
+    }
+
+    /// This searcher's first-search catch-up state (see `FirstSearchCatchUp`).
+    ///
+    /// Starts `.done` when no embedder is configured — a keyword-only
+    /// searcher has nothing to catch up, and its behavior is unchanged —
+    /// and `.pending` otherwise.
+    private var firstSearchCatchUp: FirstSearchCatchUp
 
     /// Builds a searcher over `items`, indexing them once at `init` with no embedder.
     ///
@@ -194,13 +232,20 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         )
     }
 
-    /// Builds a searcher directly over an already-built `index`.
+    /// Builds a searcher directly over an already-built `index`, synchronously.
     ///
     /// This is the seam
-    /// `update(items:)` (plan.md §8, a later task) and tests needing precise
-    /// control over an index's embeddings (e.g. a mix of embedded and
-    /// not-yet-embedded items) use instead of re-deriving the index from
-    /// `items` on every call.
+    /// `update(items:)` (plan.md §8), a consumer that must build its searcher
+    /// with no `await` (a synchronous registry initializer that may start no
+    /// task), and tests needing precise control over an index's embeddings
+    /// (e.g. a mix of embedded and not-yet-embedded items) use instead of
+    /// re-deriving the index from `items` on every call.
+    ///
+    /// Nothing is embedded here. With an `embedder`, every entry of `index`
+    /// that carries no embedding is embedded at the first
+    /// `search(intent:limit:)` instead, one time, before that search ranks
+    /// (see `FirstSearchCatchUp`) — reported through `.embedCatchUp`, never
+    /// through `.embeddingUnavailable`.
     ///
     /// - Parameters:
     ///   - index: the prebuilt index to search over.
@@ -208,7 +253,8 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     ///     `.auto`.
     ///   - weights: the per-signal fusion weights for the retrieval tier.
     ///     Defaults to `1.0` for every signal.
-    ///   - embedder: the embedder to embed the query with at search time.
+    ///   - embedder: the embedder to embed the query with at search time, and
+    ///     `index`'s not-yet-embedded entries with at the first search.
     ///     Defaults to `nil` (keyword-only).
     ///   - selection: this searcher's selection tier configuration (plan.md
     ///     §6), or `nil` (the default) to leave `.selection` unavailable.
@@ -228,6 +274,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         self.embedder = embedder
         self.onDiagnostic = onDiagnostic
         self.selectionConfig = selection
+        self.firstSearchCatchUp = embedder == nil ? .done : .pending
         self.selectionTier = Self.buildSelectionTierIfConfigured(
             config: selection, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic
         )
@@ -315,7 +362,11 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     ///    absent for the still-pending items (the absent-signal rule, plan.md
     ///    §5), never blocked behind the whole re-embed. The pending/total gap
     ///    is reported once via `MetadataDiagnostic.embedCatchUp(pending:
-    ///    total:)`.
+    ///    total:)`. This call also takes over the first-search catch-up of a
+    ///    synchronously built searcher (see `FirstSearchCatchUp`): once a
+    ///    reload owns the embedding, a search that lands in this interim
+    ///    window serves keyword-only rather than embedding the same pending
+    ///    blocks a second time.
     /// 3. Drops the cached selection-tier root session by rebuilding the
     ///    whole tier over the new index: the next under-budget `.selection`/
     ///    `.auto` search re-prefills against the new catalog (one prefix
@@ -344,6 +395,11 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     ///   wins duplicate-id order (forwarded to `MetadataIndex`'s duplicate-id
     ///   policy).
     public func update(items: [Item]) async {
+        // A reload owns the catch-up from here on: whatever this call leaves
+        // pending is served keyword-only in the interim and embedded by this
+        // call (or the next reload), never by a first search embedding the
+        // same blocks a second time behind it.
+        firstSearchCatchUp = .done
         let previous = index
         let (baseline, pendingEmbedIDs, textsToEmbed) = MetadataIndex.incrementalBaseline(
             items: items,
@@ -366,35 +422,67 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         }
 
         guard !pendingEmbedIDs.isEmpty, let embedder else { return }
+        await catchUpEmbeddings(ids: pendingEmbedIDs, texts: textsToEmbed, embeddedFrom: baseline, with: embedder)
+    }
 
-        onDiagnostic(.embedCatchUp(pending: pendingEmbedIDs.count, total: baseline.count))
-        // Merges into `index` as it stands *after* this suspension -- not
-        // into the stale `baseline` this re-embed started from -- and only
-        // where `index`'s current entry still matches `baseline`'s block
-        // hash for that id (`mergingEmbeddings(ids:vectors:embeddedFrom:
-        // into:)`'s hash check). A concurrent `update(items:)` call may have
-        // moved the catalog on in the meantime (actor reentrancy across
-        // this `await`); its result must win, never be silently clobbered
-        // by this call's now-stale vector finishing late -- including when
-        // that concurrent call re-embedded the *same* id with different
-        // content, not just when it removed the id outright.
-        if let vectors = try? await embedder.embed(textsToEmbed), vectors.count == pendingEmbedIDs.count {
-            let merged = MetadataIndex.mergingEmbeddings(ids: pendingEmbedIDs, vectors: vectors, embeddedFrom: baseline, into: index)
-            index = merged
-            // Refresh the tier's ranking snapshot in place so the freshly
-            // merged embeddings reach the over-budget candidate ranking
-            // now, not only after the next content change -- without
-            // rebuilding the tier, which would drop its cached root session
-            // for no reason (nothing content-relevant changed). Safe across
-            // the reentrancy above for the same reason the merge is: the
-            // merge never changes content, so `merged` always matches the
-            // *current* tier's own catalog generation, whichever `update`
-            // call installed it.
-            selectionTier?.snapshot.withLock { $0 = merged }
-        }
+    /// Embeds `texts` through `embedder`, then merges the vectors into the live `index` under `ids` and refreshes the selection tier's ranking snapshot.
+    ///
+    /// The one place a catch-up batch lands, shared by `update(items:)` and
+    /// the first-search catch-up (`runFirstSearchCatchUp()`). Reports the
+    /// pending/total gap via `.embedCatchUp` before the embedder call, once.
+    ///
+    /// Merges into `index` as it stands *after* the suspension -- not into
+    /// the stale `baseline` this batch was embedded from -- and only where
+    /// `index`'s current entry still matches `baseline`'s block hash for
+    /// that id (`MetadataIndex.mergingEmbeddings(ids:vectors:embeddedFrom:
+    /// into:)`'s hash check). A concurrent `update(items:)` call may have
+    /// moved the catalog on in the meantime (actor reentrancy across the
+    /// `await`); its result must win, never be silently clobbered by this
+    /// call's now-stale vector finishing late -- including when that
+    /// concurrent call re-embedded the *same* id with different content,
+    /// not just when it removed the id outright.
+    ///
+    /// The tier's ranking snapshot is refreshed in place so the freshly
+    /// merged embeddings reach the over-budget candidate ranking now, not
+    /// only after the next content change -- without rebuilding the tier,
+    /// which would drop its cached root session for no reason (nothing
+    /// content-relevant changed). Safe across the reentrancy for the same
+    /// reason the merge is: the merge never changes content, so `merged`
+    /// always matches the *current* tier's own catalog generation,
+    /// whichever call installed it.
+    ///
+    /// An embedder that throws, or returns a vector count other than
+    /// `ids.count`, leaves every entry with whatever embedding it had --
+    /// graceful degradation, the same as `MetadataIndex.build(items:
+    /// embedder:previous:onDiagnostic:)`; a later search then reports the
+    /// still-absent embeddings via `.embeddingUnavailable`.
+    ///
+    /// - Parameters:
+    ///   - ids: the ids to embed, positionally aligned with `texts`.
+    ///   - texts: the rendered blocks to embed, one per id.
+    ///   - baseline: the index this batch was read from -- `ids`' block
+    ///     hashes there are what `index`'s current entries must still match
+    ///     for the merge to apply.
+    ///   - embedder: the embedder to embed `texts` with.
+    private func catchUpEmbeddings(
+        ids: [String],
+        texts: [String],
+        embeddedFrom baseline: MetadataIndex<Item>,
+        with embedder: any TextEmbedding
+    ) async {
+        onDiagnostic(.embedCatchUp(pending: ids.count, total: baseline.count))
+        guard let vectors = try? await embedder.embed(texts), vectors.count == ids.count else { return }
+        let merged = MetadataIndex.mergingEmbeddings(ids: ids, vectors: vectors, embeddedFrom: baseline, into: index)
+        index = merged
+        selectionTier?.snapshot.withLock { $0 = merged }
     }
 
     /// Searches the catalog for `intent`, returning at most `limit` matches ordered by descending fused score.
+    ///
+    /// The first call on a searcher built synchronously with an embedder
+    /// embeds every not-yet-embedded catalog entry before it ranks, one
+    /// time, whichever tier `mode` selects (see `FirstSearchCatchUp`); every
+    /// later call ranks straight away.
     ///
     /// - Parameters:
     ///   - intent: the search query.
@@ -408,6 +496,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     ///   selection tier is configured (`init(..., selection:)`); otherwise
     ///   whatever the underlying selection session throws.
     public func search(intent: String, limit: Int) async throws -> [Match<Item>] {
+        await catchUpEmbeddingsBeforeFirstSearch()
         switch mode {
         case .retrieval:
             return await retrievalSearch(intent: intent, limit: limit)
@@ -420,6 +509,45 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
             }
             return await retrievalSearch(intent: intent, limit: limit)
         }
+    }
+
+    // MARK: - First-search embed catch-up (plan.md §5, §8)
+
+    /// Runs the first-search catch-up (see `FirstSearchCatchUp`) if it is still pending, or awaits the one in flight.
+    ///
+    /// Returns at once when the catch-up is `.done`. The stored `Task` is
+    /// what makes two searches that arrive before the first embed resolves
+    /// share one embedder call: the second one awaits the first one's task
+    /// instead of embedding the same blocks again. The task is created here,
+    /// stored in `firstSearchCatchUp`, and awaited by every caller, so it
+    /// never outlives the catch-up it runs.
+    private func catchUpEmbeddingsBeforeFirstSearch() async {
+        switch firstSearchCatchUp {
+        case .done:
+            return
+        case .running(let task):
+            await task.value
+        case .pending:
+            let task = Task { await self.runFirstSearchCatchUp() }
+            firstSearchCatchUp = .running(task)
+            await task.value
+        }
+    }
+
+    /// Embeds every catalog entry that carries no embedding yet, then marks the first-search catch-up `.done`.
+    ///
+    /// A no-op -- no diagnostic, no embedder call -- when no embedder is
+    /// configured or nothing is pending (an index the async initializer
+    /// already embedded), so a searcher that needs no catch-up pays nothing
+    /// beyond this check on its first search. Marks `.done` on every exit,
+    /// a transient embed failure included: the catch-up runs one time, and
+    /// the next `update(items:)` retries whatever is still pending.
+    private func runFirstSearchCatchUp() async {
+        defer { firstSearchCatchUp = .done }
+        guard let embedder else { return }
+        let pending = index.pendingEmbeddings()
+        guard !pending.ids.isEmpty else { return }
+        await catchUpEmbeddings(ids: pending.ids, texts: pending.texts, embeddedFrom: index, with: embedder)
     }
 
     // MARK: - Selection tier (plan.md §6, via FoundationModelsRanker)

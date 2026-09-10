@@ -181,7 +181,9 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
     /// The embedding stored for `id`, or `nil` if `id` isn't indexed or not yet embedded.
     ///
     /// `nil` until `MetadataIndex.build(items:embedder:previous:
-    /// onDiagnostic:)` fills this storage slot.
+    /// onDiagnostic:)`, or a `MetadataSearcher` catch-up merging through
+    /// `mergingEmbeddings(ids:vectors:embeddedFrom:into:)`, fills this
+    /// storage slot.
     ///
     /// - Parameter forID: the id to look up.
     /// - Returns: the stored embedding, or `nil` if `id` isn't indexed or
@@ -281,30 +283,46 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
     ) -> (baseline: MetadataIndex<Item>, pendingEmbedIDs: [String], textsToEmbed: [String]) {
         let baseline = MetadataIndex(items: items, onDiagnostic: onDiagnostic)
         var entriesByID = baseline.entriesByID
-        var pendingEmbedIDs: [String] = []
-        var textsToEmbed: [String] = []
 
         for id in baseline.ids {
-            guard let entry = entriesByID[id] else { continue }
             // Reusing `previousEntry.embedding` is only valid when there is
             // an actual embedding to reuse: a `nil` embedding (no embedder
             // configured, or a transient embed failure, at the prior build)
             // must never be copied forward as if it were a cached result —
             // that would leave the item cosine-blind forever even once an
             // embedder becomes available, defeating "embed catch-up"
-            // (plan.md §8). A hash match with no prior embedding still
-            // queues the item for embedding below, same as a brand-new item.
-            if let previousEntry = previous?.entriesByID[id],
+            // (plan.md §8). A hash match with no prior embedding leaves the
+            // entry's embedding `nil`, so `pendingEmbeddings()` below queues
+            // it for embedding, same as a brand-new item.
+            guard let entry = entriesByID[id],
+                let previousEntry = previous?.entriesByID[id],
                 previousEntry.blockHash == entry.blockHash,
-                let previousEmbedding = previousEntry.embedding {
-                entriesByID[id] = Self.withEmbedding(previousEmbedding, replacing: entry)
-            } else {
-                pendingEmbedIDs.append(id)
-                textsToEmbed.append(entry.block)
-            }
+                let previousEmbedding = previousEntry.embedding
+            else { continue }
+            entriesByID[id] = Self.withEmbedding(previousEmbedding, replacing: entry)
         }
 
-        return (MetadataIndex(ids: baseline.ids, entriesByID: entriesByID), pendingEmbedIDs, textsToEmbed)
+        let reused = MetadataIndex(ids: baseline.ids, entriesByID: entriesByID)
+        let pending = reused.pendingEmbeddings()
+        return (reused, pending.ids, pending.texts)
+    }
+
+    /// The ids and rendered blocks of every entry that carries no embedding yet, positionally aligned, in `ids` order.
+    ///
+    /// This is the batch an embed catch-up hands the embedder (plan.md §8).
+    /// `incrementalBaseline(items:previous:onDiagnostic:)` reads it off the
+    /// baseline it just built, and `MetadataSearcher`'s first-search
+    /// catch-up reads it off a synchronously built index no embedder has
+    /// seen yet.
+    ///
+    /// - Returns: the pending ids and their blocks, or two empty arrays when
+    ///   every entry already carries an embedding.
+    func pendingEmbeddings() -> (ids: [String], texts: [String]) {
+        let pending = ids.compactMap { id -> (id: String, text: String)? in
+            guard let entry = entriesByID[id], entry.embedding == nil else { return nil }
+            return (id, entry.block)
+        }
+        return (pending.map(\.id), pending.map(\.text))
     }
 
     /// Returns a copy of `index` with `ids`' embeddings replaced by `vectors`.

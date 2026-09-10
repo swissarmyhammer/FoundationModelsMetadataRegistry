@@ -144,8 +144,11 @@ struct EmbeddingTests {
         let cosineMatches = try await searcher.search(intent: query, limit: 5)
         #expect(cosineMatches.first?.id == "commit")
 
-        // A keyword query aimed at the un-embedded item must still surface
-        // it through BM25 + trigram, with cosine reported as absent (0.0).
+        // A keyword query aimed at the item that carried no embedding must
+        // still surface it through BM25 + trigram, with cosine reported as
+        // absent (0.0). The first search above caught that item up through
+        // `workingEmbedder`, which maps its unregistered block to the
+        // all-zero vector -- the same "contributes nothing" value.
         let keywordMatches = try await searcher.search(intent: "release health", limit: 5)
         let firstKeywordMatch = try #require(keywordMatches.first)
         #expect(firstKeywordMatch.id == "status")
@@ -231,5 +234,155 @@ struct EmbeddingTests {
 
         #expect(indexWithEmbedder.embedding(forID: "a") == [1, 0])
         #expect(embedder.embeddedTextCount == 1)
+    }
+
+    // MARK: - First-search embed catch-up for a synchronously built searcher
+
+    /// The catalog every first-search catch-up test below searches: two items
+    /// with no stored embedding, indexed synchronously.
+    private static let unembeddedItems = [
+        FixtureItem(id: "a", block: "alpha block"),
+        FixtureItem(id: "b", block: "bravo block"),
+    ]
+
+    /// The query the first-search catch-up tests search for.
+    private static let catchUpQuery = "alpha"
+
+    /// A `FakeEmbedder` that maps every block of `unembeddedItems` and the
+    /// `catchUpQuery` to a real vector, so a caught-up search can rank by
+    /// cosine.
+    private static func catchUpEmbedder() -> FakeEmbedder {
+        FakeEmbedder(
+            dimension: 2,
+            vectorsByText: [
+                unembeddedItems[0].block: [1, 0],
+                unembeddedItems[1].block: [0, 1],
+                catchUpQuery: [1, 0],
+            ]
+        )
+    }
+
+    @Test
+    func searcherBuiltSynchronouslyWithAnEmbedderEmbedsEveryBlockAtItsFirstSearchAndOnlyThen() async throws {
+        let embedder = Self.catchUpEmbedder()
+        let searcher = MetadataSearcher(index: MetadataIndex(items: Self.unembeddedItems), embedder: embedder)
+        // Construction embeds nothing: the synchronous initializer cannot
+        // await an embedder, and no search has asked for cosine yet.
+        #expect(embedder.embeddedBatches.isEmpty)
+
+        _ = try await searcher.search(intent: Self.catchUpQuery, limit: 5)
+
+        // The first search embeds every catalog block in one batch, then the
+        // query itself.
+        let catalogBlocks = Self.unembeddedItems.map(\.block)
+        #expect(embedder.embeddedBatches == [catalogBlocks, [Self.catchUpQuery]])
+
+        _ = try await searcher.search(intent: Self.catchUpQuery, limit: 5)
+
+        // The second search embeds the query only -- the catalog is caught
+        // up and is never re-embedded.
+        #expect(embedder.embeddedBatches == [catalogBlocks, [Self.catchUpQuery], [Self.catchUpQuery]])
+    }
+
+    @Test
+    func firstSearchRanksByCosineOnceTheCatalogIsCaughtUp() async throws {
+        let searcher = MetadataSearcher(index: MetadataIndex(items: Self.unembeddedItems), embedder: Self.catchUpEmbedder())
+
+        let matches = try await searcher.search(intent: Self.catchUpQuery, limit: 5)
+
+        let first = try #require(matches.first)
+        #expect(first.id == "a")
+        #expect(first.signals?.cosine != 0.0)
+    }
+
+    @Test
+    func firstSearchReportsEmbedCatchUpOneTimeAndNeverEmbeddingUnavailable() async throws {
+        let recorder = DiagnosticRecorder()
+        let searcher = MetadataSearcher(
+            index: MetadataIndex(items: Self.unembeddedItems),
+            embedder: Self.catchUpEmbedder(),
+            onDiagnostic: { recorder.record($0) }
+        )
+
+        _ = try await searcher.search(intent: Self.catchUpQuery, limit: 5)
+        _ = try await searcher.search(intent: Self.catchUpQuery, limit: 5)
+
+        // Exactly one catch-up report across both searches, and no
+        // `.embeddingUnavailable` at all: the catalog is embedded before the
+        // first search ranks.
+        #expect(recorder.diagnostics == [.embedCatchUp(pending: 2, total: 2)])
+    }
+
+    /// Bounded because the gate below has no timeout of its own: a searcher
+    /// that never starts the catch-up never signals the gate, and this test
+    /// must then fail rather than wait forever.
+    @Test(.timeLimit(.minutes(1)))
+    func twoConcurrentFirstSearchesEmbedTheCatalogOneTime() async throws {
+        let item = FixtureItem(id: "commit", block: "records a snapshot of staged changes")
+        let query = "snapshot"
+        let gate = EmbedGate()
+        // Only the catalog block is gated, so each search's own query embed
+        // resolves immediately once the catch-up lets it through.
+        let embedder = GatedEmbedder(
+            dimension: 2,
+            vectorsByText: [item.block: [1, 0], query: [1, 0]],
+            gate: gate,
+            gatedTexts: [item.block]
+        )
+        let recorder = DiagnosticRecorder()
+        let searcher = MetadataSearcher(
+            index: MetadataIndex(items: [item]),
+            embedder: embedder,
+            onDiagnostic: { recorder.record($0) }
+        )
+
+        async let firstMatches = searcher.search(intent: query, limit: 5)
+        // The first search's catch-up is now suspended inside the embedder,
+        // so the second search starts while the catalog is still pending.
+        await gate.waitForStart()
+        async let secondMatches = searcher.search(intent: query, limit: 5)
+        await gate.release()
+        let (first, second) = try await (firstMatches, secondMatches)
+
+        // One catch-up batch for the catalog, then one query embed per
+        // search -- the second search waited for the first search's catch-up
+        // instead of starting its own.
+        #expect(embedder.embeddedBatches.filter { $0 == [item.block] }.count == 1)
+        #expect(recorder.diagnostics == [.embedCatchUp(pending: 1, total: 1)])
+        #expect(first.first?.signals?.cosine != 0.0)
+        #expect(second.first?.signals?.cosine != 0.0)
+    }
+
+    @Test
+    func firstSelectionSearchCatchesUpTheCatalogBeforeTheTierRanks() async throws {
+        let recorder = DiagnosticRecorder()
+        let factory = RecordingSessionFactory(responses: [#"{"ids":["a"]}"#])
+        let searcher = MetadataSearcher(
+            index: MetadataIndex(items: Self.unembeddedItems),
+            mode: .selection,
+            embedder: Self.catchUpEmbedder(),
+            selection: SelectionConfig(model: factory.makeSession),
+            onDiagnostic: { recorder.record($0) }
+        )
+
+        let matches = try await searcher.search(intent: Self.catchUpQuery, limit: 5)
+
+        // The tier's candidate ranking runs over the caught-up snapshot: the
+        // selected item carries a real cosine score, and no
+        // `.embeddingUnavailable` was reported on the way.
+        #expect(matches.first?.signals?.cosine != 0.0)
+        #expect(recorder.diagnostics == [.embedCatchUp(pending: 2, total: 2)])
+    }
+
+    @Test
+    func searcherBuiltWithNoEmbedderNeverReportsEmbedCatchUpAtItsFirstSearch() async throws {
+        let recorder = DiagnosticRecorder()
+        let searcher = MetadataSearcher(items: Self.unembeddedItems, onDiagnostic: { recorder.record($0) })
+
+        _ = try await searcher.search(intent: Self.catchUpQuery, limit: 5)
+
+        // Unchanged keyword-only degradation: no catch-up to report, and the
+        // absent cosine signal is still reported, never silent.
+        #expect(recorder.diagnostics == [.embeddingUnavailable])
     }
 }

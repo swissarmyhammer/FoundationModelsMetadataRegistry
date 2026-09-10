@@ -326,6 +326,15 @@ notifications, a Multitool rebuild. Semantics:
    callers-refresh-nothing guarantee are unchanged.)*
 5. Surface the interim gap: `.embedCatchUp(pending:total:)` diagnostics report how many
    items are still serving keyword-only while embedding catches up.
+6. *(2026-09-10)* A searcher built synchronously with an embedder
+   (`init(index:mode:weights:embedder:selection:onDiagnostic:)`) over items that carry
+   no embedding runs the same catch-up itself, one time, at its first `search()` —
+   before it ranks, whichever tier the mode selects. Two searches that arrive before
+   that embed resolves share one embedder call. Such a searcher reports
+   `.embedCatchUp` once and never `.embeddingUnavailable`; a consumer that must build
+   with no `await` (a synchronous registry initializer) needs no wrapper that calls
+   `update(items:)` before the first search. An `update(items:)` that lands first
+   takes the catch-up over, so a search in its interim window stays keyword-only.
 
 `update` is cheap to call redundantly (hash-guarded), so callers may forward every
 upstream change notification without coalescing. MCP's churn rate is the design target:

@@ -36,9 +36,32 @@ actor EmbedGate {
     /// already has — the test's synchronization point for "the update call's
     /// embed call has actually started" (proving the baseline index
     /// reassignment that precedes it already happened).
+    ///
+    /// Also returns, with the gate still not started, when the waiting task
+    /// is cancelled — a test's `.timeLimit` cancels its task, and a searcher
+    /// that never calls the embedder never signals this gate, so the wait
+    /// must give up with the cancellation rather than hold the failed test
+    /// open forever.
     func waitForStart() async {
         if started { return }
-        await withCheckedContinuation { startContinuation = $0 }
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if Task.isCancelled {
+                    continuation.resume()
+                } else {
+                    startContinuation = continuation
+                }
+            }
+        } onCancel: {
+            Task { await self.abandonStartWait() }
+        }
+    }
+
+    /// Resumes a `waitForStart()` waiter whose task was cancelled, so that
+    /// wait returns instead of outliving its test.
+    private func abandonStartWait() {
+        startContinuation?.resume()
+        startContinuation = nil
     }
 
     /// Marks this gate started and resumes any `waitForStart()` waiter —
@@ -93,14 +116,43 @@ struct GatedEmbedder: TextEmbedding {
     /// ever being released) while the first stays suspended.
     var gatedTexts: Set<String>?
 
-    init(dimension: Int, vectorsByText: [String: [Float]] = [:], gate: EmbedGate, gatedTexts: Set<String>? = nil) {
+    /// Records the texts of every `embed(_:)` call, gated or not, so a test
+    /// can assert on how many times — and with which texts — this embedder
+    /// was called while the gate held other callers back.
+    private let counter: EmbedCallCounter
+
+    /// Creates a gated embedder returning `vectorsByText`'s registered
+    /// vectors verbatim once `gate` lets a call through.
+    ///
+    /// - Parameters:
+    ///   - dimension: the length of every embedding vector this embedder
+    ///     produces.
+    ///   - vectorsByText: exact-text -> vector lookup table; a text absent
+    ///     from this table embeds to an all-zero vector. Defaults to empty.
+    ///   - gate: the gate this embedder signals and blocks on.
+    ///   - gatedTexts: the texts whose calls block on `gate`; `nil` (the
+    ///     default) gates every call.
+    ///   - counter: the call counter to record every `embed(_:)` call's texts
+    ///     into. Defaults to a fresh, unshared counter.
+    init(
+        dimension: Int,
+        vectorsByText: [String: [Float]] = [:],
+        gate: EmbedGate,
+        gatedTexts: Set<String>? = nil,
+        counter: EmbedCallCounter = EmbedCallCounter()
+    ) {
         self.dimension = dimension
         self.vectorsByText = vectorsByText
         self.gate = gate
         self.gatedTexts = gatedTexts
+        self.counter = counter
     }
 
+    /// The texts of every `embed(_:)` call so far, in call order.
+    var embeddedBatches: [[String]] { counter.batches }
+
     func embed(_ texts: [String]) async throws -> [[Float]] {
+        counter.record(texts)
         let shouldGate = gatedTexts.map { !$0.isDisjoint(with: texts) } ?? true
         if shouldGate {
             await gate.signalStarted()
