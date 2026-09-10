@@ -38,10 +38,17 @@ public struct DemoAgentSession: AgentSession {
     /// - Returns: the selection tier's ids-only response shape, e.g.
     ///   `{"ids":["tripCities","weather"]}`.
     /// - Throws: an encoding error if `selectedIds` cannot be encoded, which
-    ///   `JSONEncoder` never does for an array of `String`.
+    ///   `JSONEncoder` never does for an array of `String`; or a decoding
+    ///   error if the encoded JSON is not valid UTF-8, which `JSONEncoder`
+    ///   also never produces.
     public func respond(to _: String) async throws -> String {
         let encoded = try JSONEncoder().encode(SelectedIds(ids: selectedIds))
-        return String(decoding: encoded, as: UTF8.self)
+        guard let json = String(bytes: encoded, encoding: .utf8) else {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(codingPath: [], debugDescription: "JSONEncoder produced non-UTF-8 output"),
+            )
+        }
+        return json
     }
 
     /// The wire shape the selection tier decodes: an ids-only object.
@@ -78,7 +85,7 @@ public struct DemoAgentSession: AgentSession {
 /// - Returns: the GPU-free selection configuration.
 public func demoSelectionConfig(
     selectedIds: [String],
-    capacityCharacterLimit: Int = SelectionConfig.defaultCapacityCharacterLimit
+    capacityCharacterLimit: Int = SelectionConfig.defaultCapacityCharacterLimit,
 ) -> SelectionConfig {
     SelectionConfig(
         model: { _ in DemoAgentSession(selectedIds: selectedIds) },
@@ -86,6 +93,6 @@ public func demoSelectionConfig(
         // original librarian prompt text rather than silently switching to
         // FoundationModelsRanker's neutral `.selectionDefault`.
         preamble: .librarianDefault,
-        capacityCharacterLimit: capacityCharacterLimit
+        capacityCharacterLimit: capacityCharacterLimit,
     )
 }

@@ -71,11 +71,11 @@ public enum MetadataDiagnostic: Sendable, Equatable {
         switch diagnostic {
         case .duplicateId(let id):
             logger.notice(
-                "duplicate id \"\(id, privacy: .public)\" in catalog; first occurrence kept, duplicate dropped."
+                "duplicate id \"\(id, privacy: .public)\" in catalog; first occurrence kept, duplicate dropped.",
             )
         case .embeddingUnavailable:
             logger.notice(
-                "no embedder configured or catalog not yet embedded; results are keyword-only (BM25 + trigram)."
+                "no embedder configured or catalog not yet embedded; results are keyword-only (BM25 + trigram).",
             )
         case .unknownSelectedId(let id):
             logger.notice("selection model returned unknown id \"\(id, privacy: .public)\"; ignored.")
@@ -84,11 +84,11 @@ public enum MetadataDiagnostic: Sendable, Equatable {
                 """
                 retrieval cut candidates from \(considered, privacy: .public) \
                 to \(kept, privacy: .public) before selection.
-                """
+                """,
             )
         case .embedCatchUp(let pending, let total):
             logger.notice(
-                "embedding catch-up: \(pending, privacy: .public)/\(total, privacy: .public) item(s) pending."
+                "embedding catch-up: \(pending, privacy: .public)/\(total, privacy: .public) item(s) pending.",
             )
         }
     }

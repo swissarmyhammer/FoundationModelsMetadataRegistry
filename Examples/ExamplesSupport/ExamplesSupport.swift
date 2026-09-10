@@ -61,7 +61,7 @@ public let baseGitCommands: [GitCommand] = [
     GitCommand(id: "push", block: "Upload local branch history to a remote server."),
     GitCommand(id: "pull", block: "Download and merge remote branch history."),
     GitCommand(id: "branch", block: "List, create, or delete lines of independent development."),
-    GitCommand(id: "stash", block: "Temporarily set aside uncommitted edits to switch tasks.")
+    GitCommand(id: "stash", block: "Temporarily set aside uncommitted edits to switch tasks."),
 ]
 
 /// Formats ranked matches, one line each, with their per-signal breakdown.
@@ -109,7 +109,7 @@ public func formattedMatches(matches: [Match<some SearchableMetadata>]) -> Strin
 ///     `MetadataDiagnostic.log(_:)`.
 public func printExampleDiagnostic(
     _ diagnostic: MetadataDiagnostic,
-    describingSpecialCase describe: (MetadataDiagnostic) -> String?
+    describingSpecialCase describe: (MetadataDiagnostic) -> String?,
 ) {
     if let message = describe(diagnostic) {
         print("[diagnostic] \(message)")

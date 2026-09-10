@@ -54,7 +54,7 @@ public let hotReloadBurst: [[HotReloadTool]] = [
     [hotReloadToolA],
     [hotReloadToolA, hotReloadToolB],
     [hotReloadToolA, hotReloadToolB],
-    [hotReloadToolB, hotReloadToolC]
+    [hotReloadToolB, hotReloadToolC],
 ]
 
 // MARK: - GPU-free burst replay
@@ -95,13 +95,13 @@ public func runHotReloadBurst(
     burst: [[HotReloadTool]] = hotReloadBurst,
     query: String = "file",
     limit: Int = 5,
-    embedder: (any TextEmbedding)? = DeterministicEmbedder()
+    embedder: (any TextEmbedding)? = DeterministicEmbedder(),
 ) async throws -> [BurstStepResult] {
     let log = DiagnosticLog()
     let searcher = await MetadataSearcher(
         items: [HotReloadTool](),
         embedder: embedder,
-        onDiagnostic: { log.record($0) }
+        onDiagnostic: { log.record($0) },
     )
 
     var steps: [BurstStepResult] = []
@@ -115,8 +115,8 @@ public func runHotReloadBurst(
             BurstStepResult(
                 appliedIds: items.map(\.id),
                 diagnostics: stepDiagnostics,
-                searchResultIds: searchResults.map(\.id)
-            )
+                searchResultIds: searchResults.map(\.id),
+            ),
         )
     }
     return steps
@@ -216,7 +216,7 @@ public func runSelectionRootRebuildDemo() async throws -> SelectionRebuildDemoRe
         initialFactoryCallCount: initialFactoryCallCount,
         rebuiltFactoryCallCount: rebuiltFactoryCallCount,
         initialCandidateIds: initialItems.map(\.id),
-        updatedCandidateIds: updatedItems.map(\.id)
+        updatedCandidateIds: updatedItems.map(\.id),
     )
 }
 

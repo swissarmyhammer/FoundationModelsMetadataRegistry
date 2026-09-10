@@ -51,7 +51,7 @@ struct PlanDocumentTests {
     private static let retiredNameStems = [
         "Router",
         "Routed",
-        "Grammar"
+        "Grammar",
     ]
 
     /// The text a section carries to mark its Router-era statements as
@@ -80,7 +80,7 @@ struct PlanDocumentTests {
             Every section of plan.md that names one of \(Self.retiredNameStems) must also carry \
             the dated "\(Self.supersededMarker)" marker, so a reader takes the name as history \
             and not as a claim about the package today; found: \(offenders)
-            """
+            """,
         )
     }
 

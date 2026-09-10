@@ -55,20 +55,20 @@ enum IntegrationCatalog {
     static let base: [IntegrationItem] = [
         IntegrationItem(
             id: "brewEspresso",
-            block: "Pulls one espresso shot from finely ground arabica beans."
+            block: "Pulls one espresso shot from finely ground arabica beans.",
         ),
         IntegrationItem(
             id: "tuneGuitar",
-            block: "Adjusts each guitar string until its pitch matches concert tuning."
+            block: "Adjusts each guitar string until its pitch matches concert tuning.",
         ),
         IntegrationItem(
             id: "waterOrchid",
-            block: "Waters a potted orchid and mists its aerial roots."
+            block: "Waters a potted orchid and mists its aerial roots.",
         ),
         IntegrationItem(
             id: "foldOrigami",
-            block: "Folds a square sheet of paper into an origami crane."
-        )
+            block: "Folds a square sheet of paper into an origami crane.",
+        ),
     ]
 
     /// The entry reserved for the add half of a hot-reload scenario: absent
@@ -76,7 +76,7 @@ enum IntegrationCatalog {
     /// `update(items:)` that put it in.
     static let addOnly = IntegrationItem(
         id: "sharpenSkates",
-        block: "Hones dull hockey skate blades on the whetstone."
+        block: "Hones dull hockey skate blades on the whetstone.",
     )
 
     /// The entry reserved for the remove half of a hot-reload scenario: present
@@ -84,7 +84,7 @@ enum IntegrationCatalog {
     /// `update(items:)` that dropped it is the measurement.
     static let removeOnly = IntegrationItem(
         id: "dyeWool",
-        block: "Steeps raw fleece yarn inside this indigo vat."
+        block: "Steeps raw fleece yarn inside this indigo vat.",
     )
 
     /// The three groups, each under the name a failure reports it by.
@@ -95,7 +95,7 @@ enum IntegrationCatalog {
     static let groups: [(name: String, items: [IntegrationItem])] = [
         (name: "base", items: base),
         (name: "add-only", items: [addOnly]),
-        (name: "remove-only", items: [removeOnly])
+        (name: "remove-only", items: [removeOnly]),
     ]
 
     /// The set of distinct terms `items` are retrieved by.

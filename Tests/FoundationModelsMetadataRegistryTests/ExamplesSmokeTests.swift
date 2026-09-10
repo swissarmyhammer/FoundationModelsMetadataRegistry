@@ -45,7 +45,7 @@ struct ExamplesSmokeTests {
     @Test("ExamplesSupport's deterministic embedder returns one vector per text at the requested dimension")
     func deterministicEmbedderReturnsOneVectorPerTextAtTheRequestedDimension() async throws {
         let embedder = ExamplesSupport.DeterministicEmbedder(
-            dimension: Self.deterministicEmbedderDimension
+            dimension: Self.deterministicEmbedderDimension,
         )
 
         let vectors = try await embedder.embed(Self.deterministicEmbedderTexts)
@@ -57,7 +57,7 @@ struct ExamplesSmokeTests {
     @Test("ExamplesSupport's deterministic embedder embeds the same texts to the same vectors every time")
     func deterministicEmbedderEmbedsTheSameTextsToTheSameVectorsEveryTime() async throws {
         let embedder = ExamplesSupport.DeterministicEmbedder(
-            dimension: Self.deterministicEmbedderDimension
+            dimension: Self.deterministicEmbedderDimension,
         )
 
         let first = try await embedder.embed(Self.deterministicEmbedderTexts)
@@ -98,7 +98,7 @@ struct ExamplesSmokeTests {
     func semanticSearchDefaultEmbedderContributesACosineSignal() async throws {
         let matches = try await SemanticSearchCore.runSemanticSearch(
             query: SemanticSearchCore.query,
-            onDiagnostic: { _ in }
+            onDiagnostic: { _ in },
         )
 
         let first = try #require(matches.first)
@@ -115,7 +115,7 @@ struct ExamplesSmokeTests {
         let matches = try await SemanticSearchCore.runSemanticSearch(
             query: SemanticSearchCore.query,
             embedder: nil,
-            onDiagnostic: { recorder.record($0) }
+            onDiagnostic: { recorder.record($0) },
         )
 
         #expect(recorder.diagnostics.contains(.embeddingUnavailable))
@@ -140,7 +140,7 @@ struct ExamplesSmokeTests {
         let matches = try await SemanticSearchCore.runSemanticSearch(
             query: SemanticSearchCore.query,
             embedder: nil,
-            onDiagnostic: { recorder.record($0) }
+            onDiagnostic: { recorder.record($0) },
         )
 
         // Passing `nil` explicitly must beat the GPU-free default embedder:
@@ -159,7 +159,7 @@ struct ExamplesSmokeTests {
         let matches = try await SemanticSearchCore.runSemanticSearch(
             query: SemanticSearchCore.query,
             embedder: nil,
-            onDiagnostic: { _ in }
+            onDiagnostic: { _ in },
         )
         let formatted = ExamplesSupport.formattedMatches(matches: matches)
 

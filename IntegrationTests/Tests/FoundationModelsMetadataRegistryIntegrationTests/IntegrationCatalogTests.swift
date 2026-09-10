@@ -28,7 +28,7 @@ struct IntegrationCatalogTests {
                 """
                 the \(groups[index].name) fixture group tokenized to no terms at all, \
                 so the disjointness this suite measures would hold vacuously
-                """
+                """,
             )
         }
 
@@ -44,7 +44,7 @@ struct IntegrationCatalogTests {
                     the \(groups[firstIndex].name) and \(groups[secondIndex].name) fixture groups \
                     share \(shared) — an intent that lands on a shared term has more than one \
                     defensible answer, so reword one group until the two vocabularies are disjoint
-                    """
+                    """,
                 )
             }
         }

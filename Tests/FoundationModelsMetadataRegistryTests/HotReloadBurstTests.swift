@@ -21,7 +21,7 @@ extension HotReloadTests {
             dimension: 2,
             vectorsByText: ["version one text": [1, 0], "version two text": [0, 1]],
             gate: gate,
-            gatedTexts: ["version one text"]
+            gatedTexts: ["version one text"],
         )
         // Empty initial catalog so construction itself never touches the gate.
         let searcher = await MetadataSearcher(items: [FixtureItem](), embedder: embedder)
@@ -60,8 +60,8 @@ extension HotReloadTests {
             vectorsByText: [
                 toolA.block: [1, 0],
                 toolB.block: [0, 1],
-                toolC.block: [1, 1]
-            ]
+                toolC.block: [1, 1],
+            ],
         )
         let searcher = await MetadataSearcher(items: [FixtureItem](), embedder: embedder)
 

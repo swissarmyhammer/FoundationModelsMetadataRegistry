@@ -22,7 +22,13 @@ print("Synthetic catalog size: \(catalog.count) entries")
 print("Query: \"\(bigCatalogNeedleQuery)\"\n")
 
 let retrieval = try await runBigCatalogRetrieval(catalog: catalog, query: bigCatalogNeedleQuery)
-print(String(format: "Retrieval over %d entries took %.4fs (GPU-free, in-memory)\n", retrieval.catalogCount, retrieval.elapsed))
+print(
+    String(
+        format: "Retrieval over %d entries took %.4fs (GPU-free, in-memory)\n",
+        retrieval.catalogCount,
+        retrieval.elapsed,
+    ),
+)
 print(formattedMatches(matches: retrieval.matches))
 
 print("\nRunning the over-budget selection query (GPU-free, scripted session)...\n")

@@ -52,8 +52,8 @@ struct HotReloadTests {
                 "alpha block": [1, 0],
                 "bravo block": [0, 1],
                 "charlie block": [1, 1],
-                "bravo block CHANGED": [0, -1]
-            ]
+                "bravo block CHANGED": [0, -1],
+            ],
         )
         let searcher = await MetadataSearcher(items: [itemA, itemB, itemC], embedder: embedder)
         #expect(embedder.embeddedTextCount == 3)
@@ -89,7 +89,7 @@ struct HotReloadTests {
         let embedder = FakeEmbedder(dimension: 2, vectorsByText: ["alpha block": [1, 0]])
         let root = RootSessionRespondCalledDirectlySession(forkResponses: [
             #"{"ids":["a"]}"#,
-            #"{"ids":["a"]}"#
+            #"{"ids":["a"]}"#,
         ])
         let factoryCallCount = CallCounter()
         let config = SelectionConfig(model: { _ in
@@ -128,7 +128,7 @@ struct HotReloadTests {
         let searcher = await MetadataSearcher(
             items: items,
             embedder: embedder,
-            onDiagnostic: { recorder.record($0) }
+            onDiagnostic: { recorder.record($0) },
         )
 
         await searcher.update(items: items)
@@ -187,7 +187,7 @@ struct HotReloadTests {
         let searcher = await MetadataSearcher(
             items: [itemA],
             embedder: embedder,
-            onDiagnostic: { recorder.record($0) }
+            onDiagnostic: { recorder.record($0) },
         )
 
         await searcher.update(items: [itemA, itemB])
@@ -211,7 +211,7 @@ struct HotReloadTests {
                     return true
                 }
                 return false
-            }
+            },
         )
     }
 
@@ -227,7 +227,7 @@ struct HotReloadTests {
         // freshly stored embedding instead of falling back to an all-zero
         // vector that would trivially score `0.0` regardless of catch-up.
         let embedder = GatedEmbedder(
-            dimension: 2, vectorsByText: [commit.block: [1, 0], "snapshot": [1, 0]], gate: gate
+            dimension: 2, vectorsByText: [commit.block: [1, 0], "snapshot": [1, 0]], gate: gate,
         )
         // Construct with an empty catalog so init itself never touches the
         // gate -- there's nothing to embed yet.
@@ -264,7 +264,7 @@ struct HotReloadTests {
         // its real content but carries no stored embedding.
         let itemA = FixtureItem(id: "a", block: "alpha block")
         let indexWithoutEmbedding = await MetadataIndex.build(
-            items: [itemA], embedder: FakeEmbedder(dimension: 2, failure: AlwaysFails())
+            items: [itemA], embedder: FakeEmbedder(dimension: 2, failure: AlwaysFails()),
         )
         #expect(indexWithoutEmbedding.embedding(forID: "a") == nil)
 
@@ -273,7 +273,7 @@ struct HotReloadTests {
         let searcher = MetadataSearcher(
             index: indexWithoutEmbedding,
             embedder: workingEmbedder,
-            onDiagnostic: { recorder.record($0) }
+            onDiagnostic: { recorder.record($0) },
         )
 
         // Same content as what's already indexed -- e.g. an upstream
@@ -295,12 +295,12 @@ struct HotReloadTests {
         let itemA = FixtureItem(id: "a", block: "alpha block")
         let indexWithoutEmbedding = await MetadataIndex.build(
             items: [itemA],
-            embedder: FakeEmbedder(dimension: 2, failure: AlwaysFails())
+            embedder: FakeEmbedder(dimension: 2, failure: AlwaysFails()),
         )
         let workingEmbedder = FakeEmbedder(dimension: 2, vectorsByText: ["alpha block": [1, 0]])
         let root = RootSessionRespondCalledDirectlySession(forkResponses: [
             #"{"ids":["a"]}"#,
-            #"{"ids":["a"]}"#
+            #"{"ids":["a"]}"#,
         ])
         let factoryCallCount = CallCounter()
         let config = SelectionConfig(model: { _ in
@@ -311,7 +311,7 @@ struct HotReloadTests {
             index: indexWithoutEmbedding,
             mode: .selection,
             embedder: workingEmbedder,
-            selection: config
+            selection: config,
         )
 
         _ = try await searcher.search(intent: "task", limit: 5)

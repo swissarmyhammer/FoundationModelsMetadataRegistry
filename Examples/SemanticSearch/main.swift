@@ -23,6 +23,6 @@ print("Query: \"\(query)\"\(noEmbedder ? " (--no-embedder)" : "")\n")
 let matches = try await runSemanticSearch(
     query: query,
     embedder: noEmbedder ? nil : DeterministicEmbedder(),
-    onDiagnostic: printDiagnostic
+    onDiagnostic: printDiagnostic,
 )
 print(formattedMatches(matches: matches))

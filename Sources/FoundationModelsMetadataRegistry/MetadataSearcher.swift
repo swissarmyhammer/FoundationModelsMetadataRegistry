@@ -168,7 +168,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         mode: SearchMode = .auto,
         weights: Weights = Weights(),
         selection: SelectionConfig? = nil,
-        onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) }
+        onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
     ) {
         self.init(
             index: MetadataIndex(items: items, onDiagnostic: onDiagnostic),
@@ -176,7 +176,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
             weights: weights,
             embedder: nil,
             selection: selection,
-            onDiagnostic: onDiagnostic
+            onDiagnostic: onDiagnostic,
         )
     }
 
@@ -210,7 +210,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         weights: Weights = Weights(),
         embedder: (any TextEmbedding)?,
         selection: SelectionConfig? = nil,
-        onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) }
+        onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
     ) async {
         await self.init(
             index: MetadataIndex.build(items: items, embedder: embedder, onDiagnostic: onDiagnostic),
@@ -218,7 +218,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
             weights: weights,
             embedder: embedder,
             selection: selection,
-            onDiagnostic: onDiagnostic
+            onDiagnostic: onDiagnostic,
         )
     }
 
@@ -256,7 +256,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         weights: Weights = Weights(),
         embedder: (any TextEmbedding)? = nil,
         selection: SelectionConfig? = nil,
-        onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) }
+        onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
     ) {
         self.index = index
         self.mode = mode
@@ -266,7 +266,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         selectionConfig = selection
         firstSearchCatchUp = embedder == nil ? .done : .pending
         selectionTier = Self.buildSelectionTierIfConfigured(
-            config: selection, index: index, onDiagnostic: onDiagnostic
+            config: selection, index: index, onDiagnostic: onDiagnostic,
         )
     }
 
@@ -304,16 +304,16 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     static func buildSelectionTierIfConfigured(
         config: SelectionConfig?,
         index: MetadataIndex<Item>,
-        onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void
+        onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void,
     ) -> ConfiguredSelectionTier? {
         guard let config else { return nil }
         return (
             tier: SelectionTier(
                 catalog: index,
                 config: config,
-                onDiagnostic: { onDiagnostic(MetadataDiagnostic($0)) }
+                onDiagnostic: { onDiagnostic(MetadataDiagnostic($0)) },
             ),
-            snapshot: index
+            snapshot: index,
         )
     }
 }

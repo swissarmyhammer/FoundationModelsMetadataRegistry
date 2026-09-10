@@ -63,7 +63,7 @@ extension MetadataIndex {
         items: [Item],
         embedder: (any TextEmbedding)?,
         previous: MetadataIndex<Item>? = nil,
-        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) }
+        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
     ) async -> MetadataIndex<Item> {
         let result = incrementalBaseline(items: items, previous: previous, onDiagnostic: onDiagnostic)
         guard let embedder, !result.pendingEmbedIDs.isEmpty,
@@ -73,7 +73,7 @@ extension MetadataIndex {
             return result.baseline
         }
         return mergingEmbeddings(
-            ids: result.pendingEmbedIDs, vectors: vectors, embeddedFrom: result.baseline, into: result.baseline
+            ids: result.pendingEmbedIDs, vectors: vectors, embeddedFrom: result.baseline, into: result.baseline,
         )
     }
 
@@ -105,7 +105,7 @@ extension MetadataIndex {
     static func incrementalBaseline(
         items: [Item],
         previous: MetadataIndex<Item>?,
-        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
+        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void,
     ) -> IncrementalBaseline {
         let baseline = MetadataIndex(items: items, onDiagnostic: onDiagnostic)
         var entriesByID = baseline.entriesByID
@@ -193,7 +193,7 @@ extension MetadataIndex {
         ids: [String],
         vectors: [[Float]],
         embeddedFrom source: MetadataIndex<Item>,
-        into index: MetadataIndex<Item>
+        into index: MetadataIndex<Item>,
     ) -> MetadataIndex<Item> {
         var entriesByID = index.entriesByID
         for (id, vector) in zip(ids, vectors) {
@@ -242,7 +242,7 @@ extension MetadataIndex {
             block: entry.block,
             rankedDocument: entry.rankedDocument,
             blockHash: entry.blockHash,
-            embedding: embedding
+            embedding: embedding,
         )
     }
 

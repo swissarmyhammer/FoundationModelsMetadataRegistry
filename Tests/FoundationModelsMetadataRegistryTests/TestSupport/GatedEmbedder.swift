@@ -143,7 +143,7 @@ struct GatedEmbedder: TextEmbedding {
         vectorsByText: [String: [Float]] = [:],
         gate: EmbedGate,
         gatedTexts: Set<String>? = nil,
-        counter: EmbedCallCounter = EmbedCallCounter()
+        counter: EmbedCallCounter = EmbedCallCounter(),
     ) {
         self.dimension = dimension
         self.vectorsByText = vectorsByText

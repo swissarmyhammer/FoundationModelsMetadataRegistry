@@ -53,7 +53,7 @@ extension MetadataSearcher {
         let result = MetadataIndex.incrementalBaseline(
             items: items,
             previous: previous,
-            onDiagnostic: onDiagnostic
+            onDiagnostic: onDiagnostic,
         )
         let baseline = result.baseline
 
@@ -67,13 +67,13 @@ extension MetadataSearcher {
         // all, so forcing a re-prefill for it would be pure waste.
         if contentChanged {
             selectionTier = Self.buildSelectionTierIfConfigured(
-                config: selectionConfig, index: baseline, onDiagnostic: onDiagnostic
+                config: selectionConfig, index: baseline, onDiagnostic: onDiagnostic,
             )
         }
 
         guard !result.pendingEmbedIDs.isEmpty, let embedder else { return }
         await catchUpEmbeddings(
-            ids: result.pendingEmbedIDs, texts: result.textsToEmbed, embeddedFrom: baseline, with: embedder
+            ids: result.pendingEmbedIDs, texts: result.textsToEmbed, embeddedFrom: baseline, with: embedder,
         )
     }
 
@@ -115,7 +115,7 @@ extension MetadataSearcher {
         ids: [String],
         texts: [String],
         embeddedFrom baseline: MetadataIndex<Item>,
-        with embedder: any TextEmbedding
+        with embedder: any TextEmbedding,
     ) async {
         onDiagnostic(.embedCatchUp(pending: ids.count, total: baseline.count))
         guard let vectors = try? await embedder.embed(texts), vectors.count == ids.count else { return }
@@ -223,7 +223,7 @@ extension MetadataSearcher {
     private static func selectionSearch(
         _ selection: ConfiguredSelectionTier,
         intent: String,
-        limit: Int
+        limit: Int,
     ) async throws -> [Match<Item>] {
         let selectionMatches = try await selection.tier.search(intent: intent, limit: limit)
         let snapshot = selection.snapshot
@@ -243,10 +243,10 @@ extension MetadataSearcher {
     /// (plan.md §5). Only ever returns documents at least one signal
     /// actually ranked.
     private func retrievalSearch(intent: String, limit: Int) async -> [Match<Item>] {
-        guard limit > 0, index.count > 0 else { return [] }
+        guard limit > 0, !index.ids.isEmpty else { return [] }
 
         let cosineScores = await Self.computeCosineScores(
-            intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic
+            intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic,
         )
         let hits = HybridRanker.topMatches(
             ids: index.ids,
@@ -254,7 +254,7 @@ extension MetadataSearcher {
             query: intent,
             cosineScores: cosineScores,
             weights: weights,
-            limit: limit
+            limit: limit,
         )
         return Self.matches(fromHits: hits, in: index)
     }
@@ -316,7 +316,7 @@ extension MetadataSearcher {
         index: MetadataIndex<Item>,
         weights: Weights,
         embedder: (any TextEmbedding)?,
-        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
+        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void,
     ) async -> [Double]? {
         // Cosine only runs when configured to actually count: a zero weight
         // means the caller doesn't want the signal, so there's no reason to

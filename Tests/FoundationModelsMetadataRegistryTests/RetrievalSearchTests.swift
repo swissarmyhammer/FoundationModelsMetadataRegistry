@@ -42,7 +42,7 @@ struct RetrievalSearchTests {
         FixtureItem(id: "secrets", block: "manages encrypted configuration values"),
         FixtureItem(id: "network", block: "configures virtual network topology"),
         FixtureItem(id: "firewall", block: "controls inbound and outbound traffic rules"),
-        FixtureItem(id: "dns", block: "manages domain name records")
+        FixtureItem(id: "dns", block: "manages domain name records"),
     ]
 
     // MARK: - Golden ranking: id-field weighting
@@ -212,7 +212,7 @@ struct RetrievalSearchTests {
     /// stronger trigram match.
     private static let crossoverOne = FixtureItem(
         id: "twin-one",
-        block: Array(repeating: "twinword", count: 20).joined(separator: " ") + " filler"
+        block: Array(repeating: "twinword", count: 20).joined(separator: " ") + " filler",
     )
     private static let crossoverTwo = FixtureItem(id: "twinword", block: "distinct filler text only")
 
@@ -234,7 +234,7 @@ struct RetrievalSearchTests {
 
         #expect(secondMatches.map(\.id) == ["twinword", "twin-one"])
         let secondScores = try #require(
-            secondMatches.count == 2 ? (secondMatches[0].score, secondMatches[1].score) : nil
+            secondMatches.count == 2 ? (secondMatches[0].score, secondMatches[1].score) : nil,
         )
         #expect(abs(secondScores.0 - secondScores.1) < 1e-9)
     }
@@ -268,7 +268,7 @@ struct RetrievalSearchTests {
             query: "deploy",
             cosineScores: nil,
             weights: Weights(),
-            limit: 5
+            limit: 5,
         )
 
         #expect(!hits.isEmpty)

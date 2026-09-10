@@ -58,7 +58,7 @@ let examplesSupportName = "ExamplesSupport"
 func exampleDependencies(on libraryName: String) -> [Target.Dependency] {
     [
         .target(name: libraryName),
-        .target(name: examplesSupportName)
+        .target(name: examplesSupportName),
     ]
 }
 
@@ -81,7 +81,7 @@ func exampleExecutableTarget(name: String, coreName: String) -> Target {
     .executableTarget(
         name: name,
         dependencies: exampleDependencies(on: coreName),
-        path: "Examples/\(name)"
+        path: "Examples/\(name)",
     )
 }
 
@@ -108,7 +108,7 @@ func exampleCoreTarget(name: String) -> Target {
     .target(
         name: name,
         dependencies: exampleDependencies(on: packageName),
-        path: "Examples/\(name)"
+        path: "Examples/\(name)",
     )
 }
 
@@ -132,24 +132,24 @@ let package = Package(
     // §10). FoundationModelsRanker declares the same floor, so the one
     // dependency imposes no higher one.
     platforms: [
-        .macOS("27.0")
+        .macOS("27.0"),
     ],
     products: [
         .library(
             name: packageName,
-            targets: [packageName]
-        )
+            targets: [packageName],
+        ),
     ],
     dependencies: [
-        .package(url: "\(swissArmyHammerOrg)\(foundationModelsRankerPackage).git", branch: "main")
+        .package(url: "\(swissArmyHammerOrg)\(foundationModelsRankerPackage).git", branch: "main"),
     ],
     targets: [
         .target(
             name: packageName,
             dependencies: [
-                .product(name: foundationModelsRankerPackage, package: foundationModelsRankerPackage)
+                .product(name: foundationModelsRankerPackage, package: foundationModelsRankerPackage),
             ],
-            path: "Sources/\(packageName)"
+            path: "Sources/\(packageName)",
         ),
         // This target holds the unit tests, and only the unit tests. The
         // suite that needs a real model lives in the nested
@@ -174,9 +174,9 @@ let package = Package(
                 // `CatalogSearchCore`/`SemanticSearchCore` above.
                 .target(name: "BigCatalogCore"),
                 .target(name: "HotReloadCore"),
-                .target(name: "LibrarianCore")
+                .target(name: "LibrarianCore"),
             ],
-            path: "Tests/\(packageName)Tests"
+            path: "Tests/\(packageName)Tests",
         ),
         // Fixture type (`GitCommand`), the common fixture prefix
         // (`baseGitCommands`), and the match formatter (`formattedMatches`)
@@ -187,7 +187,7 @@ let package = Package(
         .target(
             name: examplesSupportName,
             dependencies: [.target(name: packageName)],
-            path: "Examples/\(examplesSupportName)"
+            path: "Examples/\(examplesSupportName)",
         ),
         // `CatalogSearch`'s entry logic (plan.md §13 M1): fixture items
         // conformed to `SearchableMetadata`, a keyword-only
@@ -242,6 +242,6 @@ let package = Package(
         // index-rebuild path directly.
         exampleCoreTarget(name: "HotReloadCore"),
         // A thin runnable entry point over `HotReloadCore`.
-        exampleExecutableTarget(name: "HotReload", coreName: "HotReloadCore")
-    ]
+        exampleExecutableTarget(name: "HotReload", coreName: "HotReloadCore"),
+    ],
 )

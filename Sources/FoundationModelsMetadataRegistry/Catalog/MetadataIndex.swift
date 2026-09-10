@@ -86,7 +86,7 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
     ///     via `MetadataDiagnostic.log(_:)`.
     public init(
         items: [Item],
-        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) }
+        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
     ) {
         var ids: [String] = []
         var entriesByID: [String: Entry] = [:]
@@ -122,7 +122,7 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
             block: block,
             rankedDocument: RankedDocument(primaryText: item.id, bodyText: block),
             blockHash: Data(SHA256.hash(data: Data(block.utf8))),
-            embedding: nil
+            embedding: nil,
         )
     }
 

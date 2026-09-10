@@ -98,7 +98,7 @@ struct HotReloadRealModelTests {
             searcher was initialized with, so the rebuild on `update(items:)`'s content-change \
             branch did not reach it. The same intent returned that id on 5 of 5 runs against the \
             reloaded catalog when this suite was written.
-            """
+            """,
         )
 
         SelectionScenario.expectNoUnknownSelectedId(among: answer.diagnostics, answering: Self.addIntent)
@@ -123,7 +123,7 @@ struct HotReloadRealModelTests {
             answering from a prefix that lists the deleted entry. This is the exact symptom this \
             suite guards: the same intent found that id on 5 of 5 runs while it was present, and \
             returned nothing on 5 of 5 runs against the reloaded catalog.
-            """
+            """,
         )
 
         SelectionScenario.expectNoUnknownSelectedId(among: answer.diagnostics, answering: Self.removeIntent)
@@ -151,7 +151,7 @@ struct HotReloadRealModelTests {
     ///   raised after that gate passed, or whatever the selection tier itself
     ///   threw.
     private static func searchAfterHotReload(
-        for intent: String
+        for intent: String,
     ) async throws -> (ids: [String], diagnostics: [MetadataDiagnostic]) {
         try ModelAvailability.requireAvailable()
 

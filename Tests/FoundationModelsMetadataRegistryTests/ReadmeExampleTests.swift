@@ -42,7 +42,7 @@ struct ReadmeExampleTests {
         GitCommand(id: "push", block: "Upload local branch history to a remote server."),
         GitCommand(id: "pull", block: "Download and merge remote branch history."),
         GitCommand(id: "branch", block: "List, create, or delete lines of independent development."),
-        GitCommand(id: "stash", block: "Temporarily set aside uncommitted edits to switch tasks.")
+        GitCommand(id: "stash", block: "Temporarily set aside uncommitted edits to switch tasks."),
     ]
 
     /// The intent the README's example searches for.
@@ -65,14 +65,14 @@ struct ReadmeExampleTests {
         let rankedIDs = matches.map(\.id)
         #expect(
             rankedIDs.count == Self.limit,
-            "The README shows a limit of \(Self.limit) matches; got \(rankedIDs)."
+            "The README shows a limit of \(Self.limit) matches; got \(rankedIDs).",
         )
         #expect(
             rankedIDs.first == Self.topRankedID,
             """
             The README says \(Self.topRankedID) takes the first rank for "\(Self.intent)"; \
             the ranking was \(rankedIDs).
-            """
+            """,
         )
     }
 
@@ -89,7 +89,7 @@ struct ReadmeExampleTests {
             This suite runs the README's example, so every line of it must still be in \
             \(Self.readmeFileName). Update both together; these lines are no longer there: \
             \(missing)
-            """
+            """,
         )
     }
 
@@ -105,7 +105,7 @@ struct ReadmeExampleTests {
         commands.map { #"GitCommand(id: "\#($0.id)", block: "\#($0.block)")"# }
             + [
                 "let searcher = MetadataSearcher(items: commands, mode: .retrieval)",
-                #"let matches = try await searcher.search(intent: "\#(intent)", limit: \#(limit))"#
+                #"let matches = try await searcher.search(intent: "\#(intent)", limit: \#(limit))"#,
             ]
     }
 }

@@ -37,7 +37,7 @@ struct PackageManifestTests {
         "MLXHuggingFace",
         "MLXLMCommon",
         "HuggingFace",
-        "Tokenizers"
+        "Tokenizers",
     ]
 
     /// The packages the manifest declared while this library resolved a live
@@ -53,7 +53,7 @@ struct PackageManifestTests {
         "mlx-swift-lm",
         "swift-huggingface",
         "swift-transformers",
-        "swift-jinja"
+        "swift-jinja",
     ]
 
     /// The one package this library depends on.
@@ -71,7 +71,7 @@ struct PackageManifestTests {
     private static let removedRouterNames = [
         "FoundationModelsRouter",
         "RoutedEmbedderAdapter",
-        "RoutedAgentSession"
+        "RoutedAgentSession",
     ]
 
     /// The suffix a Git URL ends in, removed to read the package name.
@@ -93,7 +93,7 @@ struct PackageManifestTests {
             """
             Package.swift must name no MLX or Hugging Face product — nothing in this repository \
             resolves a live Router any more; found: \(live)
-            """
+            """,
         )
     }
 
@@ -106,7 +106,7 @@ struct PackageManifestTests {
             """
             Package.swift must declare none of the packages the live-Router path needed — no \
             target names one any more; found: \(removed)
-            """
+            """,
         )
     }
 
@@ -122,7 +122,7 @@ struct PackageManifestTests {
             """
             Package.swift must declare exactly one dependency, \(Self.rankerPackageName); \
             found: \(declared)
-            """
+            """,
         )
     }
 
@@ -135,7 +135,7 @@ struct PackageManifestTests {
             Package.swift and every file under Sources/ must spell none of \
             \(Self.removedRouterNames) — this package does not depend on that package, and \
             those two types no longer exist; found: \(offenders)
-            """
+            """,
         )
     }
 
@@ -225,7 +225,7 @@ struct PackageManifestTests {
     /// - Throws: an error when the pattern does not compile.
     private static func expanded(
         _ literal: String,
-        with constants: [String: String]
+        with constants: [String: String],
     ) throws -> String {
         let interpolationPattern = try Regex(#"\\\(([A-Za-z_][A-Za-z0-9_]*)\)"#)
         var expandedText = ""
@@ -260,7 +260,7 @@ struct PackageManifestTests {
     /// - Returns: the first capture of each match, in match order.
     private static func firstCaptures(
         of pattern: Regex<AnyRegexOutput>,
-        in text: String
+        in text: String,
     ) -> [String] {
         text.matches(of: pattern).compactMap { $0[1].substring.map(String.init) }
     }

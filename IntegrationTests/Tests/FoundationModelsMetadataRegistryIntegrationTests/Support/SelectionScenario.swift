@@ -39,7 +39,7 @@ enum SelectionScenario {
     ///   root session yet.
     static func makeSearcher(
         over items: [IntegrationItem],
-        reporting recorded: OSAllocatedUnfairLock<[MetadataDiagnostic]>
+        reporting recorded: OSAllocatedUnfairLock<[MetadataDiagnostic]>,
     ) -> MetadataSearcher<IntegrationItem> {
         MetadataSearcher(
             items: items,
@@ -48,9 +48,9 @@ enum SelectionScenario {
                 model: { instructions in
                     LanguageModelSession(model: .default, instructions: instructions)
                 },
-                preamble: .librarianDefault
+                preamble: .librarianDefault,
             ),
-            onDiagnostic: { diagnostic in recorded.withLock { $0.append(diagnostic) } }
+            onDiagnostic: { diagnostic in recorded.withLock { $0.append(diagnostic) } },
         )
     }
 
@@ -74,7 +74,7 @@ enum SelectionScenario {
     static func expectNoUnknownSelectedId(
         among diagnostics: [MetadataDiagnostic],
         answering intent: String,
-        sourceLocation: SourceLocation = #_sourceLocation
+        sourceLocation: SourceLocation = #_sourceLocation,
     ) {
         let invented = Self.unknownSelectedIds(among: diagnostics)
         #expect(
@@ -83,7 +83,7 @@ enum SelectionScenario {
             the model answered "\(intent)" with \(invented), which is no id of the catalog it was \
             given. That diagnostic fired in none of the 125 cold runs measured on `^nwt7nz4`.
             """,
-            sourceLocation: sourceLocation
+            sourceLocation: sourceLocation,
         )
     }
 

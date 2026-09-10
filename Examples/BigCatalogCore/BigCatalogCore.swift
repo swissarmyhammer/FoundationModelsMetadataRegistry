@@ -49,7 +49,7 @@ public let bigCatalogNeedleQuery = "quantum flux capacitor calibration"
 /// some lexical variety without hand-authoring ~1,000 unique descriptions.
 private let bigCatalogTopics = [
     "parser", "renderer", "scheduler", "cache", "logger",
-    "validator", "compiler", "router", "indexer", "formatter"
+    "validator", "compiler", "router", "indexer", "formatter",
 ]
 
 /// Builds a synthetic catalog of `count` entries: `count - 1` generic filler
@@ -72,7 +72,7 @@ public func makeBigCatalog(count: Int = 1000) -> [BigCatalogItem] {
     for index in 0 ..< fillerCount {
         let topic = bigCatalogTopics[index % bigCatalogTopics.count]
         let id = "https://example.com/modules/module-\(index)"
-        let block = "Module #\(index): a \(topic) component handling \(topic)-related tasks for subsystem \(index % 37)."
+        let block = "Module #\(index): a \(topic) component for \(topic)-related subsystem \(index % 37) tasks."
         items.append(BigCatalogItem(id: id, block: block))
     }
     items.append(BigCatalogItem(id: bigCatalogNeedleId, block: bigCatalogNeedleBlock))
@@ -109,7 +109,7 @@ public struct RetrievalTimingResult: Sendable {
 public func runBigCatalogRetrieval(
     catalog: [BigCatalogItem] = makeBigCatalog(),
     query: String,
-    limit: Int = 10
+    limit: Int = 10,
 ) async throws -> RetrievalTimingResult {
     let start = Date()
     let searcher = MetadataSearcher(items: catalog, mode: .retrieval)
@@ -150,11 +150,11 @@ public func runBigCatalogOverBudgetSelection(
     catalog: [BigCatalogItem],
     query: String,
     limit: Int = 10,
-    onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) }
+    onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
 ) async throws -> [Match<BigCatalogItem>] {
     let config = demoSelectionConfig(
         selectedIds: [bigCatalogNeedleId],
-        capacityCharacterLimit: overBudgetCapacityCharacterLimit
+        capacityCharacterLimit: overBudgetCapacityCharacterLimit,
     )
     let searcher = MetadataSearcher(items: catalog, mode: .selection, selection: config, onDiagnostic: onDiagnostic)
     return try await searcher.search(intent: query, limit: limit)

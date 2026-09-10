@@ -37,7 +37,7 @@ struct SelectionTests {
 
     static let catalog: [FixtureItem] = [
         FixtureItem(id: "deploy", block: "ships containers to a kubernetes cluster"),
-        FixtureItem(id: "rollback", block: "reverts the last release")
+        FixtureItem(id: "rollback", block: "reverts the last release"),
     ]
 
     // MARK: - Cached root + fork-per-call
@@ -46,7 +46,7 @@ struct SelectionTests {
     func eachSearchCallForksTheCachedRootSessionExactlyOnce() async throws {
         let root = RootSessionRespondCalledDirectlySession(forkResponses: [
             #"{"ids":["deploy"]}"#,
-            #"{"ids":["rollback"]}"#
+            #"{"ids":["rollback"]}"#,
         ])
         let factoryCallCount = CallCounter()
         let config = SelectionConfig(model: { _ in
@@ -132,7 +132,7 @@ struct SelectionTests {
             items: Self.catalog,
             mode: .selection,
             selection: config,
-            onDiagnostic: { recorder.record($0) }
+            onDiagnostic: { recorder.record($0) },
         )
 
         let matches = try await searcher.search(intent: "task", limit: 5)
@@ -167,7 +167,7 @@ struct SelectionTests {
             items: Self.catalog,
             mode: .selection,
             selection: config,
-            onDiagnostic: { recorder.record($0) }
+            onDiagnostic: { recorder.record($0) },
         )
 
         let matches = try await searcher.search(intent: "nothing matches this", limit: 5)
@@ -200,7 +200,7 @@ struct SelectionTests {
             items: Self.catalog,
             mode: .selection,
             selection: config,
-            onDiagnostic: { recorder.record($0) }
+            onDiagnostic: { recorder.record($0) },
         )
 
         let matches = try await searcher.search(intent: "task", limit: 5)

@@ -44,7 +44,7 @@ struct OverBudgetTests {
         FixtureItem(id: "bravo", block: "second unrelated block text", summary: "SUMMARY_bravo"),
         FixtureItem(id: "charlie", block: "third unrelated block text", summary: "SUMMARY_charlie"),
         FixtureItem(id: "delta", block: "fourth unrelated block text", summary: "SUMMARY_delta"),
-        FixtureItem(id: "echo", block: "fifth unrelated block text", summary: "SUMMARY_echo")
+        FixtureItem(id: "echo", block: "fifth unrelated block text", summary: "SUMMARY_echo"),
     ]
 
     /// A `capacityCharacterLimit` of `1` is smaller than the assembled
@@ -102,7 +102,7 @@ struct OverBudgetTests {
                 factoryCallCount.increment()
                 return ScriptedAgentSession([#"{"ids":["alpha"]}"#])
             },
-            capacityCharacterLimit: Self.forcedOverBudgetLimit
+            capacityCharacterLimit: Self.forcedOverBudgetLimit,
         )
         let searcher = MetadataSearcher(items: Self.catalog, mode: .selection, selection: config)
 
@@ -119,7 +119,7 @@ struct OverBudgetTests {
         let session = ScriptedAgentSession(Self.oneResponsePerRun)
         let config = SelectionConfig(
             model: { _ in session },
-            capacityCharacterLimit: Self.forcedOverBudgetLimit
+            capacityCharacterLimit: Self.forcedOverBudgetLimit,
         )
         let searcher = MetadataSearcher(items: Self.catalog, mode: .selection, selection: config)
 
@@ -142,7 +142,7 @@ struct OverBudgetTests {
             items: Self.catalog,
             mode: .selection,
             selection: config,
-            onDiagnostic: { recorder.record($0) }
+            onDiagnostic: { recorder.record($0) },
         )
 
         _ = try await searcher.search(intent: "alpha", limit: 5)
@@ -162,7 +162,7 @@ struct OverBudgetTests {
             items: Self.catalog,
             mode: .selection,
             selection: config,
-            onDiagnostic: { recorder.record($0) }
+            onDiagnostic: { recorder.record($0) },
         )
 
         _ = try await searcher.search(intent: "alpha", limit: 5)
@@ -179,13 +179,13 @@ struct OverBudgetTests {
                 factoryCallCount.increment()
                 return ScriptedAgentSession([#"{"ids":[]}"#])
             },
-            capacityCharacterLimit: Self.forcedOverBudgetLimit
+            capacityCharacterLimit: Self.forcedOverBudgetLimit,
         )
         let searcher = MetadataSearcher(
             items: [FixtureItem](),
             mode: .selection,
             selection: config,
-            onDiagnostic: { recorder.record($0) }
+            onDiagnostic: { recorder.record($0) },
         )
 
         let matches = try await searcher.search(intent: "alpha", limit: 5)
@@ -213,7 +213,7 @@ struct OverBudgetTests {
             items: Self.catalog,
             mode: .selection,
             selection: config,
-            onDiagnostic: { recorder.record($0) }
+            onDiagnostic: { recorder.record($0) },
         )
 
         let matches = try await searcher.search(intent: "alpha", limit: 5)
@@ -231,7 +231,7 @@ struct OverBudgetTests {
             items: Self.catalog,
             mode: .selection,
             selection: config,
-            onDiagnostic: { recorder.record($0) }
+            onDiagnostic: { recorder.record($0) },
         )
 
         let matches = try await searcher.search(intent: "alpha", limit: 5)
@@ -254,7 +254,7 @@ struct OverBudgetTests {
         // the model and an invented id.
         let prefix = SelectionTier.assemblePrefix(
             preamble: .librarianDefault,
-            catalog: MetadataIndex(items: Self.catalog)
+            catalog: MetadataIndex(items: Self.catalog),
         )
 
         for item in Self.catalog {
@@ -287,12 +287,12 @@ struct OverBudgetTests {
         let expectedPrefix = SelectionTier.assemblePrefix(
             preamble: .librarianDefault,
             ids: Self.catalog.map(\.id),
-            catalog: MetadataIndex(items: Self.catalog)
+            catalog: MetadataIndex(items: Self.catalog),
         )
         let factoryCallCount = CallCounter()
         let root = RootSessionRespondCalledDirectlySession(forkResponses: [
             #"{"ids":["alpha"]}"#,
-            #"{"ids":["alpha"]}"#
+            #"{"ids":["alpha"]}"#,
         ])
         let config = SelectionConfig(
             model: { _ in
@@ -300,7 +300,7 @@ struct OverBudgetTests {
                 return root
             },
             preamble: .librarianDefault,
-            capacityCharacterLimit: expectedPrefix.count
+            capacityCharacterLimit: expectedPrefix.count,
         )
         let searcher = MetadataSearcher(items: Self.catalog, mode: .selection, selection: config)
 
@@ -320,7 +320,7 @@ struct OverBudgetTests {
         let expectedPrefix = SelectionTier.assemblePrefix(
             preamble: .librarianDefault,
             ids: Self.catalog.map(\.id),
-            catalog: MetadataIndex(items: Self.catalog)
+            catalog: MetadataIndex(items: Self.catalog),
         )
         let factoryCallCount = CallCounter()
         let config = SelectionConfig(
@@ -329,7 +329,7 @@ struct OverBudgetTests {
                 return ScriptedAgentSession([#"{"ids":["alpha"]}"#])
             },
             preamble: .librarianDefault,
-            capacityCharacterLimit: expectedPrefix.count - 1
+            capacityCharacterLimit: expectedPrefix.count - 1,
         )
         let searcher = MetadataSearcher(items: Self.catalog, mode: .selection, selection: config)
 

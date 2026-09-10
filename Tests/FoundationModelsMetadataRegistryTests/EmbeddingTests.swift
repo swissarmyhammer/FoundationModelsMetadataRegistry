@@ -36,8 +36,8 @@ struct EmbeddingTests {
             vectorsByText: [
                 query: [1, 0],
                 commit.block: [1, 0],
-                status.block: [0, 1]
-            ]
+                status.block: [0, 1],
+            ],
         )
 
         let keywordOnly = MetadataSearcher(items: [commit, status], weights: .init(cosine: 0.0))
@@ -62,7 +62,7 @@ struct EmbeddingTests {
         let recorder = DiagnosticRecorder()
         let searcher = MetadataSearcher(
             items: [FixtureItem(id: "commit", block: "records a snapshot")],
-            onDiagnostic: { recorder.record($0) }
+            onDiagnostic: { recorder.record($0) },
         )
 
         _ = try await searcher.search(intent: "commit", limit: 5)
@@ -89,7 +89,7 @@ struct EmbeddingTests {
         let searcher = await MetadataSearcher(
             items: [FixtureItem(id: "commit", block: "records a snapshot")],
             embedder: EmptyResultEmbedder(),
-            onDiagnostic: { recorder.record($0) }
+            onDiagnostic: { recorder.record($0) },
         )
 
         _ = try await searcher.search(intent: "commit", limit: 5)
@@ -105,7 +105,7 @@ struct EmbeddingTests {
         let searcher = await MetadataSearcher(
             items: [item],
             embedder: embedder,
-            onDiagnostic: { recorder.record($0) }
+            onDiagnostic: { recorder.record($0) },
         )
 
         _ = try await searcher.search(intent: "commit", limit: 5)
@@ -137,7 +137,7 @@ struct EmbeddingTests {
         let index = await MetadataIndex.build(
             items: [embeddedItem, unembeddedItem],
             embedder: failingEmbedder,
-            previous: priorIndex
+            previous: priorIndex,
         )
         #expect(index.embedding(forID: "commit") != nil)
         #expect(index.embedding(forID: "status") == nil)
@@ -165,7 +165,7 @@ struct EmbeddingTests {
         let itemsV1 = [
             FixtureItem(id: "a", block: "alpha block"),
             FixtureItem(id: "b", block: "bravo block"),
-            FixtureItem(id: "c", block: "charlie block")
+            FixtureItem(id: "c", block: "charlie block"),
         ]
         let embedder = FakeEmbedder(
             dimension: 2,
@@ -173,8 +173,8 @@ struct EmbeddingTests {
                 "alpha block": [1, 0],
                 "bravo block": [0, 1],
                 "charlie block": [1, 1],
-                "bravo block CHANGED": [0, -1]
-            ]
+                "bravo block CHANGED": [0, -1],
+            ],
         )
 
         let indexV1 = await MetadataIndex.build(items: itemsV1, embedder: embedder)
@@ -184,7 +184,7 @@ struct EmbeddingTests {
         let itemsV2 = [
             FixtureItem(id: "a", block: "alpha block"),
             FixtureItem(id: "b", block: "bravo block CHANGED"),
-            FixtureItem(id: "c", block: "charlie block")
+            FixtureItem(id: "c", block: "charlie block"),
         ]
         let indexV2 = await MetadataIndex.build(items: itemsV2, embedder: embedder, previous: indexV1)
 
@@ -200,7 +200,7 @@ struct EmbeddingTests {
     func incrementalBuildWithNoPreviousIndexEmbedsEveryItem() async {
         let items = [
             FixtureItem(id: "a", block: "alpha block"),
-            FixtureItem(id: "b", block: "bravo block")
+            FixtureItem(id: "b", block: "bravo block"),
         ]
         let embedder = FakeEmbedder(dimension: 2, vectorsByText: ["alpha block": [1, 0], "bravo block": [0, 1]])
 
@@ -234,7 +234,7 @@ struct EmbeddingTests {
         // becomes available (plan.md §8 "embed catch-up").
         let embedder = FakeEmbedder(dimension: 2, vectorsByText: ["alpha block": [1, 0]])
         let indexWithEmbedder = await MetadataIndex.build(
-            items: [item], embedder: embedder, previous: indexWithoutEmbedder
+            items: [item], embedder: embedder, previous: indexWithoutEmbedder,
         )
 
         #expect(indexWithEmbedder.embedding(forID: "a") == [1, 0])

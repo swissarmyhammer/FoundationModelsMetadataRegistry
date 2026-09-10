@@ -29,7 +29,7 @@ import FoundationModelsMetadataRegistry
 /// degradation indistinguishable from "found nothing at all."
 public let gitCommands: [GitCommand] =
     baseGitCommands + [
-        GitCommand(id: "status", block: "Report the current state of the working tree.")
+        GitCommand(id: "status", block: "Report the current state of the working tree."),
     ]
 
 /// The paraphrased query this example is built around: it shares no keyword
@@ -64,13 +64,13 @@ public func runSemanticSearch(
     query: String,
     embedder: (any TextEmbedding)? = DeterministicEmbedder(),
     limit: Int = 5,
-    onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void
+    onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void,
 ) async throws -> [Match<GitCommand>] {
     let searcher = await MetadataSearcher(
         items: gitCommands,
         mode: .retrieval,
         embedder: embedder,
-        onDiagnostic: onDiagnostic
+        onDiagnostic: onDiagnostic,
     )
     return try await searcher.search(intent: query, limit: limit)
 }

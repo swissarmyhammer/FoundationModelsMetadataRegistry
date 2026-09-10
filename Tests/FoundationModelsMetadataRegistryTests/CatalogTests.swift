@@ -79,7 +79,7 @@ struct CatalogTests {
     @Test
     func renderSummaryBlockIsOverridable() {
         let item = OverridingFixtureMetadata(
-            id: "deploy", block: "a very long full description", summary: "short summary"
+            id: "deploy", block: "a very long full description", summary: "short summary",
         )
         #expect(item.renderSummaryBlock() == "short summary")
         #expect(item.renderBlock() == "a very long full description")
@@ -127,11 +127,11 @@ struct CatalogTests {
 
         #expect(
             index.rankedDocument(forID: "deploy-k8s")?.primaryTrigramSet
-                == Trigram.canonicalTrigramSet(text: "deploy-k8s")
+                == Trigram.canonicalTrigramSet(text: "deploy-k8s"),
         )
         #expect(
             index.rankedDocument(forID: "deploy-k8s")?.bodyTrigramSet
-                == Trigram.canonicalTrigramSet(text: "ships containers to production")
+                == Trigram.canonicalTrigramSet(text: "ships containers to production"),
         )
     }
 
@@ -140,7 +140,7 @@ struct CatalogTests {
         let items = [
             FixtureMetadata(id: "deploy", block: "ships containers to a kubernetes cluster"),
             FixtureMetadata(id: "rollback", block: "reverts the last release"),
-            FixtureMetadata(id: "status", block: "reports current release health")
+            FixtureMetadata(id: "status", block: "reports current release health"),
         ]
         let index = MetadataIndex(items: items)
 
@@ -202,7 +202,7 @@ struct CatalogTests {
         let recorder = DiagnosticRecorder()
         _ = MetadataIndex(
             items: [FixtureMetadata(id: "deploy", block: "ships containers")],
-            onDiagnostic: { recorder.record($0) }
+            onDiagnostic: { recorder.record($0) },
         )
 
         #expect(recorder.diagnostics.isEmpty)
@@ -214,7 +214,7 @@ struct CatalogTests {
         let items = [
             FixtureMetadata(id: "deploy", block: "first block"),
             FixtureMetadata(id: "deploy", block: "second block"),
-            FixtureMetadata(id: "deploy", block: "third block")
+            FixtureMetadata(id: "deploy", block: "third block"),
         ]
         let index = MetadataIndex(items: items, onDiagnostic: { recorder.record($0) })
 

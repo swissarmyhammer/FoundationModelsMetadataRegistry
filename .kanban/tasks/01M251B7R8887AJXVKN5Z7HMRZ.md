@@ -34,6 +34,42 @@ comments:
       - `BigCatalogCore`, `BigCatalog/main.swift`, `ExamplesSupport` and the `Package.swift` comment describe the split, and `BigCatalogCore.printDiagnostic` is gone because its one case is never reported. `runBigCatalogOverBudgetSelection` now defaults `onDiagnostic` to `MetadataDiagnostic.log(_:)`.
     - next: `/review`
   timestamp: 2026-09-10T07:04:34.586574+00:00
+- actor: claude-code
+  id: 01m253px3jmw3tn4rjm9v6y20y
+  text: |-
+    ### review — findings
+    - evidence: 3 findings — Sources/FoundationModelsMetadataRegistry/MetadataSearcher+Search.swift:246, Tests/FoundationModelsMetadataRegistryTests/EmbeddingCatchUpTests.swift:29, Tests/FoundationModelsMetadataRegistryTests/EmbeddingCatchUpTests.swift:125
+    - next: correct the three findings, then run the review again. The task stays in the review column.
+  timestamp: 2026-09-10T07:32:27.378436+00:00
+- actor: claude-code
+  id: 01m253qa0gt0yv30frxbk5qe67
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 9 files
+    - test: green — swift test, 120 passed, 0 failed, 0 skipped
+    - commit: 20ec680
+    - review: findings — Sources/FoundationModelsMetadataRegistry/MetadataSearcher+Search.swift:246, Tests/FoundationModelsMetadataRegistryTests/EmbeddingCatchUpTests.swift:29, Tests/FoundationModelsMetadataRegistryTests/EmbeddingCatchUpTests.swift:125
+  timestamp: 2026-09-10T07:32:40.592048+00:00
+- actor: claude-code
+  id: 01m253w03r2sxbst1nrzr20bwa
+  text: |-
+    Worked the three review findings. Each cause was removed from the whole file, not only the named line.
+
+    1. `MetadataSearcher+Search.swift` — `index.count > 0` became `!index.ids.isEmpty`. `index.ids` is the exact set of entries, so no new public API is needed. The file holds no other comparison of a count against zero; the two other count expressions (`vectors.count == ids.count`) compare two counts, which the rule does not read.
+    2. `EmbeddingCatchUpTests.swift` — the file now names its numbers: `catchUpEmbeddingDimension` for the vector width (was the literal `2` at two `dimension:` arguments) and `catchUpSearchLimit` for the `limit:` of every search (was the literal `5` at nine calls). The `pending:`/`total:` pair of the `.embedCatchUp` expectations reads `Self.unembeddedItems.count`, which ties the number to the fixture instead of repeating `2`.
+    3. `EmbeddingCatchUpTests.swift` — `embeddedBatches.filter { ... }.count == 1` became `embeddedBatches.count(where: { ... }) == 1`. The file holds no other `filter(_:).count`.
+
+    Verification: `swift build` is clean, `swift test` reports 120 tests in 12 suites passed, `swift build --package-path IntegrationTests --build-tests` is clean, and `swiftlint lint` on the two edited files exits 0.
+
+    Note for the next agent: a plain `swiftlint lint` at the repo root now walks `.build`, so it reports many violations in generated `test_entry_point.swift` and in the checked-out FoundationModelsRanker sources. Those are not this package's files. Give swiftlint the source directories, or the files you changed, to get a true answer.
+  timestamp: 2026-09-10T07:35:14.296492+00:00
+- actor: claude-code
+  id: 01m253w3h28zz6xc8jh9p0t0pg
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — Sources/FoundationModelsMetadataRegistry/MetadataSearcher+Search.swift, Tests/FoundationModelsMetadataRegistryTests/EmbeddingCatchUpTests.swift. `swift build` clean, `swift test` 120 tests in 12 suites passed, `swiftlint lint` on both files exits 0. All 3 review findings are now `- [x]`.
+    - next: `/review`
+  timestamp: 2026-09-10T07:35:17.794517+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'MetadataSearcher: move to SelectionTier.init(catalog:config:onDiagnostic:) and drop candidateLimit from the tests'
@@ -66,3 +102,17 @@ The ranker board holds the same record as card `^6kd63xc`. This card is the copy
 - [x] `MetadataSearcher` builds the tier with `SelectionTier(catalog:config:onDiagnostic:)`.
 - [x] No test gives `candidateLimit:` to `SelectionConfig`.
 - [x] `swift build` and `swift test` pass against the ranker `main`, with no deprecation warning.
+
+## Review Findings (2026-09-10 02:26)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 52 file(s) reviewed, 3 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `.swift-version` — no validator matches this file
+
+- [x] `Sources/FoundationModelsMetadataRegistry/MetadataSearcher+Search.swift:246` `code-hygiene/idioms-swift` — isEmpty: Prefer isEmpty over comparing count against zero.
+- [x] `Tests/FoundationModelsMetadataRegistryTests/EmbeddingCatchUpTests.swift:29` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
+- [x] `Tests/FoundationModelsMetadataRegistryTests/EmbeddingCatchUpTests.swift:125` `code-hygiene/idioms-swift` — preferCountWhere: Prefer count(where:) over filter(_:).count.

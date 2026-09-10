@@ -57,7 +57,7 @@ extension OverBudgetTests {
         let matches = try await BigCatalogCore.runBigCatalogOverBudgetSelection(
             catalog: catalog,
             query: BigCatalogCore.bigCatalogNeedleQuery,
-            onDiagnostic: { recorder.record($0) }
+            onDiagnostic: { recorder.record($0) },
         )
 
         // The demo's deliberately tiny capacity limit puts this catalog over
@@ -71,7 +71,7 @@ extension OverBudgetTests {
                     return true
                 }
                 return false
-            }
+            },
         )
     }
 }

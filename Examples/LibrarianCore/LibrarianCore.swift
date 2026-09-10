@@ -37,11 +37,11 @@ public typealias TripPlanningTool = SearchableFixtureItem
 /// §6's "under budget" case, not the over-budget one `BigCatalog`
 /// demonstrates).
 public let tripPlanningCatalog: [TripPlanningTool] = [
-    TripPlanningTool(id: "tripCities", block: "Lists every city on the user's upcoming trip itinerary, in visit order."),
-    TripPlanningTool(id: "weather", block: "Looks up the current weather conditions, including temperature, for a named city."),
+    TripPlanningTool(id: "tripCities", block: "Lists every city on the user's trip itinerary, in visit order."),
+    TripPlanningTool(id: "weather", block: "Looks up current weather conditions, including temperature, for a named city."),
     TripPlanningTool(id: "currency", block: "Converts an amount between two currencies for trip budgeting."),
-    TripPlanningTool(id: "packingList", block: "Suggests a packing list based on trip destinations and expected weather."),
-    TripPlanningTool(id: "flightStatus", block: "Checks the current status of a booked flight by its confirmation number.")
+    TripPlanningTool(id: "packingList", block: "Suggests a packing list based on the trip's destinations and weather."),
+    TripPlanningTool(id: "flightStatus", block: "Checks the status of a booked flight by its confirmation number."),
 ]
 
 /// The intent-level query this example is built around: answering it
@@ -85,7 +85,7 @@ public let librarianSelectedIds = ["tripCities", "weather"]
 public func runLibrarianSelection(
     query: String,
     config: SelectionConfig = demoSelectionConfig(selectedIds: librarianSelectedIds),
-    limit: Int = 5
+    limit: Int = 5,
 ) async throws -> [Match<TripPlanningTool>] {
     let searcher = MetadataSearcher(items: tripPlanningCatalog, mode: .selection, selection: config)
     return try await searcher.search(intent: query, limit: limit)

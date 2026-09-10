@@ -58,7 +58,7 @@ struct ColdSelectionRealModelTests {
         "Pull me a shot of espresso from ground beans.",
         "Fold a sheet of paper into a crane.",
         "How do I tune my guitar to concert pitch?",
-        "How often should I water a potted orchid?"
+        "How often should I water a potted orchid?",
     ]
 
     /// Drives one measured intent through a searcher built for it alone, and
@@ -70,7 +70,7 @@ struct ColdSelectionRealModelTests {
     ///   after that gate passed, or whatever the selection tier itself threw.
     @Test(
         "a cold selection search answers a measured intent with catalog ids alone",
-        arguments: measuredIntents
+        arguments: measuredIntents,
     )
     func coldSelectionAnswersAMeasuredIntentWithCatalogIdsAlone(intent: String) async throws {
         try ModelAvailability.requireAvailable()
@@ -96,7 +96,7 @@ struct ColdSelectionRealModelTests {
             symptom this scenario guards: a selection tier that has never spoken to its model \
             answering with the empty list its preamble offers. The same intent returned a \
             catalog id on 15 of 15 cold runs when this suite was written.
-            """
+            """,
         )
 
         let catalogIds = Set(catalog.map(\.id))
@@ -107,7 +107,7 @@ struct ColdSelectionRealModelTests {
             the search for "\(intent)" returned \(strangers), which the catalog does not hold. \
             The selection tier filters an unresolvable id before it returns, so this assertion \
             is a cheap invariant rather than a live risk -- reaching it means that filter broke.
-            """
+            """,
         )
 
         SelectionScenario.expectNoUnknownSelectedId(among: recorded.withLock { $0 }, answering: intent)

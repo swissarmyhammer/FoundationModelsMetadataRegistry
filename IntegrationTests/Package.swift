@@ -59,10 +59,10 @@ let package = Package(
     // Commit to macOS 27 / FoundationModels v2, exactly as `../Package.swift`
     // does; a lower floor here would not resolve against it.
     platforms: [
-        .macOS("27.0")
+        .macOS("27.0"),
     ],
     dependencies: [
-        .package(path: "..")
+        .package(path: ".."),
     ],
     targets: [
         // The real-model suite. One dependency, one product: no Router, no
@@ -73,9 +73,9 @@ let package = Package(
         .testTarget(
             name: "\(productPackageName)IntegrationTests",
             dependencies: [
-                .product(name: productPackageName, package: productPackageName)
+                .product(name: productPackageName, package: productPackageName),
             ],
-            path: "Tests/\(productPackageName)IntegrationTests"
-        )
-    ]
+            path: "Tests/\(productPackageName)IntegrationTests",
+        ),
+    ],
 )

@@ -46,7 +46,7 @@ struct FakeEmbedder: TextEmbedding {
         dimension: Int,
         vectorsByText: [String: [Float]] = [:],
         failure: (any Error)? = nil,
-        counter: EmbedCallCounter = EmbedCallCounter()
+        counter: EmbedCallCounter = EmbedCallCounter(),
     ) {
         self.dimension = dimension
         self.vectorsByText = vectorsByText

@@ -42,7 +42,7 @@ enum ModelAvailability {
             \(explanation) — this suite measures Apple Intelligence and can measure \
             nothing without it, so the run stops here rather than failing further down \
             for a reason that would read like a defect in this package.
-            """
+            """,
         )
     }
 
@@ -67,7 +67,7 @@ enum ModelAvailability {
     /// for that caller is gone with it: the staging contract keeps a marker
     /// only until the change it was written for lands.
     static func recordingEnvironmentFaults<Value>(
-        _ body: () async throws -> Value
+        _ body: () async throws -> Value,
     ) async throws -> Value {
         do {
             return try await body()
@@ -144,7 +144,7 @@ enum ModelAvailability {
     /// - Parameter reason: the reason the model reported.
     /// - Returns: a clause naming that reason.
     private static func explanation(
-        of reason: SystemLanguageModel.Availability.UnavailableReason
+        of reason: SystemLanguageModel.Availability.UnavailableReason,
     ) -> String {
         switch reason {
         case .deviceNotEligible:

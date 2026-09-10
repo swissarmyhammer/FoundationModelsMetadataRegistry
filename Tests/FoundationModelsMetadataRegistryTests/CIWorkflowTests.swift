@@ -45,7 +45,7 @@ struct CIWorkflowTests {
         }
         #expect(
             callsShared,
-            "ci.yml must call swissarmyhammer/workflows/.github/workflows/swift-ci.yaml@main."
+            "ci.yml must call swissarmyhammer/workflows/.github/workflows/swift-ci.yaml@main.",
         )
     }
 
@@ -62,7 +62,7 @@ struct CIWorkflowTests {
             ci.yml must pass "\(expected)" to the shared workflow, so its unit job builds the \
             nested package on every run — the root build never compiles it — and its integration \
             job runs the suite.
-            """
+            """,
         )
     }
 
@@ -88,7 +88,7 @@ struct CIWorkflowTests {
             input: integration-gate-env is LEGACY and the shared workflow stops the run when it \
             is given beside the package path, and integration-metallib-glob colocates an \
             mlx-swift metallib that nothing in this dependency graph needs; found: \(otherInputs)
-            """
+            """,
         )
     }
 
@@ -110,7 +110,7 @@ struct CIWorkflowTests {
             """
             ci.yml must declare exactly one job that delegates to the shared workflow, not \
             repo-local unit/integration jobs; found job keys: \(jobKeys)
-            """
+            """,
         )
     }
 

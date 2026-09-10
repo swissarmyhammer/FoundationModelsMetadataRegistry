@@ -29,5 +29,5 @@ let rebuild = try await runSelectionRootRebuildDemo()
 print("  root session built \(rebuild.initialFactoryCallCount) time(s) for candidates \(rebuild.initialCandidateIds)")
 print(
     "  after a real catalog change, root session built \(rebuild.rebuiltFactoryCallCount) time(s) total "
-        + "for candidates \(rebuild.updatedCandidateIds)"
+        + "for candidates \(rebuild.updatedCandidateIds)",
 )
