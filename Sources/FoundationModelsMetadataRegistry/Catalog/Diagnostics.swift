@@ -18,9 +18,9 @@ public enum MetadataDiagnostic: Sendable, Equatable {
     /// - Parameter diagnostic: the Ranker diagnostic to map.
     init(_ diagnostic: RankDiagnostic) {
         switch diagnostic {
-        case .retrievalCut(let considered, let kept):
+        case let .retrievalCut(considered, kept):
             self = .retrievalCut(considered: considered, kept: kept)
-        case .unknownSelectedId(let id):
+        case let .unknownSelectedId(id):
             self = .unknownSelectedId(id: id)
         case .embeddingUnavailable:
             self = .embeddingUnavailable
@@ -69,7 +69,7 @@ public enum MetadataDiagnostic: Sendable, Equatable {
     /// - Parameter diagnostic: the diagnostic to log.
     public static func log(_ diagnostic: MetadataDiagnostic) {
         switch diagnostic {
-        case .duplicateId(let id):
+        case let .duplicateId(id):
             logger.notice(
                 "duplicate id \"\(id, privacy: .public)\" in catalog; first occurrence kept, duplicate dropped.",
             )
@@ -77,16 +77,16 @@ public enum MetadataDiagnostic: Sendable, Equatable {
             logger.notice(
                 "no embedder configured or catalog not yet embedded; results are keyword-only (BM25 + trigram).",
             )
-        case .unknownSelectedId(let id):
+        case let .unknownSelectedId(id):
             logger.notice("selection model returned unknown id \"\(id, privacy: .public)\"; ignored.")
-        case .retrievalCut(let considered, let kept):
+        case let .retrievalCut(considered, kept):
             logger.notice(
                 """
                 retrieval cut candidates from \(considered, privacy: .public) \
                 to \(kept, privacy: .public) before selection.
                 """,
             )
-        case .embedCatchUp(let pending, let total):
+        case let .embedCatchUp(pending, total):
             logger.notice(
                 "embedding catch-up: \(pending, privacy: .public)/\(total, privacy: .public) item(s) pending.",
             )

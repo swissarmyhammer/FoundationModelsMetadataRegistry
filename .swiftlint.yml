@@ -1,0 +1,4 @@
+# SwiftFormat writes a trailing comma at the last item of a multi-line list.
+# This setting makes SwiftLint accept that comma.
+trailing_comma:
+  mandatory_comma: true

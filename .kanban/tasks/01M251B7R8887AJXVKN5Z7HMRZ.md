@@ -97,7 +97,56 @@ comments:
 
     Then start this task again.
   timestamp: 2026-09-10T07:42:31.003126+00:00
-position_column: review
+- actor: claude-code
+  id: 01m25kp7k98ybgste0zpzyqqev
+  text: |
+    ## Blocker settled by the user (2026-09-10)
+
+    The user picked the side: keep the trailing comma that SwiftFormat writes, and make
+    SwiftLint agree.
+
+    Action for the next implement step: add `.swiftlint.yml` at the repository root with
+
+    ```yaml
+    trailing_comma:
+      mandatory_comma: true
+    ```
+
+    Do not rewrite the source files. Do not turn the rule off. After the file is added,
+    `swiftlint` on this package's sources must report no `trailing_comma` violation, and
+    `swiftformat --lint` must report no file that needs a change.
+
+    Note: give swiftlint the source directories, not the repository root, because the root
+    walk enters `.build`.
+  timestamp: 2026-09-10T12:11:42.569576+00:00
+- actor: claude-code
+  id: 01m25kt80s2g1243w78ezx6s2g
+  text: |-
+    Did the action the user picked for the blocker. Added `.swiftlint.yml` at the repository root with `trailing_comma: { mandatory_comma: true }`. No source file lost a comma, the rule stays on, and `swiftlint --fix` did not run.
+
+    SwiftLint reads the new file correctly: the 44 `trailing_comma` warnings in this package's own files are gone.
+
+    Two other violations came out of this package's own files when the trailing-comma noise stopped. Corrected both:
+
+    1. `Examples/LibrarianCore/LibrarianCore.swift` — the `weather` entry of `tripPlanningCatalog` was 124 characters on one line (`line_length`, limit 120). The call now goes on more than one line, with the trailing comma SwiftFormat writes.
+    2. `Sources/FoundationModelsMetadataRegistry/Catalog/Diagnostics.swift` and `Sources/FoundationModelsMetadataRegistry/MetadataSearcher+Search.swift` — SwiftFormat reported 7 `hoistPatternLet` changes (`case .retrievalCut(let considered, let kept)` became `case let .retrievalCut(considered, kept)`). Ran SwiftFormat on those two files only. SwiftLint agrees with the hoisted form, so the two tools do not fight here.
+
+    Note on the lint command: give SwiftLint the source directories `Sources Tests Examples IntegrationTests`, not the repository root. `IntegrationTests/.build` holds the FoundationModelsRanker checkout, so the walk still reads dependency files; the violations that stay all come from paths that hold `/.build/`, and none of them is a file of this package.
+
+    Verification, all from the repository root:
+    - `swift build` — exit 0, 0 lines with the word warning.
+    - `swift test` — 120 tests in 12 suites passed, 0 failed, 0 skipped.
+    - `swiftlint lint --quiet Sources Tests Examples IntegrationTests` with the `/.build/` paths removed — 0 violations, of which 0 are `trailing_comma`.
+    - `swiftformat Sources Tests Examples --lint` — 0 of 48 files need a change. (SwiftFormat 0.62.1 rejects `--lint Sources ...`, because it reads the next word as a value for the option. Put the paths first.)
+  timestamp: 2026-09-10T12:13:54.073234+00:00
+- actor: claude-code
+  id: 01m25ktbv7sedxfkxrqxz1stg8
+  text: |-
+    ### implement — changed
+    - evidence: 4 files — .swiftlint.yml (new), Examples/LibrarianCore/LibrarianCore.swift, Sources/FoundationModelsMetadataRegistry/Catalog/Diagnostics.swift, Sources/FoundationModelsMetadataRegistry/MetadataSearcher+Search.swift. `swift build` exit 0 with 0 warnings; `swift test` 120 tests in 12 suites passed, 0 failed, 0 skipped; `swiftlint lint --quiet Sources Tests Examples IntegrationTests` 0 violations in this package's own files (0 `trailing_comma`); `swiftformat Sources Tests Examples --lint` 0 of 48 files need a change.
+    - next: `/review`
+  timestamp: 2026-09-10T12:13:57.991837+00:00
+position_column: doing
 position_ordinal: '80'
 title: 'MetadataSearcher: move to SelectionTier.init(catalog:config:onDiagnostic:) and drop candidateLimit from the tests'
 ---

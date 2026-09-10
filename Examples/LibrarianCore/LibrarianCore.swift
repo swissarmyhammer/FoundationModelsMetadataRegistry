@@ -38,7 +38,10 @@ public typealias TripPlanningTool = SearchableFixtureItem
 /// demonstrates).
 public let tripPlanningCatalog: [TripPlanningTool] = [
     TripPlanningTool(id: "tripCities", block: "Lists every city on the user's trip itinerary, in visit order."),
-    TripPlanningTool(id: "weather", block: "Looks up current weather conditions, including temperature, for a named city."),
+    TripPlanningTool(
+        id: "weather",
+        block: "Looks up current weather conditions, including temperature, for a named city.",
+    ),
     TripPlanningTool(id: "currency", block: "Converts an amount between two currencies for trip budgeting."),
     TripPlanningTool(id: "packingList", block: "Suggests a packing list based on the trip's destinations and weather."),
     TripPlanningTool(id: "flightStatus", block: "Checks the status of a booked flight by its confirmation number."),
