@@ -39,8 +39,31 @@ comments:
     - evidence: `swift test` — 121 tests, 12 suites, all passed. 0 failures, 0 warnings, 0 skipped.
     - next: proceed to review.
   timestamp: 2026-09-10T06:14:32.167948+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m24z90b862203e44qgtwqbg0
+  text: |-
+    ### commit — changed
+    - evidence: 157a4cd fix(MetadataSearcher): embed the catalog at the first search (^8c4wtra)
+    - next: none
+  timestamp: 2026-09-10T06:14:57.640143+00:00
+- actor: claude-code
+  id: 01m24zraj9hcqrckefcah2j6be
+  text: |-
+    ### review — clean
+    - evidence: 0 findings. `review sha HEAD~1..HEAD` (commit 157a4cd), local backend. 5 files reviewed, 7 validator runs, 0 failed. Not reviewed: `.kanban/` (ignore rule), `plan.md` (no validator).
+    - next: none. The task moved from `review` to `done`.
+  timestamp: 2026-09-10T06:23:19.625753+00:00
+- actor: claude-code
+  id: 01m24zs0c287f07bpggy5smc06
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 6 files (the sub agent stopped one time on an API rate limit and continued from its own state)
+    - test: green — swift test, 121 passed, 0 warnings, 0 skipped
+    - commit: 157a4cd
+    - review: clean — 0 findings, task moved to done
+  timestamp: 2026-09-10T06:23:41.954839+00:00
+position_column: done
+position_ordinal: a280
 title: 'MetadataSearcher: embed the catalog at the first search when the searcher was built synchronously with an embedder'
 ---
 ## What
