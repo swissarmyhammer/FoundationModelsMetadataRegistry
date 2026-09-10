@@ -1,0 +1,1 @@
+{"id":"01M26T8WPJ1JXQEMY6N1K6VWE7","timestamp":"2026-09-10T23:25:59.890726Z","op":"create","item_id":"01M26T8WPJ2BM3XYTP3QC6MTK0","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: d73a4a\n+tag_name: metadata\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: d73a4a\n-tag_name: metadata\n","transaction_id":null}

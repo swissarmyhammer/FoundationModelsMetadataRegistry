@@ -2,3 +2,10 @@
 # This setting makes SwiftLint accept that comma.
 trailing_comma:
   mandatory_comma: true
+
+# Dependency checkouts are vendored source this repository does not own and
+# does not ship. `swift package reset` erases and re-fetches this directory,
+# so linting it finds violations no local fix can keep.
+excluded:
+  - .build
+  - IntegrationTests/.build

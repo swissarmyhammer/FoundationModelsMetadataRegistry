@@ -1,23 +1,23 @@
-import CryptoKit
-import Foundation
-
 /// A tokenized, two-field search index over a catalog of `SearchableMetadata` items.
 ///
 /// Built per plan.md §1, §4 (decision #10: no persistence, no database —
 /// everything lives in memory and is rebuilt wholesale from the caller's
-/// items). Each item's `id` and rendered `renderBlock()` are precomputed
+/// items). Each item's `id` and rendered texts are precomputed
 /// once at `init` into the data the retrieval tier scores against: one
 /// FoundationModelsRanker `RankedDocument` (`id` as the primary field,
-/// block as the body field — the two-field weighting `CodeContextKit`'s
-/// `SearchCorpusSnapshot` established, applied to the `id`/block fields
+/// `renderIndexedText(from:)` as the body field — the two-field weighting
+/// `CodeContextKit`'s `SearchCorpusSnapshot` established, applied to the
+/// `id`/block fields
 /// plan.md §4 defines) holding the BM25/trigram statistics `HybridRanker`'s
-/// per-signal scorers consume, and an embedding storage slot filled at
+/// per-signal scorers consume, the `renderEmbeddedText(from:)` text an
+/// embedder is handed, and an embedding storage slot filled at
 /// index-build/update time (plan.md §5, §8). Precomputing at `init` rather
 /// than per query is what makes repeated `search()` calls cheap —
 /// tokenizing/trigramming happens once per item, not once per query.
 ///
-/// `MetadataIndex` never interprets a block's contents — it only tokenizes
-/// and trigrams the opaque text `renderBlock()` returns.
+/// `MetadataIndex` never interprets an item's text — it only tokenizes
+/// and trigrams the opaque text the item renders, and hands back
+/// `renderBlock()`'s output verbatim.
 public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
     /// One catalog entry's precomputed search data, keyed by `id` in `entriesByID`.
     struct Entry: Sendable {
@@ -31,22 +31,31 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
         /// prompt").
         let block: String
 
+        /// `item.renderEmbeddedText(from:)`, captured once at build time.
+        ///
+        /// The text `pendingEmbeddings()` hands the embedder for this entry
+        /// — the block itself unless the item overrode it.
+        let embeddedText: String
+
         /// This entry's precomputed BM25/trigram statistics, stored as one `RankedDocument`.
         ///
-        /// `RankedDocument(primaryText: item.id, bodyText: block)` is the
-        /// per-document input FoundationModelsRanker's `HybridRanker`
-        /// scores its BM25 and trigram signals against.
+        /// `RankedDocument(primaryText: item.id, bodyText: indexedText)` is
+        /// the per-document input FoundationModelsRanker's `HybridRanker`
+        /// scores its BM25 and trigram signals against — `indexedText` being
+        /// `item.renderIndexedText(from:)`, the block itself unless the item
+        /// overrode it. The indexed text is not stored beyond this: nothing
+        /// reads it back, since these statistics are what the signals score.
         let rankedDocument: RankedDocument
 
-        /// SHA-256 digest of `block`'s UTF-8 bytes.
+        /// SHA-256 digests of this entry's three rendered texts.
         ///
-        /// The "block-hash" half of the `(id, block-hash)` key
+        /// `digests.embeddedText` is the "text-hash" half of the
+        /// `(id, embedded-text-hash)` key
         /// `MetadataIndex.build(items:embedder:previous:onDiagnostic:)`
-        /// reuses embeddings by (plan.md §8): two builds' entries for the
-        /// same `id` with equal `blockHash` carry the same rendered text,
-        /// so a stored embedding is still valid and re-embedding would be
-        /// wasted work.
-        let blockHash: Data
+        /// reuses embeddings by, and the whole value is what
+        /// `hasIdenticalContent(to:)` compares (plan.md §8). See
+        /// `RenderedTextDigests`.
+        let digests: RenderedTextDigests
 
         /// This entry's embedding, or `nil` until it is filled in.
         ///
@@ -72,8 +81,8 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
 
     /// Builds an in-memory index from `items`.
     ///
-    /// Tokenizes and trigrams each item's `id` and rendered block exactly
-    /// once. **Duplicate-id policy**: when two items share an `id`, the
+    /// Tokenizes and trigrams each item's `id` and rendered indexed text
+    /// exactly once. **Duplicate-id policy**: when two items share an `id`, the
     /// first one (in `items` order) wins; every later duplicate is dropped
     /// and reported via `onDiagnostic(.duplicateId(id:))` — never a crash,
     /// never silent (plan.md §4 "`id` is the join key").
@@ -108,20 +117,24 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
 
     /// Precomputes one catalog item's search data.
     ///
-    /// Renders the item's block once, then precomputes its
-    /// `RankedDocument` (tokenizing/trigramming `item.id` and the block —
+    /// Renders the item's block once and derives its indexed and embedded
+    /// texts from that one render, then precomputes its `RankedDocument`
+    /// (tokenizing/trigramming `item.id` and the indexed text —
     /// FoundationModelsRanker's per-document BM25/trigram statistics) and
-    /// the block's content hash.
+    /// the three texts' content digests.
     ///
     /// - Parameter item: the catalog item to precompute an `Entry` for.
     /// - Returns: the precomputed entry, ready to store under `item.id`.
     private static func buildEntry(item: Item) -> Entry {
         let block = item.renderBlock()
+        let indexedText = item.renderIndexedText(from: block)
+        let embeddedText = item.renderEmbeddedText(from: block)
         return Entry(
             item: item,
             block: block,
-            rankedDocument: RankedDocument(primaryText: item.id, bodyText: block),
-            blockHash: Data(SHA256.hash(data: Data(block.utf8))),
+            embeddedText: embeddedText,
+            rankedDocument: RankedDocument(primaryText: item.id, bodyText: indexedText),
+            digests: RenderedTextDigests(block: block, indexedText: indexedText, embeddedText: embeddedText),
             embedding: nil,
         )
     }
@@ -169,7 +182,7 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
     ///
     /// This is the BM25/trigram statistics FoundationModelsRanker's
     /// `HybridRanker` scores this entry with (`id` as its primary field,
-    /// the rendered block as its body field).
+    /// the rendered indexed text as its body field).
     ///
     /// Returns `nil` if `id` isn't indexed.
     ///

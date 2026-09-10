@@ -13,7 +13,7 @@ extension MetadataIndex {
         /// The ids of every entry `baseline` still has no embedding for.
         let pendingEmbedIDs: [String]
 
-        /// The rendered blocks to embed, positionally aligned with `pendingEmbedIDs`.
+        /// The rendered embedded texts, positionally aligned with `pendingEmbedIDs`.
         let textsToEmbed: [String]
     }
 
@@ -21,12 +21,13 @@ extension MetadataIndex {
     ///
     /// Indexes `items` the same way `init(items:onDiagnostic:)` does
     /// (tokenizing, trigramming — always synchronous), then embeds each
-    /// item's rendered block through `embedder` (plan.md §5, §8) —
+    /// item's rendered embedded text through `embedder` (plan.md §5, §8) —
     /// embedding is the one part of index-build that's async, because
     /// it's the one part that may call out to a model.
     ///
     /// **Hash-keyed incremental re-embedding**: an item whose `id` and
-    /// rendered-block `Entry.blockHash` both match `previous`'s, *and*
+    /// embedded-text `Entry.digests.embeddedText` both match `previous`'s,
+    /// *and*
     /// whose `previous` entry actually carries a non-`nil` embedding,
     /// reuses that stored embedding rather than re-embedding unchanged
     /// text. A hash match against a `nil` previous embedding (no embedder
@@ -36,21 +37,22 @@ extension MetadataIndex {
     /// embedder is actually available instead of staying cosine-blind
     /// forever just because its text never changed (plan.md §8 "embed
     /// catch-up"). `embedder.embed(_:)` is called with exactly the
-    /// new-or-changed-or-never-embedded blocks, batched into a single
+    /// new-or-changed-or-never-embedded texts, batched into a single
     /// call, never once per item. This is what makes `update(items:)`
     /// (plan.md §8, a later task) cheap to call on every upstream change
     /// notification: unchanged, already-embedded items cost nothing here.
     ///
     /// - Parameters:
     ///   - items: same as `init(items:onDiagnostic:)`.
-    ///   - embedder: the embedder to embed new-or-changed blocks with. `nil`
+    ///   - embedder: the embedder to embed new-or-changed texts with. `nil`
     ///     leaves every embedding `nil` (identical to `init(items:
     ///     onDiagnostic:)`) — callers report `.embeddingUnavailable`
     ///     themselves (plan.md §5); this initializer never does, since it
     ///     has no `onDiagnostic` case reserved for "no embedder configured".
     ///   - previous: the prior build of this index, if any, to reuse
-    ///     embeddings from for unchanged `(id, block-hash)` pairs. Defaults
-    ///     to `nil` (nothing to reuse — every item is embedded fresh).
+    ///     embeddings from for unchanged `(id, embedded-text-hash)` pairs.
+    ///     Defaults to `nil` (nothing to reuse — every item is embedded
+    ///     fresh).
     ///   - onDiagnostic: forwarded to `init(items:onDiagnostic:)` for
     ///     duplicate-id reporting.
     /// - Returns: the built index, with embeddings populated wherever
@@ -81,7 +83,7 @@ extension MetadataIndex {
     ///
     /// Indexes `items` exactly like `init(items:onDiagnostic:)` (tokenizing,
     /// trigramming), then reuses `previous`'s stored embedding for every
-    /// item whose `id` and rendered-block hash both match a `previous` entry
+    /// item whose `id` and embedded-text hash both match a `previous` entry
     /// that actually carries a non-`nil` embedding.
     ///
     /// Factored out of `build(items:embedder:previous:onDiagnostic:)` so
@@ -96,7 +98,7 @@ extension MetadataIndex {
     /// - Parameters:
     ///   - items: the catalog's items, in first-seen-wins duplicate-id order.
     ///   - previous: the prior build of this index, if any, to reuse
-    ///     embeddings from for unchanged `(id, block-hash)` pairs.
+    ///     embeddings from for unchanged `(id, embedded-text-hash)` pairs.
     ///   - onDiagnostic: forwarded to `init(items:onDiagnostic:)` for
     ///     duplicate-id reporting.
     /// - Returns: the baseline index (embeddings carried over wherever reuse
@@ -120,9 +122,14 @@ extension MetadataIndex {
             // (plan.md §8). A hash match with no prior embedding leaves the
             // entry's embedding `nil`, so `pendingEmbeddings()` below queues
             // it for embedding, same as a brand-new item.
+            //
+            // The embedded text alone decides reuse: a vector is a function
+            // of the text it was computed from, so an item whose block or
+            // indexed text changed while its embedded text did not still
+            // carries a valid vector.
             guard let entry = entriesByID[id],
                   let previousEntry = previous?.entriesByID[id],
-                  previousEntry.blockHash == entry.blockHash,
+                  previousEntry.digests.embeddedText == entry.digests.embeddedText,
                   let previousEmbedding = previousEntry.embedding
             else { continue }
             entriesByID[id] = Self.withEmbedding(previousEmbedding, replacing: entry)
@@ -133,7 +140,7 @@ extension MetadataIndex {
         return IncrementalBaseline(baseline: reused, pendingEmbedIDs: pending.ids, textsToEmbed: pending.texts)
     }
 
-    /// The ids and rendered blocks of every entry that carries no embedding yet, positionally aligned, in `ids` order.
+    /// The ids and embedded texts of every entry with no embedding yet, positionally aligned, in `ids` order.
     ///
     /// This is the batch an embed catch-up hands the embedder (plan.md §8).
     /// `incrementalBaseline(items:previous:onDiagnostic:)` reads it off the
@@ -141,12 +148,12 @@ extension MetadataIndex {
     /// catch-up reads it off a synchronously built index no embedder has
     /// seen yet.
     ///
-    /// - Returns: the pending ids and their blocks, or two empty arrays when
-    ///   every entry already carries an embedding.
+    /// - Returns: the pending ids and their embedded texts, or two empty
+    ///   arrays when every entry already carries an embedding.
     func pendingEmbeddings() -> (ids: [String], texts: [String]) {
         let pending = ids.compactMap { id -> (id: String, text: String)? in
             guard let entry = entriesByID[id], entry.embedding == nil else { return nil }
-            return (id, entry.block)
+            return (id, entry.embeddedText)
         }
         return (pending.map(\.id), pending.map(\.text))
     }
@@ -155,8 +162,8 @@ extension MetadataIndex {
     ///
     /// The vectors are positionally aligned with `ids`, and each replacement
     /// applies only where `index`'s *current* entry for that id still has the
-    /// same block hash as `source`'s (the baseline this batch was actually
-    /// embedded from). Everything else is unchanged.
+    /// same embedded-text hash as `source`'s (the baseline this batch was
+    /// actually embedded from). Everything else is unchanged.
     ///
     /// Merges into whichever index is passed as `into` — `build(items:
     /// embedder:previous:onDiagnostic:)` merges into its own freshly
@@ -174,7 +181,7 @@ extension MetadataIndex {
     /// merged it in, `index`'s current entry for `"x"` carries B's hash,
     /// which no longer matches A's `source` hash for the old text — so A's
     /// stale vector is skipped instead of silently overwriting B's correct,
-    /// newer one (which would otherwise pair fresh block text with a vector
+    /// newer one (which would otherwise pair fresh text with a vector
     /// embedded from stale text, with no diagnostic and no way to detect the
     /// corruption later, since the hash would still nominally "match" a
     /// naive by-id-only merge). An id no longer present in `index` at all is
@@ -184,8 +191,8 @@ extension MetadataIndex {
     ///   - ids: the ids to set embeddings for.
     ///   - vectors: one embedding per id, positionally aligned with `ids`.
     ///   - source: the index this embed batch was actually computed from —
-    ///     `ids`' block hashes here are what `index`'s current entries must
-    ///     still match for the merge to apply.
+    ///     `ids`' embedded-text hashes here are what `index`'s current
+    ///     entries must still match for the merge to apply.
     ///   - index: the index to merge into.
     /// - Returns: a copy of `index` with those embeddings applied wherever
     ///   the hash check passed.
@@ -198,21 +205,25 @@ extension MetadataIndex {
         var entriesByID = index.entriesByID
         for (id, vector) in zip(ids, vectors) {
             guard let entry = entriesByID[id], let sourceEntry = source.entriesByID[id],
-                  entry.blockHash == sourceEntry.blockHash
+                  entry.digests.embeddedText == sourceEntry.digests.embeddedText
             else { continue }
             entriesByID[id] = Self.withEmbedding(vector, replacing: entry)
         }
         return MetadataIndex(ids: index.ids, entriesByID: entriesByID)
     }
 
-    /// Whether `self` and `other` index identical content (same ids, same order, same rendered-block hashes).
+    /// Whether `self` and `other` index identical content (same ids, same order, same rendered-text digests).
     ///
     /// This is `update(items:)`'s redundant-update guard (plan.md §8
     /// "hash-guarded"): calling `update` with content identical to what's
     /// already indexed must cost nothing
     /// (no re-embed, no selection-tier rebuild, no diagnostics), so callers
     /// may forward every upstream change notification without coalescing
-    /// first. Embeddings are deliberately not part of this comparison —
+    /// first. Every rendered text counts here, not just the embedded one
+    /// reuse keys on: a changed block is what a `Match` hands back and a
+    /// changed indexed text is what the keyword signals score, so an update
+    /// carrying either has real work to do. Embeddings are deliberately not
+    /// part of this comparison —
     /// `update(items:)` only ever calls this against a freshly rendered
     /// baseline, never against an index still catching up on embeddings, so
     /// there's no case where embeddings alone would need to make two
@@ -222,7 +233,7 @@ extension MetadataIndex {
     /// - Returns: whether both indexes are content-identical.
     func hasIdenticalContent(to other: MetadataIndex<Item>) -> Bool {
         guard ids == other.ids else { return false }
-        return ids.allSatisfy { entriesByID[$0]?.blockHash == other.entriesByID[$0]?.blockHash }
+        return ids.allSatisfy { entriesByID[$0]?.digests == other.entriesByID[$0]?.digests }
     }
 
     /// Returns a copy of `entry` with its `embedding` replaced by `embedding`.
@@ -240,8 +251,9 @@ extension MetadataIndex {
         Entry(
             item: entry.item,
             block: entry.block,
+            embeddedText: entry.embeddedText,
             rankedDocument: entry.rankedDocument,
-            blockHash: entry.blockHash,
+            digests: entry.digests,
             embedding: embedding,
         )
     }

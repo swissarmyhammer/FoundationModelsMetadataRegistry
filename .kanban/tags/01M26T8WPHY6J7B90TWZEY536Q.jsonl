@@ -1,0 +1,1 @@
+{"id":"01M26T8WPJYN8B7QN8Q1C01H6G","timestamp":"2026-09-10T23:25:59.890355Z","op":"create","item_id":"01M26T8WPHY6J7B90TWZEY536Q","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: d876e3\n+tag_name: catalog\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: d876e3\n-tag_name: catalog\n","transaction_id":null}
