@@ -1,3 +1,5 @@
+import FoundationModelsExtras
+
 /// Per-signal fusion weights for `MetadataSearcher`'s retrieval tier (plan.md §5).
 ///
 /// FoundationModelsRanker's `SignalWeights` under this package's
@@ -214,6 +216,68 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     ) async {
         await self.init(
             index: MetadataIndex.build(items: items, embedder: embedder, onDiagnostic: onDiagnostic),
+            mode: mode,
+            weights: weights,
+            embedder: embedder,
+            selection: selection,
+            onDiagnostic: onDiagnostic,
+        )
+    }
+
+    /// Builds a searcher over `items` whose embedder is the pooled embedding
+    /// model `embeddingModel` (plan.md §5, decision #16).
+    ///
+    /// Acquires a hold of `embeddingModel` from `pool`, wraps it in
+    /// `PooledTextEmbedding`, and then embeds every item's block through it,
+    /// the same as `init(items:mode:weights:embedder:selection:onDiagnostic:)`.
+    /// Two searchers with the same `embeddingModel` in one pool share one
+    /// loaded model, and all their embed calls go through the one work queue
+    /// of that model. The searcher keeps the hold, so the model stays
+    /// resident while the searcher exists. After the last hold goes, the pool
+    /// evicts the model.
+    ///
+    /// The first loader of a key wins. When the model is resident already
+    /// (for example, the router loaded it), the pool does not call `loader`,
+    /// and the searcher embeds through the container that the first loader
+    /// made, through the `PooledEmbedding` protocol only.
+    ///
+    /// - Parameters:
+    ///   - items: the catalog's items, in first-seen-wins duplicate-id order.
+    ///   - mode: which tier `search(intent:limit:)` uses. Defaults to
+    ///     `.auto`.
+    ///   - weights: the per-signal fusion weights for the retrieval tier.
+    ///     Defaults to `1.0` for every signal.
+    ///   - embeddingModel: the embedding model to acquire from `pool`.
+    ///   - footprintBytes: the bytes of the weights of `embeddingModel`. The
+    ///     pool counts them only when this call loads the model.
+    ///   - loader: the loader that loads `embeddingModel` when it is not
+    ///     resident. The caller gives it; this package has no model loader.
+    ///   - pool: the pool to acquire the model from. Defaults to
+    ///     `ModelPool.shared`, the pool of the process.
+    ///   - selection: this searcher's selection tier configuration (plan.md
+    ///     §6), or `nil` (the default) to leave `.selection` unavailable.
+    ///   - onDiagnostic: called for every diagnostic emitted while building
+    ///     the index and while searching. Defaults to logging via
+    ///     `MetadataDiagnostic.log(_:)`.
+    /// - Throws: What `loader` throws, or
+    ///   `PooledEmbedderError.notAnEmbedding(key:containerType:)` when the
+    ///   container of the key does not conform to `PooledEmbedding`.
+    public init(
+        items: [Item],
+        mode: SearchMode = .auto,
+        weights: Weights = Weights(),
+        embeddingModel: ModelRef,
+        footprintBytes: Int64,
+        loader: any PooledModelLoader,
+        pool: ModelPool = .shared,
+        selection: SelectionConfig? = nil,
+        onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
+    ) async throws {
+        let embedder = try await PooledTextEmbedding.acquire(
+            embeddingModel, footprintBytes: footprintBytes, loader: loader, from: pool,
+        )
+        await self.init(
+            items: items,
             mode: mode,
             weights: weights,
             embedder: embedder,

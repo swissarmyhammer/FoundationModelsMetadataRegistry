@@ -1,10 +1,45 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m3hdcg4afwwtxaw5t5swz4ff
+  text: |-
+    Research done. The Extras API (resolved checkout, ModelPool/) gives all that the task needs:
+    - The embed protocol on the container is `PooledEmbedding` (`dimension`, `embed(texts:)`).
+    - The handle is `PooledEmbedder(hold:)`. It keeps the `ModelHold`, and sends each `embed(texts:)` call through `hold.queue` (the one `GenerationQueue` of the key). It finds the container through `as? any PooledEmbedding` only, and throws `PooledEmbedderError.notAnEmbedding` when the container does not conform.
+    - `ModelPool.init()` is public (a private pool for each test). `ModelPool.isResident(_:)` is public (the residency query).
+    - `ModelPool.acquire(_:footprintBytes:sessionBytes:loader:)` needs the bytes of the weights. Thus the new searcher initializer also takes `footprintBytes`. An embedding hold opens no session, so `sessionBytes` is 0.
+    - The key is `ModelPoolKey(ref:role: .embedding)`. The loader protocol is `PooledModelLoader` (`load(_:)`, `evict(_:)`).
+    - Eviction runs in a detached admission job after the last hold goes. The pool removes the entry before it calls `loader.evict`, so a test can wait for the evict call and then read `isResident`.
+    README.md does not list the initializers. It only says "Add a `TextEmbedding` conformer". I will add one short sentence there about the pooled initializer.
+  timestamp: 2026-09-27T12:28:07.178769+00:00
+- actor: claude-code
+  id: 01m3hdr0wjmc69jdppkx9vk5b4
+  text: |-
+    Implementation landed.
+    - New `PooledTextEmbedding` (public struct, `TextEmbedding`): keeps one `PooledEmbedder`, forwards `embed(_:)` to `embed(texts:)` of the handle. No cast, no second queue. `static func acquire(_:footprintBytes:loader:from:)` acquires the `.embedding` key with `sessionBytes` 0.
+    - New `MetadataSearcher.init(items:mode:weights:embeddingModel:footprintBytes:loader:pool:selection:onDiagnostic:) async throws` (pool defaults to `ModelPool.shared`). The three current initializers do not change.
+    - Tests: `PooledTextEmbeddingTests` (the four tests of the card), with stubs in `TestSupport/PooledModelStubs.swift`. Each test uses its own `ModelPool()`.
+    - Check of the concurrency test: with a temporary change that calls the container directly (no queue), `concurrentUpdatesRunOneAtATime` failed (`maximumCallsInFlight` > 1). With the real code it passes. The temporary change is reverted.
+    - Docs: plan.md §5 (the pooled embedder paragraph) and §12 (the fourth initializer), both refer to decision #16 and say that the first loader of a key wins. README.md: one sentence.
+    - Environment note: the disk was full (about 100 MB free), and `swift build` failed with I/O error 28. The cause was nested `.build` directories inside `.build/checkouts/*` (for example `swift-distributed-tracing/Samples/*/.build/index-build`, about 9 GB), which an index build makes. I deleted those nested build directories (regenerable, not source). A process still writes there, so the disk can fill again.
+
+    ### implement — changed
+    - evidence: 6 files — Sources/FoundationModelsMetadataRegistry/PooledTextEmbedding.swift, Sources/FoundationModelsMetadataRegistry/MetadataSearcher.swift, Tests/FoundationModelsMetadataRegistryTests/PooledTextEmbeddingTests.swift, Tests/FoundationModelsMetadataRegistryTests/TestSupport/PooledModelStubs.swift, plan.md, README.md
+    - next: /test
+  timestamp: 2026-09-27T12:34:24.786758+00:00
+- actor: claude-code
+  id: 01m3hdtn53m13ptgqsec4t9x54
+  text: |-
+    ### test — green
+    - evidence: `swift test` — 137 tests in 14 suites passed, 0 failed, 0 skipped; `swift build --build-tests` after touch of all sources — 0 warnings; `swiftformat --lint` — 0/54 files; `swiftlint lint` — 0 violations. SwiftFormat first found `unusedArguments` in `PooledModelStubs.swift` (the `load`/`evict` parameters); fixed with `_`.
+    - next: /commit
+  timestamp: 2026-09-27T12:35:51.075356+00:00
 depends_on:
 - 01M3FNBKG7PTTAGCQNN3CRNN69
-position_column: todo
-position_ordinal: '8180'
+position_column: doing
+position_ordinal: '80'
 title: Add PooledTextEmbedding and a MetadataSearcher initializer that takes a pooled embedding ModelRef
 ---
 ## Goal
