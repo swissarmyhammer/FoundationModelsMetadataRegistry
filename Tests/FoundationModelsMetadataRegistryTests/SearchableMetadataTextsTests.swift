@@ -186,7 +186,54 @@ struct SearchableMetadataTextsTests {
         #expect(matches.first?.block == "second block")
     }
 
+    // MARK: - The digests of the three texts
+
+    /// When the embedded text is equal to the indexed text and is not equal
+    /// to the block, the embedded text digest is the indexed text digest, and
+    /// it is not the block digest.
+    @Test
+    func anEmbeddedTextEqualToTheIndexedTextGetsTheIndexedTextDigest() {
+        let digests = Self.makeDigests(embeddedText: Self.digestIndexedText)
+
+        #expect(digests.embeddedText == digests.indexedText)
+        #expect(digests.embeddedText != digests.block)
+    }
+
+    /// The digest that the initializer uses again for an embedded text equal
+    /// to the indexed text is the digest of that text. It is equal to the
+    /// indexed text digest of a value whose embedded text is different, and
+    /// it is not equal to the digest of that different embedded text.
+    @Test
+    func anEmbeddedTextEqualToTheIndexedTextIsDigestedAsThatText() {
+        let shared = Self.makeDigests(embeddedText: Self.digestIndexedText)
+        let distinct = Self.makeDigests(embeddedText: Self.digestEmbeddedText)
+
+        #expect(shared.embeddedText == distinct.indexedText)
+        #expect(shared.embeddedText != distinct.embeddedText)
+        #expect(shared != distinct)
+    }
+
     // MARK: - Shared fixture items
+
+    /// The block text of the digest fixtures.
+    private static let digestBlock = "A"
+
+    /// The indexed text of the digest fixtures. It is not equal to
+    /// `digestBlock`.
+    private static let digestIndexedText = "B"
+
+    /// An embedded text that is not equal to `digestBlock` or to
+    /// `digestIndexedText`.
+    private static let digestEmbeddedText = "C"
+
+    /// Makes the digests of `digestBlock`, `digestIndexedText`, and the
+    /// embedded text that the test gives.
+    ///
+    /// - Parameter embeddedText: the embedded text to digest.
+    /// - Returns: the digests of the three texts.
+    private static func makeDigests(embeddedText: String) -> RenderedTextDigests {
+        RenderedTextDigests(block: digestBlock, indexedText: digestIndexedText, embeddedText: embeddedText)
+    }
 
     /// An item whose indexed text shares no term and no trigram with its
     /// block, so a query answered from one text can never be answered from
