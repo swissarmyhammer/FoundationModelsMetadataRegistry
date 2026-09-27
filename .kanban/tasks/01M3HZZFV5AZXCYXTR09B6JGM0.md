@@ -1,8 +1,29 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8180'
+comments:
+- actor: claude-code
+  id: 01m3j1022022bc3nx7b5jja8ht
+  text: 'Research: `MetadataDiagnostic.log(_:)` (Diagnostics.swift:70-94) has an exhaustive switch over 5 cases. Each case calls `logger.notice` on a private `Logger(subsystem: "FoundationModelsMetadataRegistry", category: "MetadataDiagnostic")`. The function returns `Void`. The test-integrity rule flags a test with no assertion. Thus the plan is to read the entries back from `OSLogStore(scope: .currentProcessIdentifier)` and assert that each case writes a message that holds its values. A second test uses an exhaustive switch over a local `CaseName` enum, so a new case in `MetadataDiagnostic` stops the compile until the fixture list holds it.'
+  timestamp: 2026-09-27T18:10:51.072151+00:00
+- actor: claude-code
+  id: 01m3j1ejpcty3q4vy59h12dqd1
+  text: |-
+    What did not work: a parameterized `@Test(arguments:)` over the 5 cases, with one `OSLogStore` read for each case. Each read takes about 4 seconds. In parallel, the first run crashed the test process with no issue line. With `.serialized`, the test was stable but took 17 to 21 seconds. Result: one test writes all 5 cases, reads the store one time, and does one `#expect` for each case (5 to 9 seconds). A second test `loggedMessagesHoldEachCaseOneTime` keeps the "each case is in the list" check: it maps the fixture list through an exhaustive switch into `CaseName` and compares with `CaseName.allCases`.
+
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsMetadataRegistryTests/DiagnosticsTests.swift (swift test --filter DiagnosticsTests: 3 tests pass, 3 runs of 3)
+    - next: test
+  timestamp: 2026-09-27T18:18:46.860770+00:00
+- actor: claude-code
+  id: 01m3j1fzc232e8shpp73cp0chz
+  text: |-
+    ### test — green
+    - evidence: swift test — 145 tests in 15 suites passed, 0 failed, 0 skipped; swiftformat . --lint — 0/68 files require formatting; swiftlint --strict — 0 violations in 68 files
+    - next: commit
+  timestamp: 2026-09-27T18:19:32.610079+00:00
+position_column: doing
+position_ordinal: '80'
 title: Add tests for MetadataDiagnostic.log(_:)
 ---
 Sources/FoundationModelsMetadataRegistry/Catalog/Diagnostics.swift:70-94
