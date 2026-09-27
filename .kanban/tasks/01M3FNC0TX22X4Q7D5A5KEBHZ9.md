@@ -36,10 +36,30 @@ comments:
     - evidence: `swift test` — 137 tests in 14 suites passed, 0 failed, 0 skipped; `swift build --build-tests` after touch of all sources — 0 warnings; `swiftformat --lint` — 0/54 files; `swiftlint lint` — 0 violations. SwiftFormat first found `unusedArguments` in `PooledModelStubs.swift` (the `load`/`evict` parameters); fixed with `_`.
     - next: /commit
   timestamp: 2026-09-27T12:35:51.075356+00:00
+- actor: claude-code
+  id: 01m3hdtxb614tszm3d0tay9nec
+  text: |-
+    ### commit — changed
+    - evidence: 73cc532 feat(searcher): add PooledTextEmbedding and a pooled embedding ModelRef initializer
+    - next: /review 01M3FNC0TX22X4Q7D5A5KEBHZ9 HEAD~1..HEAD
+  timestamp: 2026-09-27T12:35:59.462641+00:00
+- actor: claude-code
+  id: 01m3hdyngap9ctwx408gq1mm8s
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` — 0 findings, 0 confirmed, 0 refuted (7 attempted, 0 failed); 4 Swift files reviewed; README.md and plan.md matched no validator; .kanban/ excluded by .reviewignore. The task moved review → done.
+    - next: none
+
+    ### finish iteration 1 — clean
+    - implement: changed (PooledTextEmbedding.swift, MetadataSearcher.swift, PooledTextEmbeddingTests.swift, TestSupport/PooledModelStubs.swift, plan.md, README.md)
+    - test: green (swift test — 137 passed, 0 failed, 0 skipped; 0 warnings; swiftformat and swiftlint clean)
+    - commit: 73cc532
+    - review: clean (0 findings); task in done
+  timestamp: 2026-09-27T12:38:02.506203+00:00
 depends_on:
 - 01M3FNBKG7PTTAGCQNN3CRNN69
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: a680
 title: Add PooledTextEmbedding and a MetadataSearcher initializer that takes a pooled embedding ModelRef
 ---
 ## Goal
