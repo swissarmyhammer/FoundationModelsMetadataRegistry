@@ -11,6 +11,14 @@ import Foundation
 /// The redirection applies to the whole process. Tests run in parallel, so a
 /// different test that prints while the call runs also writes into the
 /// capture. A caller must thus keep only the lines that its own call writes.
+///
+/// Two captures must not overlap. If a second capture starts while the first
+/// capture has standard output on its pipe, the second capture keeps that pipe
+/// as its "original" descriptor and puts it back at the end. Then a descriptor
+/// to the pipe of the first capture stays open, and the reader of the first
+/// capture never gets its end of file. `capture(_:)` is thus isolated to the
+/// main actor. The part from the redirection to the restore has no suspension
+/// point, so the actor runs that part for one capture at a time.
 enum StandardOutputCapture {
     /// The failures that stop a capture.
     enum CaptureError: Error {
@@ -34,6 +42,7 @@ enum StandardOutputCapture {
     /// - Returns: the captured text, decoded as UTF-8.
     /// - Throws: `CaptureError` when a descriptor operation fails, or when
     ///   the captured bytes are not valid UTF-8.
+    @MainActor
     static func capture(_ body: () -> Void) async throws -> String {
         let pipe = Pipe()
         let originalDescriptor = dup(STDOUT_FILENO)
