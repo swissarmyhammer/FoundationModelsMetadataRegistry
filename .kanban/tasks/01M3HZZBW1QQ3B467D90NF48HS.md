@@ -1,7 +1,12 @@
 ---
 assignees:
 - claude-code
-position_column: todo
+comments:
+- actor: claude-code
+  id: 01m3j0pb88cc53kr0byd1z4c2y
+  text: 'Research: `MetadataDiagnostic.init(_:)` is internal, so the tests use `@testable import`. `RankDiagnostic` is `Sendable, Equatable` and the module re-exports it. I added a new file `Tests/FoundationModelsMetadataRegistryTests/DiagnosticsTests.swift` with one parameterized `@Test(arguments:)` over the three cases. This removes duplicate test bodies. The retrievalCut case uses considered = 40 and kept = 12, so a swap of the two values makes the test fail. The code under test did not change.'
+  timestamp: 2026-09-27T18:05:32.808533+00:00
+position_column: doing
 position_ordinal: '80'
 title: 'Add tests for MetadataDiagnostic.init(_: RankDiagnostic)'
 ---
