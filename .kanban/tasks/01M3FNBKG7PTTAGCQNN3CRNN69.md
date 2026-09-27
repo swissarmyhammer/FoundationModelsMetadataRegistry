@@ -56,8 +56,32 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsMetadataRegistryTests/TestSupport/ManifestEntries.swift; swiftformat and swiftlint clean
     - next: /test
   timestamp: 2026-09-27T12:22:47.454550+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m3hd4rqhqh930adtzt98v0e4
+  text: |-
+    ### test — green
+    - evidence: `swift test` — 133 tests in 13 suites passed, 0 failed, 0 skipped; `swift build --build-tests` no warnings; `swiftlint lint` 0 violations
+    - next: /commit
+
+    ### commit — changed
+    - evidence: 17235e6 refactor(tests): name the regex capture indices in ManifestEntries
+    - next: /review
+  timestamp: 2026-09-27T12:23:53.841255+00:00
+- actor: claude-code
+  id: 01m3hd7e7p55xk9d4mbdb2h18c
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` — 0 findings (0 confirmed, 0 refuted); the 2 prior findings are checked
+    - next: none (task in done)
+
+    ### finish iteration 2 — clean
+    - implement: changed (TestSupport/ManifestEntries.swift: named capture indices)
+    - test: green (swift test 133 passed, 0 failed, 0 skipped; no warnings)
+    - commit: 17235e6
+    - review: clean — 0 new findings, 2/2 prior findings checked; task moved to done
+  timestamp: 2026-09-27T12:25:21.398489+00:00
+position_column: done
+position_ordinal: a580
 title: 'Add the FoundationModelsExtras dependency for the model pool and record decision #16'
 ---
 ## Goal
@@ -80,9 +104,9 @@ Add a dependency on the core `FoundationModelsExtras` product, so the registry c
 4. Update §10 (dependencies) to show the two packages.
 
 ## Acceptance criteria
-- [ ] `swift build` passes. The build compiles no package other than FoundationModelsRanker, FoundationModelsExtras, Stencil (and its own dependencies), Yams, ULID.swift and swift-distributed-tracing (and its own dependencies).
-- [ ] `PackageManifestTests` pass and agree with decision #16.
-- [ ] `plan.md` has decision #16, with the accepted cost, and dated markers on the parts that it changes.
+- [x] `swift build` passes. The build compiles no package other than FoundationModelsRanker, FoundationModelsExtras, Stencil (and its own dependencies), Yams, ULID.swift and swift-distributed-tracing (and its own dependencies).
+- [x] `PackageManifestTests` pass and agree with decision #16.
+- [x] `plan.md` has decision #16, with the accepted cost, and dated markers on the parts that it changes.
 
 ## Tests
 - `PackageManifestTests`: add a test that `Package.swift` names `FoundationModelsExtras` as the only product of the `FoundationModelsExtras` package.
@@ -98,5 +122,5 @@ Add a dependency on the core `FoundationModelsExtras` product, so the registry c
 > 1 file(s) not reviewed — no validator matched:
 > - `plan.md` — no validator matches this file
 
-- [ ] `Tests/FoundationModelsMetadataRegistryTests/TestSupport/ManifestEntries.swift:70` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
-- [ ] `Tests/FoundationModelsMetadataRegistryTests/TestSupport/ManifestEntries.swift:88` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
+- [x] `Tests/FoundationModelsMetadataRegistryTests/TestSupport/ManifestEntries.swift:70` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
+- [x] `Tests/FoundationModelsMetadataRegistryTests/TestSupport/ManifestEntries.swift:88` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
