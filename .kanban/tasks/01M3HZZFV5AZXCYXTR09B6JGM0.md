@@ -22,8 +22,24 @@ comments:
     - evidence: swift test — 145 tests in 15 suites passed, 0 failed, 0 skipped; swiftformat . --lint — 0/68 files require formatting; swiftlint --strict — 0 violations in 68 files
     - next: commit
   timestamp: 2026-09-27T18:19:32.610079+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m3j1k65gmrdna6avagvjd1rk
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings, 0 confirmed, 0 refuted (7 validators attempted, 0 failed); .kanban/ files not reviewed (.reviewignore)
+    - next: done
+  timestamp: 2026-09-27T18:21:17.872770+00:00
+- actor: claude-code
+  id: 01m3j1k9mn5m5j2jwcjcgjes58
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — Tests/FoundationModelsMetadataRegistryTests/DiagnosticsTests.swift (log(_:) writes each of 5 cases, then one OSLogStore read checks each message; exhaustive-switch check that the fixture list holds each case)
+    - test: green — swift test 145 tests in 15 suites passed, 0 failed, 0 skipped; swiftformat --lint 0/68; swiftlint --strict 0 violations
+    - commit: 700d6d4
+    - review: clean — review sha HEAD~1..HEAD, 0 findings; task moved to done
+  timestamp: 2026-09-27T18:21:21.429890+00:00
+position_column: done
+position_ordinal: aa80
 title: Add tests for MetadataDiagnostic.log(_:)
 ---
 Sources/FoundationModelsMetadataRegistry/Catalog/Diagnostics.swift:70-94
