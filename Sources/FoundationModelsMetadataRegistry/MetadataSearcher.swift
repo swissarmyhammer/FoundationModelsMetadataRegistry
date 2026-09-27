@@ -67,9 +67,10 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// degrades to keyword-only. Catalog items are embedded in batches, not
     /// per search: at index-build time via `MetadataIndex.build(items:
     /// embedder:previous:onDiagnostic:)`, and by the two catch-ups that
-    /// share `catchUpEmbeddings(ids:texts:embeddedFrom:with:)` —
-    /// `update(items:)` for the blocks a reload changed, and the first
-    /// search for a synchronously built index (see `FirstSearchCatchUp`).
+    /// share `catchUpEmbeddings(ids:texts:embeddedFrom:with:)` — the
+    /// single-flight reload loop of `update(items:)` for the blocks a reload
+    /// changed (see `ReloadEmbedLoop`), and the first search for a
+    /// synchronously built index (see `FirstSearchCatchUp`).
     /// The same embedder instance is reused for both roles across every
     /// `update`.
     let embedder: (any TextEmbedding)?
@@ -145,6 +146,12 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// searcher has nothing to catch up, and its behavior is unchanged —
     /// and `.pending` otherwise.
     var firstSearchCatchUp: FirstSearchCatchUp
+
+    /// This searcher's reload embed loop state (see `ReloadEmbedLoop` in
+    /// `MetadataSearcher+ReloadEmbedLoop.swift`).
+    ///
+    /// Starts `.idle`: no `update(items:)` has run yet.
+    var reloadEmbedLoop: ReloadEmbedLoop
 
     /// Builds a searcher over `items`, indexing them once at `init` with no embedder.
     ///
@@ -329,6 +336,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         self.onDiagnostic = onDiagnostic
         selectionConfig = selection
         firstSearchCatchUp = embedder == nil ? .done : .pending
+        reloadEmbedLoop = .idle
         selectionTier = Self.buildSelectionTierIfConfigured(
             config: selection, index: index, onDiagnostic: onDiagnostic,
         )

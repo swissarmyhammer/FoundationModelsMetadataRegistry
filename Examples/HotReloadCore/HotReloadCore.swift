@@ -123,11 +123,12 @@ public func runHotReloadBurst(
 }
 
 /// Thread-safe diagnostic log for `runHotReloadBurst(burst:query:limit:
-/// embedder:)`'s per-step diagnostic capture -- mirrors the lock-guarded
-/// `@unchecked Sendable` pattern the test suite's own `DiagnosticRecorder`
-/// uses, reimplemented here since production code (this library target)
-/// can't import a test-target type.
-private final class DiagnosticLog: @unchecked Sendable {
+/// embedder:)`'s per-step diagnostic capture, and for the catch-up
+/// diagnostics of `runCoalescedHotReloadBurst(burst:query:limit:)` -- mirrors
+/// the lock-guarded `@unchecked Sendable` pattern the test suite's own
+/// `DiagnosticRecorder` uses, reimplemented here since production code (this
+/// library target) can't import a test-target type.
+final class DiagnosticLog: @unchecked Sendable {
     private let lock = NSLock()
     private var recorded: [MetadataDiagnostic] = []
 

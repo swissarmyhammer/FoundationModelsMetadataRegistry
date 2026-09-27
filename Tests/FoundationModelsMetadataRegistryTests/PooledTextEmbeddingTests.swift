@@ -38,8 +38,9 @@ struct PooledTextEmbeddingTests {
     /// The catalog of each searcher.
     static let items = [FixtureItem(id: "a", block: "alpha block"), FixtureItem(id: "b", block: "bravo block")]
 
-    /// The number of concurrent `update(items:)` calls on each searcher.
-    static let concurrentUpdatesPerSearcher = 8
+    /// The number of `update(items:)` calls that each searcher sends in
+    /// series, while the other searcher sends its own.
+    static let updatesPerSearcher = 8
 
     /// Makes a stub loader over a new stub model.
     static func makeLoader() -> StubModelLoader {
@@ -89,17 +90,23 @@ struct PooledTextEmbeddingTests {
         let second = try await Self.makeSearcher(loader: loader, pool: pool)
         let batchesBeforeUpdates = await loader.container.embeddedBatches.count
 
+        // Each searcher sends its updates in series, so each update embeds
+        // one new item: a searcher coalesces the updates that arrive while
+        // its own embed is in flight (plan.md §8). The two searchers run at
+        // the same time, so only the pool keeps their embed calls apart.
         await withTaskGroup(of: Void.self) { group in
-            for index in 0 ..< Self.concurrentUpdatesPerSearcher {
-                let items = Self.items + [FixtureItem(id: "item-\(index)", block: "block \(index)")]
-                for searcher in [first, second] {
-                    group.addTask { await searcher.update(items: items) }
+            for searcher in [first, second] {
+                group.addTask {
+                    for index in 0 ..< Self.updatesPerSearcher {
+                        let items = Self.items + [FixtureItem(id: "item-\(index)", block: "block \(index)")]
+                        await searcher.update(items: items)
+                    }
                 }
             }
         }
 
         let searchers = [first, second]
-        let updateCount = searchers.count * Self.concurrentUpdatesPerSearcher
+        let updateCount = searchers.count * Self.updatesPerSearcher
         #expect(await loader.container.embeddedBatches.count == batchesBeforeUpdates + updateCount)
         #expect(await loader.container.maximumCallsInFlight == 1)
     }

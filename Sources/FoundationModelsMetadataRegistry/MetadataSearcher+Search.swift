@@ -10,14 +10,22 @@ extension MetadataSearcher {
     ///    trigram signals) before this call even reaches the embedder.
     /// 2. Re-embeds incrementally: only items whose `(id, block-hash)`
     ///    changed since the previous index are embedded, reusing every other
-    ///    item's stored embedding. This step awaits `embedder.embed(_:)` —
-    ///    an actor reentrancy point, so a concurrent `search(intent:limit:)`
-    ///    interleaves and sees the already-rebuilt keyword indexes with cosine
-    ///    absent for the still-pending items (the absent-signal rule, plan.md
-    ///    §5), never blocked behind the whole re-embed. The pending/total gap
-    ///    is reported once via `MetadataDiagnostic.embedCatchUp(pending:
-    ///    total:)`. This call also takes over the first-search catch-up of a
-    ///    synchronously built searcher (see `FirstSearchCatchUp`): once a
+    ///    item's stored embedding. The embed runs in the single-flight reload
+    ///    loop (see `ReloadEmbedLoop`), so a burst of calls embeds only the
+    ///    newest catalog: when an embed is in flight, this call does not start
+    ///    one of its own. It records that a newer catalog is pending, and the
+    ///    loop embeds the pending ids of the current `index` when the embed in
+    ///    flight ends. A burst of N calls thus causes at most two embed calls.
+    ///    This step awaits the loop — an actor reentrancy point, so a
+    ///    concurrent `search(intent:limit:)` interleaves and sees the
+    ///    already-rebuilt keyword indexes with cosine absent for the
+    ///    still-pending items (the absent-signal rule, plan.md §5), never
+    ///    blocked behind the whole re-embed. Each real embed call reports its
+    ///    pending/total gap one time via `MetadataDiagnostic.embedCatchUp(
+    ///    pending:total:)`, so a call that joins a loop in flight reports
+    ///    nothing of its own. This call also takes over the first-search
+    ///    catch-up of a synchronously built searcher (see
+    ///    `FirstSearchCatchUp`): once a
     ///    reload owns the embedding, a search that lands in this interim
     ///    window serves keyword-only rather than embedding the same pending
     ///    blocks a second time.
@@ -33,12 +41,21 @@ extension MetadataSearcher {
     /// none is expected), this call is a complete no-op — no re-embedding,
     /// no selection-tier rebuild, no diagnostics — so callers may forward
     /// every upstream change notification (file watcher, MCP `listChanged`)
-    /// without coalescing them first. Content-identical but still catching
+    /// without coalescing them first. The searcher coalesces a burst itself
+    /// (step 2), so a caller never pays for the catalogs between the first
+    /// and the newest. Content-identical but still catching
     /// up (e.g. a prior embed call failed transiently) still re-embeds, just
     /// without rebuilding the selection tier — nothing keyword/selection-
     /// relevant changed, only the still-missing embedding is worth
     /// finishing, and a rebuild would pointlessly drop the cached root
     /// session.
+    ///
+    /// When this call returns, the embed catch-up that includes its own
+    /// catalog is done (plan.md §8): a call that joins a loop in flight
+    /// waits for the same loop, which embeds the current `index` before it
+    /// stops. A caller that awaits `update(items:)` thus sees the embeddings
+    /// of the newest catalog at once, the same as a caller that sends no
+    /// burst. An embed that fails leaves its items pending for the next call.
     ///
     /// - Parameter items: the catalog's new/refreshed items, in first-seen-
     ///   wins duplicate-id order (forwarded to `MetadataIndex`'s duplicate-id
@@ -72,15 +89,15 @@ extension MetadataSearcher {
         }
 
         guard !result.pendingEmbedIDs.isEmpty, let embedder else { return }
-        await catchUpEmbeddings(
-            ids: result.pendingEmbedIDs, texts: result.textsToEmbed, embeddedFrom: baseline, with: embedder,
-        )
+        await embedNewestCatalog(with: embedder)
     }
 
     /// Embeds `texts` through `embedder`, then merges the vectors into the live `index` under `ids`.
     ///
-    /// The one place a catch-up batch lands, shared by `update(items:)` and
-    /// the first-search catch-up (`runFirstSearchCatchUp()`). Reports the
+    /// The one place a catch-up batch lands, shared by the reload embed loop
+    /// (`runReloadEmbedLoop(with:)`) and the first-search catch-up
+    /// (`runFirstSearchCatchUp()`). Internal, not private, because the reload
+    /// embed loop lives in its own file. Reports the
     /// pending/total gap via `.embedCatchUp` before the embedder call, once.
     ///
     /// Merges into `index` as it stands *after* the suspension -- not into
@@ -111,7 +128,7 @@ extension MetadataSearcher {
     ///     hashes there are what `index`'s current entries must still match
     ///     for the merge to apply.
     ///   - embedder: the embedder to embed `texts` with.
-    private func catchUpEmbeddings(
+    func catchUpEmbeddings(
         ids: [String],
         texts: [String],
         embeddedFrom baseline: MetadataIndex<Item>,

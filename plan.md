@@ -356,9 +356,27 @@ notifications, a Multitool rebuild. Semantics:
    with no `await` (a synchronous registry initializer) needs no wrapper that calls
    `update(items:)` before the first search. An `update(items:)` that lands first
    takes the catch-up over, so a search in its interim window stays keyword-only.
+7. *(2026-09-27)* Coalesce bursts. The embed of `update(items:)` runs in one
+   single-flight loop for each searcher. When an embed is in flight, a new call assigns
+   its keyword index at once, marks that a newer catalog is pending, and starts no embed
+   of its own. When the embed in flight ends, the loop reads the pending ids of the
+   current index and embeds them one more time. A burst of N calls thus causes at most
+   two embed calls: the one in flight and one for the newest catalog. The catalogs
+   between them are never embedded. The hash check of the merge still discards a stale
+   vector. Each real embed call reports `.embedCatchUp` one time; a call that joins the
+   loop reports nothing of its own. This works with any `TextEmbedding`, and it removes
+   the queue of stale calls that an embedder which runs one call at a time (the pooled
+   embedder, decision #16) would otherwise build.
+   **Decision:** `update(items:)` waits for the catch-up that includes its own catalog.
+   A call that joins the loop awaits the same loop, so when any call returns, the
+   embeddings of the newest catalog are in the index. Callers and tests that await
+   `update(items:)` see the same result as before. An embed that fails leaves its items
+   pending, and the loop does not repeat on a failure; the next `update(items:)`
+   retries them.
 
 `update` is cheap to call redundantly (hash-guarded), so callers may forward every
-upstream change notification without coalescing. MCP's churn rate is the design target:
+upstream change notification without coalescing — the searcher coalesces a burst
+itself (item 7). MCP's churn rate is the design target:
 a server connecting mid-session dumps hundreds of tools/resources into the catalog and
 they must be searchable immediately (keyword tiers) and semantically shortly after
 (embed catch-up), with a progress/diagnostic surface for the gap.

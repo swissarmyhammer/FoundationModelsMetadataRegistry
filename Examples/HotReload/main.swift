@@ -4,7 +4,8 @@ import HotReloadCore
 //
 // An MCP-style add/remove burst against a live `MetadataSearcher`: every
 // item is keyword-searchable immediately after each `update(items:)` call,
-// embed catch-up progress is reported via `.embedCatchUp`, and the
+// embed catch-up progress is reported via `.embedCatchUp`, a burst that
+// arrives while an embed is in flight embeds only the newest catalog, and the
 // selection tier's cached root + grammar rebuild on a real catalog change
 // is shown -- all GPU-free, against a deterministic embedder. Run with
 // `swift run HotReload`.
@@ -23,6 +24,19 @@ for (index, step) in steps.enumerated() {
         print("  [diagnostic] \(diagnostic)")
     }
 }
+
+print("\nCoalesced burst (the first embed is held while the rest of the burst arrives):")
+let coalesced = try await runCoalescedHotReloadBurst()
+print("  \(coalesced.updateCount) update(items:) calls -> \(coalesced.catalogEmbedBatches.count) embed calls")
+for (index, batch) in coalesced.catalogEmbedBatches.enumerated() {
+    print("  embed call \(index + 1): \(batch)")
+}
+
+for diagnostic in coalesced.embedCatchUps {
+    print("  [diagnostic] \(diagnostic)")
+}
+
+print("  search(\"file\") after the burst = \(coalesced.searchResultIds)")
 
 print("\nSelection-tier root/grammar rebuild demo (GPU-free, scripted session):")
 let rebuild = try await runSelectionRootRebuildDemo()

@@ -236,6 +236,27 @@ struct ExamplesSmokeTests {
         #expect(Set(steps[3].searchResultIds) == Set(["toolB", "toolC"]))
     }
 
+    @Test(
+        "HotReload's burst that arrives while an embed is in flight embeds only the newest catalog",
+        .timeLimit(.minutes(1)),
+    )
+    func hotReloadCoalescedBurstEmbedsOnlyTheNewestCatalog() async throws {
+        let result = try await HotReloadCore.runCoalescedHotReloadBurst()
+        let newestCatalog = try #require(HotReloadCore.hotReloadRapidBurst.last)
+
+        // Four updates, two embed calls: the held one for the first catalog,
+        // and one for the pending items of the newest catalog.
+        #expect(result.updateCount == HotReloadCore.hotReloadRapidBurst.count)
+        #expect(result.catalogEmbedBatches.count == 2)
+        #expect(
+            result.embedCatchUps == [
+                .embedCatchUp(pending: 1, total: 1),
+                .embedCatchUp(pending: newestCatalog.count, total: newestCatalog.count),
+            ],
+        )
+        #expect(Set(result.searchResultIds) == Set(newestCatalog.map(\.id)))
+    }
+
     @Test("HotReload's selection tier drops its cached root and rebuilds against the new catalog on a real change")
     func hotReloadSelectionRootRebuildsAfterARealCatalogChange() async throws {
         let result = try await HotReloadCore.runSelectionRootRebuildDemo()
