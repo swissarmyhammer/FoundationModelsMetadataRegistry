@@ -281,4 +281,26 @@ struct ExamplesSmokeTests {
         // catalog, in the order the session named them.
         #expect(matches.map(\.id) == LibrarianCore.librarianSelectedIds)
     }
+
+    @Test("Librarian's catalog print completes and writes a header and one `- <id>: <block>` line for each tool")
+    func librarianPrintCatalogWritesAHeaderAndOneLineForEachTool() async throws {
+        let catalog = LibrarianCore.tripPlanningCatalog
+
+        // The capture returns only after `printCatalog()` completes.
+        let output = try await StandardOutputCapture.capture {
+            LibrarianCore.printCatalog()
+        }
+
+        // Tests run in parallel, and a different test can print into the same
+        // capture. Keep only the lines with the shape of a catalog line: the
+        // header, or a `- ` tool line.
+        let catalogLines = output
+            .split(separator: "\n")
+            .map(String.init)
+            .filter { $0.hasPrefix("Trip-planning catalog (") || $0.hasPrefix("- ") }
+
+        #expect(catalogLines.count == catalog.count + 1)
+        #expect(catalogLines.first == "Trip-planning catalog (\(catalog.count) tools):")
+        #expect(Array(catalogLines.dropFirst()) == catalog.map { "- \($0.id): \($0.block)" })
+    }
 }
