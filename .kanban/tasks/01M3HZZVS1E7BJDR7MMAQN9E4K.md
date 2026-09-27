@@ -20,8 +20,31 @@ comments:
     - evidence: `swift test` — 142 tests in 14 suites passed, 0 failed, 0 skipped, no compiler warnings; `swiftformat . --lint` — 0/67 files need formatting; `swiftlint --strict` — 0 violations. The first lint run found `optional_data_string_conversion` at StandardOutputCapture.swift:63; the fix uses `String(bytes:encoding:)` and throws `CaptureError.invalidUTF8` on nil. SwiftPM prints manifest cache "disk I/O error" warnings from the sandbox; they come from the environment, not from code.
     - next: commit
   timestamp: 2026-09-27T18:02:03.152439+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m3j0g4k307hk74vgkxw1d3fe
+  text: |-
+    ### commit — changed
+    - evidence: ac558ea test(examples): add a test for LibrarianCore.printCatalog()
+    - next: review
+  timestamp: 2026-09-27T18:02:09.379462+00:00
+- actor: claude-code
+  id: 01m3j0kykfmg009wrr2wj9cdx0
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` — 0 findings, 0 confirmed, 0 refuted, 7 validators attempted, 0 failed; 2 files reviewed (.kanban/ excluded by .reviewignore). No prior findings.
+    - next: done
+  timestamp: 2026-09-27T18:04:14.319259+00:00
+- actor: claude-code
+  id: 01m3j0m0shtsbd1jvr1z7b3y5t
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — added StandardOutputCapture (TestSupport) and the ExamplesSmokeTests test `librarianPrintCatalogWritesAHeaderAndOneLineForEachTool`; no change to the code under test
+    - test: green — swift test 142 passed in 14 suites, 0 failed, 0 skipped; swiftformat --lint 0/67; swiftlint --strict 0 violations
+    - commit: ac558ea
+    - review: clean — review sha HEAD~1..HEAD, 0 findings; task moved to done
+  timestamp: 2026-09-27T18:04:16.561579+00:00
+position_column: done
+position_ordinal: a880
 title: Add tests for LibrarianCore.printCatalog()
 ---
 Examples/LibrarianCore/LibrarianCore.swift:60-65
