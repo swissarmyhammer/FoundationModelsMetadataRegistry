@@ -39,6 +39,12 @@ embedders come from [`../FoundationModelsRouter`](../FoundationModelsRouter/plan
 > the Router removal still holds; the one line of it that no longer does is
 > "the repository has no integration suite", and decision #15 says what stands
 > there instead.
+>
+> **Update 2026-09-26 — decision #16.** The package now has two dependencies:
+> `FoundationModelsRanker` and the core `FoundationModelsExtras` product, which
+> holds the process-wide model pool. "Depends on `FoundationModelsRanker`
+> alone" above is history. The rule of decision #14 that no MLX product and no
+> Hugging Face product belongs in this graph stays true.
 
 ---
 
@@ -386,6 +392,14 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
 > target on `FoundationModelsRanker` alone, and the "gated integration suite" the
 > Router bullet names is still gone; what stands in that directory now drives Apple
 > Intelligence.)*
+>
+> *(Changed in part, 2026-09-26 — decision #16. The library target is no longer
+> "on `FoundationModelsRanker` alone", as the two notes above say. It depends on
+> two packages: `FoundationModelsRanker` and `FoundationModelsExtras`, of which
+> it uses the core `FoundationModelsExtras` product only. The
+> `FoundationModelsExtras` bullet below is new. `FoundationModelsExtras`
+> declares the same macOS 27 floor. The rule "no MLX product and no Hugging Face
+> product" stays true.)*
 
 - **Single SwiftPM library target `FoundationModelsMetadataRegistry`**, macOS 27+ (the
   Router floor; same platform commitment as Multitool/Agents, no fallback paths), plus
@@ -400,6 +414,15 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
   "port, don't depend"; decision #9)* for the retrieval primitives (`BM25`, `Trigram`,
   `Tokenizer`, `RRF`, `Hit`/`Signals`) and the embedding seam (`TextEmbedding`,
   `RoutedEmbedderAdapter`), re-exported so the public surface is unchanged.
+- **Depends on `FoundationModelsExtras`** *(2026-09-26 — decision #16)* for the
+  process-wide model pool (`ModelPool`, `ModelRef`, `PooledEmbedder`,
+  `GenerationQueue`). The library target uses the core `FoundationModelsExtras`
+  product only, never `Operations`, `OperationsCLI` or `Marketplace`. The
+  build also compiles what the core target needs: Stencil, Yams, ULID.swift and
+  swift-distributed-tracing. SwiftPM also resolves the other dependencies of the
+  Extras manifest (swift-argument-parser, swift-syntax, swift-libgit2), but the
+  build does not compile them. `PackageManifestTests` pins the two packages and
+  the one Extras product.
 - **No dependency on** Skills, Multitool, Agents, MCP, or CodeContextKit (consumers
   depend on us; the CodeContextKit-derived search files now arrive via
   `FoundationModelsRanker`, §5).
@@ -475,6 +498,10 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
     nowhere. Ranker itself declares `dependencies: []`, so that single entry is the
     whole resolved graph, and a clean build takes seconds instead of compiling a
     model runtime.
+    *(Superseded in part, 2026-09-26 — decision #16: the package now declares two
+    dependencies, `FoundationModelsRanker` and `FoundationModelsExtras`, so the
+    one Ranker entry is no longer the whole resolved graph. The rule "no MLX
+    product and no Hugging Face product" stays true.)*
 
     What went with it:
 
@@ -563,6 +590,41 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
     pins that. FoundationModels ships a real model with the platform this package
     already commits to, so the seam can be measured against one at no cost to the
     dependency graph.
+16. *(2026-09-26 — supersedes decision #14's "exactly one dependency,
+    `FoundationModelsRanker`" and "that single entry is the whole resolved
+    graph", the summary's "depends on `FoundationModelsRanker` alone", and §10's
+    one-dependency reading in the decision #14 and decision #15 notes — each of
+    which carries its own dated marker)* **The registry now gets
+    `FoundationModelsExtras`.** The manifest declares two packages,
+    `FoundationModelsRanker` and `FoundationModelsExtras`, and the library
+    target uses the core `FoundationModelsExtras` product only, through
+    `.product(name: "FoundationModelsExtras", package: "FoundationModelsExtras")`
+    and `import FoundationModelsExtras`. It never uses the `Operations`,
+    `OperationsCLI` or `Marketplace` products. There is no separate `ModelPool`
+    product or package: the pool, the work queue and the embedder handle are in
+    the core `FoundationModelsExtras` product. This change adds no new target,
+    product or package in any repository.
+
+    **The accepted cost.** The registry build also compiles what the core
+    `FoundationModelsExtras` target needs: Stencil, Yams, ULID.swift and
+    swift-distributed-tracing (Extras uses it for tool hosting), each with its
+    own dependencies. SwiftPM also resolves the other package dependencies of the
+    Extras manifest (swift-argument-parser, swift-syntax, swift-libgit2), but the
+    registry build does not compile them. The user accepted this cost on
+    2026-09-26. `PackageManifestTests` pins the two packages, and pins
+    `FoundationModelsExtras` as the only product of the `FoundationModelsExtras`
+    package that the manifest names.
+
+    **What stays true.** The rule of decision #14 that no MLX product and no
+    Hugging Face product belongs in this graph stays true, and
+    `PackageManifestTests` still pins it. The core `FoundationModelsExtras`
+    target has no MLX. The MLX loader stays in the router or in the application.
+
+    Why: `FoundationModelsExtras` owns one process-wide model pool (user decision,
+    2026-09-26). In one process, each model loads one time only, and all users
+    share it, with a work queue for each model. The router and the registry both
+    use the pool, so the registry cannot load a second copy of a model that the
+    router already holds.
 
 ## 12. Public API (as shipped)
 

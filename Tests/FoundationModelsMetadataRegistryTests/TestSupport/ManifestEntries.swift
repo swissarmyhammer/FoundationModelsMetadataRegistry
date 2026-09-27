@@ -1,0 +1,161 @@
+import Foundation
+
+/// Reads the `.package(url:)` and `.product(name:package:)` entries of the
+/// root `Package.swift` as text, with the manifest's own string constants
+/// resolved.
+///
+/// `PackageManifestTests` pins the manifest through this reader. It reads the
+/// entries, not the whole text, because a doc comment that names a package is
+/// not a dependency on it, and a plain text search cannot tell the two apart.
+enum ManifestEntries {
+    /// One `.product(name:package:)` entry of the manifest, with each
+    /// argument resolved to the string it holds.
+    struct ProductEntry {
+        /// The name of the product.
+        let name: String
+
+        /// The name of the package that supplies the product, or `nil` when
+        /// the entry does not name a package.
+        let package: String?
+    }
+
+    /// The manifest, relative to the repository root.
+    static let manifestFileName = "Package.swift"
+
+    /// The suffix a Git URL ends in, removed to read the package name.
+    private static let gitURLSuffix = ".git"
+
+    /// The character that starts and ends a string literal in the manifest.
+    private static let quoteCharacter: Character = "\""
+
+    /// Reads the package name of every `.package(url:)` entry the manifest
+    /// declares, in the order the manifest declares them.
+    ///
+    /// Each URL is a string literal that interpolates the manifest's own
+    /// constants, so the constants are read first and substituted before the
+    /// name is taken.
+    ///
+    /// - Returns: the package name of each declared dependency.
+    /// - Throws: an error when the manifest cannot be read, or when a pattern
+    ///   does not compile.
+    static func packageNames() throws -> [String] {
+        let text = try manifestText()
+        let constants = try manifestConstants(in: text)
+        let urlPattern = try Regex(#"\.package\(\s*url:\s*"([^"]+)""#)
+        return try text.matches(of: urlPattern)
+            .compactMap { $0[1].substring.map(String.init) }
+            .map { url in try packageName(fromURL: expanded(url, with: constants)) }
+    }
+
+    /// Reads every `.product(name:package:)` entry the manifest declares, in
+    /// the order the manifest declares them.
+    ///
+    /// Each argument is a string literal or the name of a manifest constant
+    /// — the manifest's own `foundationModelsExtrasPackage`, for example.
+    /// Both forms are resolved, so a product that the manifest names through
+    /// a constant is read too.
+    ///
+    /// - Returns: each product entry, with its arguments resolved.
+    /// - Throws: an error when the manifest cannot be read, or when a pattern
+    ///   does not compile.
+    static func productEntries() throws -> [ProductEntry] {
+        let text = try manifestText()
+        let constants = try manifestConstants(in: text)
+        let argument = #"("[^"]*"|[A-Za-z_][A-Za-z0-9_]*)"#
+        let entryPattern = try Regex(
+            #"\.product\(\s*name:\s*"# + argument + #"(?:\s*,\s*package:\s*"# + argument + ")?",
+        )
+        return try text.matches(of: entryPattern).compactMap { match in
+            guard let name = match[1].substring.map(String.init) else { return nil }
+            let package = match[2].substring.map(String.init)
+            return try ProductEntry(
+                name: resolved(name, with: constants),
+                package: package.map { try resolved($0, with: constants) },
+            )
+        }
+    }
+
+    /// Reads the string constants the manifest declares.
+    ///
+    /// - Parameter text: the whole text of the manifest.
+    /// - Returns: each constant name mapped to the string it holds.
+    /// - Throws: an error when the pattern does not compile.
+    private static func manifestConstants(in text: String) throws -> [String: String] {
+        let constantPattern = try Regex(#"\blet\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"([^"]*)""#)
+        var constants: [String: String] = [:]
+        for match in text.matches(of: constantPattern) {
+            guard let name = match[1].substring.map(String.init),
+                  let value = match[2].substring.map(String.init)
+            else { continue }
+            constants[name] = value
+        }
+        return constants
+    }
+
+    /// Resolves one argument of a manifest entry to the string it holds.
+    ///
+    /// - Parameters:
+    ///   - argument: a string literal with its quotes, or the name of a
+    ///     manifest constant.
+    ///   - constants: the manifest's string constants.
+    /// - Returns: the text of the literal with its interpolations
+    ///   substituted, or the value of the constant. A constant that the
+    ///   manifest does not declare is returned as written.
+    /// - Throws: an error when the interpolation pattern does not compile.
+    private static func resolved(
+        _ argument: String,
+        with constants: [String: String],
+    ) throws -> String {
+        guard argument.first == quoteCharacter else { return constants[argument] ?? argument }
+        return try expanded(String(argument.dropFirst().dropLast()), with: constants)
+    }
+
+    /// Substitutes the manifest's own constants into one of its string
+    /// literals.
+    ///
+    /// A name the manifest does not declare is left as written, so an
+    /// unresolved interpolation shows up in the answer instead of vanishing
+    /// from it.
+    ///
+    /// - Parameters:
+    ///   - literal: the text of a string literal, interpolations included.
+    ///   - constants: the manifest's string constants.
+    /// - Returns: the literal with every interpolation substituted.
+    /// - Throws: an error when the pattern does not compile.
+    private static func expanded(
+        _ literal: String,
+        with constants: [String: String],
+    ) throws -> String {
+        let interpolationPattern = try Regex(#"\\\(([A-Za-z_][A-Za-z0-9_]*)\)"#)
+        var expandedText = ""
+        var readFrom = literal.startIndex
+        for match in literal.matches(of: interpolationPattern) {
+            expandedText += literal[readFrom ..< match.range.lowerBound]
+            let name = match[1].substring.map(String.init) ?? ""
+            expandedText += constants[name] ?? String(literal[match.range])
+            readFrom = match.range.upperBound
+        }
+        expandedText += literal[readFrom...]
+        return expandedText
+    }
+
+    /// Reads the package name a dependency URL ends in.
+    ///
+    /// - Parameter url: a dependency URL, in either the SSH or the HTTPS
+    ///   form.
+    /// - Returns: the last path component, without its `.git` suffix.
+    private static func packageName(fromURL url: String) -> String {
+        let components = url.split(whereSeparator: { $0 == "/" || $0 == ":" })
+        let lastComponent = components.last.map(String.init) ?? url
+        guard lastComponent.hasSuffix(gitURLSuffix) else { return lastComponent }
+        return String(lastComponent.dropLast(gitURLSuffix.count))
+    }
+
+    /// Reads `Package.swift` from the repository root.
+    ///
+    /// - Returns: the whole text of the manifest.
+    /// - Throws: an error when the manifest cannot be read.
+    private static func manifestText() throws -> String {
+        try RepositoryFiles.text(at: manifestFileName)
+    }
+}

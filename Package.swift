@@ -10,8 +10,8 @@ import PackageDescription
 /// FoundationModelsRanker package's manifest follows.
 let packageName = "FoundationModelsMetadataRegistry"
 
-/// The name of the FoundationModelsRanker dependency package — the only
-/// package this manifest declares.
+/// The name of the FoundationModelsRanker dependency package — one of the
+/// two packages this manifest declares (plan.md decision #16).
 ///
 /// The shared search/ranking library this package's ported copies were
 /// extracted into (plan.md decision #9). It supplies the retrieval
@@ -25,14 +25,31 @@ let packageName = "FoundationModelsMetadataRegistry"
 /// dependency: a `../FoundationModelsRanker` path resolves only where the
 /// sibling repository is already checked out beside this one, so a fresh
 /// clone and CI could not build it. FoundationModelsRanker's own manifest
-/// declares `dependencies: []`, so this single entry is also the whole
-/// resolved graph.
+/// declares `dependencies: []`, so this entry adds no package to the
+/// resolved graph other than itself.
 let foundationModelsRankerPackage = "FoundationModelsRanker"
 
-/// The GitHub organization URL base the one swissarmyhammer-family
-/// dependency (`foundationModelsRankerPackage`) resolves under — extracted so
-/// the org and the package name stay separate names rather than one literal
-/// URL.
+/// The name of the FoundationModelsExtras dependency package, and also the
+/// name of the one product of it that this package uses (plan.md decision
+/// #16).
+///
+/// The core `FoundationModelsExtras` product holds the process-wide model
+/// pool (`ModelPool`, `ModelRef`, `PooledEmbedder`, `GenerationQueue`). In one
+/// process, each model loads one time only, and the router and the registry
+/// share it. Use this core product only. Do not use `Operations`,
+/// `OperationsCLI` or `Marketplace`: they compile swift-syntax,
+/// swift-argument-parser or libgit2, and the registry must not compile them.
+/// The core target compiles Stencil, Yams, ULID.swift and
+/// swift-distributed-tracing, and the user accepted that cost on 2026-09-26.
+///
+/// Wired as a remote dependency (`main` branch), for the same reason as
+/// `foundationModelsRankerPackage`.
+let foundationModelsExtrasPackage = "FoundationModelsExtras"
+
+/// The GitHub organization URL base the swissarmyhammer-family dependencies
+/// (`foundationModelsRankerPackage` and `foundationModelsExtrasPackage`)
+/// resolve under — extracted so the org and the package name stay separate
+/// names rather than one literal URL.
 let swissArmyHammerOrg = "git@github.com:swissarmyhammer/"
 
 /// The name of the shared `Examples/ExamplesSupport` library target.
@@ -114,7 +131,8 @@ func exampleCoreTarget(name: String) -> Target {
 
 /// The SwiftPM manifest for FoundationModelsMetadataRegistry (plan.md §10).
 ///
-/// A single library target over the FoundationModelsRanker sibling, a Swift
+/// A single library target over the FoundationModelsRanker sibling and the
+/// core FoundationModelsExtras product (plan.md decision #16), a Swift
 /// Testing unit test target, and the `Examples/` executable targets (§13):
 /// `CatalogSearch` (keyword-only) and `SemanticSearch` (`ExamplesSupport`'s
 /// deterministic embedder joining the cosine signal, with a `--no-embedder`
@@ -129,8 +147,8 @@ func exampleCoreTarget(name: String) -> Target {
 let package = Package(
     name: packageName,
     // Commit to macOS 27 / FoundationModels v2, no pre-27 fallback (plan.md
-    // §10). FoundationModelsRanker declares the same floor, so the one
-    // dependency imposes no higher one.
+    // §10). FoundationModelsRanker and FoundationModelsExtras declare the same
+    // floor, so the two dependencies impose no higher one.
     platforms: [
         .macOS("27.0"),
     ],
@@ -142,12 +160,14 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "\(swissArmyHammerOrg)\(foundationModelsRankerPackage).git", branch: "main"),
+        .package(url: "\(swissArmyHammerOrg)\(foundationModelsExtrasPackage).git", branch: "main"),
     ],
     targets: [
         .target(
             name: packageName,
             dependencies: [
                 .product(name: foundationModelsRankerPackage, package: foundationModelsRankerPackage),
+                .product(name: foundationModelsExtrasPackage, package: foundationModelsExtrasPackage),
             ],
             path: "Sources/\(packageName)",
         ),
