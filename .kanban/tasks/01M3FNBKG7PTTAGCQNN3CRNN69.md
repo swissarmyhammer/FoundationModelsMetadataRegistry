@@ -23,6 +23,39 @@ comments:
     - evidence: 4 files — Package.swift, Tests/FoundationModelsMetadataRegistryTests/PackageManifestTests.swift, Tests/FoundationModelsMetadataRegistryTests/TestSupport/ManifestEntries.swift, plan.md; `swift test --filter "PackageManifestTests|PlanDocumentTests|PackageTests"` 7/7 pass
     - next: /test
   timestamp: 2026-09-27T12:17:27.529362+00:00
+- actor: claude-code
+  id: 01m3hcv5r9smzbdb5wk313wn6h
+  text: |-
+    ### test — green
+    - evidence: `swift test` — 133 tests in 13 suites passed, 0 failed, 0 skipped; `swift build --build-tests` no warnings; `swiftlint lint` 0 violations; `swiftformat --lint .` 0/60 files need formatting
+    - next: /commit
+
+    ### commit — changed
+    - evidence: 59af8b0 build(deps): add the FoundationModelsExtras dependency for the model pool
+    - next: /review
+  timestamp: 2026-09-27T12:18:39.497165+00:00
+- actor: claude-code
+  id: 01m3hd2293ffz19d4q5er8t0pq
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` — 2 findings (2 confirmed, 0 refuted): ManifestEntries.swift:70, ManifestEntries.swift:88 `code-hygiene/magic-numbers-swift` (the regex capture indices `1` and `2`)
+    - next: /implement
+
+    ### finish iteration 1 — findings
+    - implement: changed (Package.swift, PackageManifestTests.swift, TestSupport/ManifestEntries.swift, plan.md)
+    - test: green (swift test 133 passed, 0 failed, 0 skipped; no warnings)
+    - commit: 59af8b0
+    - review: findings — 2 open: ManifestEntries.swift:70 and :88 `code-hygiene/magic-numbers-swift` "Magic numbers should be replaced by named constants."
+  timestamp: 2026-09-27T12:22:25.315182+00:00
+- actor: claude-code
+  id: 01m3hd2qwy259p4nw6xcc9z68t
+  text: |-
+    Iteration 2: the fix for `code-hygiene/magic-numbers-swift` covers all of ManifestEntries.swift, not only lines 70 and 88. The six capture reads (`[1]` and `[2]`) now go through one helper, `capture(_:of:)`, with the named constants `firstCaptureIndex` and `secondCaptureIndex`. The file has no numeric index literal now.
+
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsMetadataRegistryTests/TestSupport/ManifestEntries.swift; swiftformat and swiftlint clean
+    - next: /test
+  timestamp: 2026-09-27T12:22:47.454550+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'Add the FoundationModelsExtras dependency for the model pool and record decision #16'
@@ -54,3 +87,16 @@ Add a dependency on the core `FoundationModelsExtras` product, so the registry c
 ## Tests
 - `PackageManifestTests`: add a test that `Package.swift` names `FoundationModelsExtras` as the only product of the `FoundationModelsExtras` package.
 - Run `swift test`. All tests must pass.
+
+## Review Findings (2026-09-27 07:18)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 11 not reviewed.
+
+> 10 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 10 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `plan.md` — no validator matches this file
+
+- [ ] `Tests/FoundationModelsMetadataRegistryTests/TestSupport/ManifestEntries.swift:70` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
+- [ ] `Tests/FoundationModelsMetadataRegistryTests/TestSupport/ManifestEntries.swift:88` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.

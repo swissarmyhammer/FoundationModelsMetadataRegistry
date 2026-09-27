@@ -28,6 +28,15 @@ enum ManifestEntries {
     /// The character that starts and ends a string literal in the manifest.
     private static let quoteCharacter: Character = "\""
 
+    /// The capture group of a pattern that holds the first part of a match:
+    /// the URL of a package entry, the name of a product entry, the name of
+    /// a constant, or the name in an interpolation.
+    private static let firstCaptureIndex = 1
+
+    /// The capture group of a pattern that holds the second part of a match:
+    /// the package of a product entry, or the value of a constant.
+    private static let secondCaptureIndex = 2
+
     /// Reads the package name of every `.package(url:)` entry the manifest
     /// declares, in the order the manifest declares them.
     ///
@@ -43,7 +52,7 @@ enum ManifestEntries {
         let constants = try manifestConstants(in: text)
         let urlPattern = try Regex(#"\.package\(\s*url:\s*"([^"]+)""#)
         return try text.matches(of: urlPattern)
-            .compactMap { $0[1].substring.map(String.init) }
+            .compactMap { capture(firstCaptureIndex, of: $0) }
             .map { url in try packageName(fromURL: expanded(url, with: constants)) }
     }
 
@@ -66,8 +75,8 @@ enum ManifestEntries {
             #"\.product\(\s*name:\s*"# + argument + #"(?:\s*,\s*package:\s*"# + argument + ")?",
         )
         return try text.matches(of: entryPattern).compactMap { match in
-            guard let name = match[1].substring.map(String.init) else { return nil }
-            let package = match[2].substring.map(String.init)
+            guard let name = capture(firstCaptureIndex, of: match) else { return nil }
+            let package = capture(secondCaptureIndex, of: match)
             return try ProductEntry(
                 name: resolved(name, with: constants),
                 package: package.map { try resolved($0, with: constants) },
@@ -84,8 +93,8 @@ enum ManifestEntries {
         let constantPattern = try Regex(#"\blet\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"([^"]*)""#)
         var constants: [String: String] = [:]
         for match in text.matches(of: constantPattern) {
-            guard let name = match[1].substring.map(String.init),
-                  let value = match[2].substring.map(String.init)
+            guard let name = capture(firstCaptureIndex, of: match),
+                  let value = capture(secondCaptureIndex, of: match)
             else { continue }
             constants[name] = value
         }
@@ -131,12 +140,23 @@ enum ManifestEntries {
         var readFrom = literal.startIndex
         for match in literal.matches(of: interpolationPattern) {
             expandedText += literal[readFrom ..< match.range.lowerBound]
-            let name = match[1].substring.map(String.init) ?? ""
+            let name = capture(firstCaptureIndex, of: match) ?? ""
             expandedText += constants[name] ?? String(literal[match.range])
             readFrom = match.range.upperBound
         }
         expandedText += literal[readFrom...]
         return expandedText
+    }
+
+    /// Reads one capture group of a match.
+    ///
+    /// - Parameters:
+    ///   - index: the number of the capture group.
+    ///   - match: a match of a manifest pattern.
+    /// - Returns: the text of the capture group, or `nil` when the group
+    ///   did not take part in the match.
+    private static func capture(_ index: Int, of match: Regex<AnyRegexOutput>.Match) -> String? {
+        match[index].substring.map(String.init)
     }
 
     /// Reads the package name a dependency URL ends in.
