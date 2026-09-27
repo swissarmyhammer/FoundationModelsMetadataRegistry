@@ -18,8 +18,31 @@ comments:
     - evidence: `swift test` — 147 tests in 15 suites passed, 0 failed, 0 skipped, 0 compiler warnings (SwiftPM prints manifest cache "disk I/O error" lines from the local cache directory; they are not from the code). `swiftformat . --lint` — 0/68 files need formatting. `swiftlint --strict` — 0 violations in 68 files.
     - next: commit
   timestamp: 2026-09-27T18:24:02.489380+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m3j1rbtg49y54w11txnhymba
+  text: |-
+    ### commit — changed
+    - evidence: adc2dc3 test(catalog): add tests for RenderedTextDigests.init(block:indexedText:embeddedText:)
+    - next: review HEAD~1..HEAD
+  timestamp: 2026-09-27T18:24:07.504564+00:00
+- actor: claude-code
+  id: 01m3j1tnxmedd9t0m4h3fheej2
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD — 0 findings, 0 confirmed, 0 refuted; 7 validator runs attempted, 0 failed; 1 file reviewed (.kanban/ excluded by .reviewignore). No prior findings.
+    - next: done
+  timestamp: 2026-09-27T18:25:23.380164+00:00
+- actor: claude-code
+  id: 01m3j1tqthwns33cag5m32p3e4
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — Tests/FoundationModelsMetadataRegistryTests/SearchableMetadataTextsTests.swift (2 tests for the embeddedText == indexedText != block branch)
+    - test: green — swift test 147 tests in 15 suites passed; swiftformat --lint 0/68; swiftlint --strict 0 violations
+    - commit: adc2dc3
+    - review: clean — 0 findings; task moved to done
+  timestamp: 2026-09-27T18:25:25.329667+00:00
+position_column: done
+position_ordinal: ab80
 title: Add tests for RenderedTextDigests.init(block:indexedText:embeddedText:)
 ---
 Sources/FoundationModelsMetadataRegistry/Catalog/RenderedTextDigests.swift:49-61
