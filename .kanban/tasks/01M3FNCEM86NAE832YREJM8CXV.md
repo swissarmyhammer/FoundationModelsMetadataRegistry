@@ -37,6 +37,33 @@ comments:
     - The nested IntegrationTests package (real model) was not run locally; CI runs it.
     - next: /commit
   timestamp: 2026-09-27T12:50:19.567561+00:00
+- actor: claude-code
+  id: 01m3hewap3fw50g5bwa1b5tt6j
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` — 6 findings (6 confirmed, 0 refuted): Examples/HotReload/main.swift:28, :30, :32, :36, :39 (no_direct_standard_out_logs); Examples/HotReloadCore/HotReloadCore.swift:131 (no_unchecked_sendable).
+    - next: /implement to fix the findings in the whole of each file.
+
+    ### finish iteration 1 — findings
+    - implement: changed (11 files; coalescing loop, tests, HotReload demo, plan.md §8 item 7)
+    - test: green (141 tests in 14 suites, 0 failed, 0 skipped; warnings-as-errors build, swiftlint, swiftformat clean)
+    - commit: dc99d42 feat(searcher): coalesce bursts of update(items:) so that only the newest catalog is embedded
+    - review: findings — 6 (main.swift:28/30/32/36/39 no_direct_standard_out_logs; HotReloadCore.swift:131 no_unchecked_sendable)
+  timestamp: 2026-09-27T12:54:14.467098+00:00
+- actor: claude-code
+  id: 01m3hezsx7hpefx6jyqgmz0wz2
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — Examples/HotReload/main.swift (every `print` in the file, the old lines too, now goes through one explicit standard-output writer `Report.write(_:)`: the report is the product of the command, not a debug log); Examples/HotReloadCore/HotReloadCore.swift (both `@unchecked Sendable` classes in the file, `DiagnosticLog` and `DemoCallCounter`, are now plain `Sendable` classes over an `OSAllocatedUnfairLock`, the same as the test support types). `swift run HotReload` shows "4 update(items:) calls -> 2 embed calls".
+    - next: /test
+  timestamp: 2026-09-27T12:56:08.359689+00:00
+- actor: claude-code
+  id: 01m3hf0q4p13drbyyxk2dd02n1
+  text: |-
+    ### test — green
+    - evidence: `swift test` — 141 tests in 14 suites passed, 0 failed, 0 skipped; `swift build --build-tests -Xswiftc -warnings-as-errors` clean; `swiftlint lint` clean; `swiftformat --lint .` 0/66 files.
+    - next: /commit
+  timestamp: 2026-09-27T12:56:38.294899+00:00
 position_column: doing
 position_ordinal: '80'
 title: Coalesce bursts of update(items:) so that only the newest catalog is embedded
@@ -71,3 +98,20 @@ Use a stub embedder that blocks until the test releases it, and that counts call
 - `burstLeavesNoPendingEmbeddings`: after the burst, the index has an embedding for every id.
 - `keywordSearchSeesEachUpdateAtOnce`: during the blocked embed, a `.retrieval` search finds an item that only the newest update added.
 - Run `swift test`. All tests must pass, including the current hot-reload tests.
+
+## Review Findings (2026-09-27 07:50)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 10 file(s) reviewed, 3 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `plan.md` — no validator matches this file
+
+- [ ] `Examples/HotReload/main.swift:28` `code-hygiene/disallowed-constructs-swift` — no_direct_standard_out_logs: Do not commit print(…), debugPrint(…), dump(…) or _printChanges(), which write to standard out in release. Log to a dedicated logging system, or silence one debug-only line with // swiftlint:disable:next no_direct_standard_out_logs and the reason after it.
+- [ ] `Examples/HotReload/main.swift:30` `code-hygiene/disallowed-constructs-swift` — no_direct_standard_out_logs: Do not commit print(…), debugPrint(…), dump(…) or _printChanges(), which write to standard out in release. Log to a dedicated logging system, or silence one debug-only line with // swiftlint:disable:next no_direct_standard_out_logs and the reason after it.
+- [ ] `Examples/HotReload/main.swift:32` `code-hygiene/disallowed-constructs-swift` — no_direct_standard_out_logs: Do not commit print(…), debugPrint(…), dump(…) or _printChanges(), which write to standard out in release. Log to a dedicated logging system, or silence one debug-only line with // swiftlint:disable:next no_direct_standard_out_logs and the reason after it.
+- [ ] `Examples/HotReload/main.swift:36` `code-hygiene/disallowed-constructs-swift` — no_direct_standard_out_logs: Do not commit print(…), debugPrint(…), dump(…) or _printChanges(), which write to standard out in release. Log to a dedicated logging system, or silence one debug-only line with // swiftlint:disable:next no_direct_standard_out_logs and the reason after it.
+- [ ] `Examples/HotReload/main.swift:39` `code-hygiene/disallowed-constructs-swift` — no_direct_standard_out_logs: Do not commit print(…), debugPrint(…), dump(…) or _printChanges(), which write to standard out in release. Log to a dedicated logging system, or silence one debug-only line with // swiftlint:disable:next no_direct_standard_out_logs and the reason after it.
+- [ ] `Examples/HotReloadCore/HotReloadCore.swift:131` `code-hygiene/disallowed-constructs-swift` — no_unchecked_sendable: Instead of @unchecked Sendable, write a plain Sendable conformance or a @preconcurrency import. If the type really must be @unchecked Sendable, write // swiftlint:disable:next no_unchecked_sendable above it with the synchronization invariant that makes the type thread-safe.

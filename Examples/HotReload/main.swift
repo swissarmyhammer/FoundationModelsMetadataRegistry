@@ -1,3 +1,4 @@
+import Foundation
 import HotReloadCore
 
 // # `update(items:)` bursts (plan.md §13 M8).
@@ -13,35 +14,52 @@ import HotReloadCore
 // The actual logic lives in `HotReloadCore` so `ExamplesSmokeTests` can
 // invoke both paths directly; this file is just the runnable entry point.
 
-print("GPU-free hot-reload burst (deterministic embedder):\n")
+/// The report that this command writes: its whole output, one line at a time.
+///
+/// The report is the product of this command, not a debug log, so it goes to
+/// standard output through one explicit writer.
+enum Report {
+    /// Writes `line` and a line break to standard output.
+    ///
+    /// - Parameter line: the text of the line.
+    static func write(_ line: String) {
+        FileHandle.standardOutput.write(Data((line + "\n").utf8))
+    }
+}
+
+Report.write("GPU-free hot-reload burst (deterministic embedder):\n")
 
 /// One line per burst step -- what `update(items:)` applied and what the
 /// immediate search found -- followed by that step's diagnostics.
 let steps = try await runHotReloadBurst()
 for (index, step) in steps.enumerated() {
-    print("GPU-free step \(index + 1): update(items: \(step.appliedIds)) -> search(\"file\") = \(step.searchResultIds)")
+    Report.write(
+        "GPU-free step \(index + 1): update(items: \(step.appliedIds)) -> search(\"file\") = \(step.searchResultIds)",
+    )
     for diagnostic in step.diagnostics {
-        print("  [diagnostic] \(diagnostic)")
+        Report.write("  [diagnostic] \(diagnostic)")
     }
 }
 
-print("\nCoalesced burst (the first embed is held while the rest of the burst arrives):")
+Report.write("\nCoalesced burst (the first embed is held while the rest of the burst arrives):")
 let coalesced = try await runCoalescedHotReloadBurst()
-print("  \(coalesced.updateCount) update(items:) calls -> \(coalesced.catalogEmbedBatches.count) embed calls")
+Report.write("  \(coalesced.updateCount) update(items:) calls -> \(coalesced.catalogEmbedBatches.count) embed calls")
 for (index, batch) in coalesced.catalogEmbedBatches.enumerated() {
-    print("  embed call \(index + 1): \(batch)")
+    Report.write("  embed call \(index + 1): \(batch)")
 }
 
 for diagnostic in coalesced.embedCatchUps {
-    print("  [diagnostic] \(diagnostic)")
+    Report.write("  [diagnostic] \(diagnostic)")
 }
 
-print("  search(\"file\") after the burst = \(coalesced.searchResultIds)")
+Report.write("  search(\"file\") after the burst = \(coalesced.searchResultIds)")
 
-print("\nSelection-tier root/grammar rebuild demo (GPU-free, scripted session):")
+Report.write("\nSelection-tier root/grammar rebuild demo (GPU-free, scripted session):")
 let rebuild = try await runSelectionRootRebuildDemo()
-print("  root session built \(rebuild.initialFactoryCallCount) time(s) for candidates \(rebuild.initialCandidateIds)")
-print(
+Report.write(
+    "  root session built \(rebuild.initialFactoryCallCount) time(s) for candidates \(rebuild.initialCandidateIds)",
+)
+Report.write(
     "  after a real catalog change, root session built \(rebuild.rebuiltFactoryCallCount) time(s) total "
         + "for candidates \(rebuild.updatedCandidateIds)",
 )

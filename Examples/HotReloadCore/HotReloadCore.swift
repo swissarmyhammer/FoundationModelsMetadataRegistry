@@ -1,6 +1,6 @@
 import ExamplesSupport
-import Foundation
 import FoundationModelsMetadataRegistry
+import os
 
 // # `HotReload`'s entry logic (plan.md §13 M8): `update(items:)` bursts.
 //
@@ -124,28 +124,26 @@ public func runHotReloadBurst(
 
 /// Thread-safe diagnostic log for `runHotReloadBurst(burst:query:limit:
 /// embedder:)`'s per-step diagnostic capture, and for the catch-up
-/// diagnostics of `runCoalescedHotReloadBurst(burst:query:limit:)` -- mirrors
-/// the lock-guarded `@unchecked Sendable` pattern the test suite's own
-/// `DiagnosticRecorder` uses, reimplemented here since production code (this
-/// library target) can't import a test-target type.
-final class DiagnosticLog: @unchecked Sendable {
-    private let lock = NSLock()
-    private var recorded: [MetadataDiagnostic] = []
+/// diagnostics of `runCoalescedHotReloadBurst(burst:query:limit:)`.
+///
+/// A plain `Sendable` class: its one stored property is an
+/// `OSAllocatedUnfairLock`, which is `Sendable` itself, so the compiler
+/// checks the conformance. The `onDiagnostic` callback is synchronous, so an
+/// actor cannot receive it.
+final class DiagnosticLog: Sendable {
+    /// The diagnostics recorded so far, in the order they arrived.
+    private let recorded = OSAllocatedUnfairLock<[MetadataDiagnostic]>(initialState: [])
 
     /// The number of diagnostics recorded so far.
     var count: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return recorded.count
+        recorded.withLock { $0.count }
     }
 
     /// Records one diagnostic.
     ///
     /// - Parameter diagnostic: the diagnostic to record.
     func record(_ diagnostic: MetadataDiagnostic) {
-        lock.lock()
-        defer { lock.unlock() }
-        recorded.append(diagnostic)
+        recorded.withLock { $0.append(diagnostic) }
     }
 
     /// The diagnostics recorded since `index`.
@@ -154,10 +152,10 @@ final class DiagnosticLog: @unchecked Sendable {
     ///   slice of "new since then" diagnostics begins.
     /// - Returns: every diagnostic recorded at or after `index`.
     func diagnostics(since index: Int) -> [MetadataDiagnostic] {
-        lock.lock()
-        defer { lock.unlock() }
-        guard index < recorded.count else { return [] }
-        return Array(recorded[index...])
+        recorded.withLock { diagnostics in
+            guard index < diagnostics.count else { return [] }
+            return Array(diagnostics[index...])
+        }
     }
 }
 
@@ -231,23 +229,23 @@ private struct ScriptedSelectionSession: AgentSession {
     }
 }
 
-/// A thread-safe call counter, mirroring the lock-guarded `@unchecked
-/// Sendable` pattern the test suite's own `CallCounter`/`EmbedCallCounter`
-/// use, reimplemented here since production code (this library target)
-/// can't import a test-target type.
-private final class DemoCallCounter: @unchecked Sendable {
-    private let lock = NSLock()
-    private var value = 0
+/// A thread-safe call counter.
+///
+/// A plain `Sendable` class: its one stored property is an
+/// `OSAllocatedUnfairLock`, which is `Sendable` itself, so the compiler
+/// checks the conformance. The session factory is synchronous, so an actor
+/// cannot count its calls.
+private final class DemoCallCounter: Sendable {
+    /// The lock that holds the count.
+    private let value = OSAllocatedUnfairLock<Int>(initialState: 0)
 
+    /// The number of calls counted so far.
     var count: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return value
+        value.withLock { $0 }
     }
 
+    /// Counts one more call.
     func increment() {
-        lock.lock()
-        defer { lock.unlock() }
-        value += 1
+        value.withLock { $0 += 1 }
     }
 }
