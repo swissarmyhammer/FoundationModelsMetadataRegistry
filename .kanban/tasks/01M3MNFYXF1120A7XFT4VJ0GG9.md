@@ -53,11 +53,34 @@ comments:
     - No skipped or disabled tests found in the test files.
     - next: none. The build is clean.
   timestamp: 2026-09-28T22:17:20.185492+00:00
+- actor: claude-code
+  id: 01m3n1hbnbs8xy4k2kxhcec0pz
+  text: |-
+    ### commit — changed
+    - evidence: 99a4fac feat(telemetry): add metrics for search time, rank time, and catalog size
+    - next: none. The commit is a local commit only. It is not pushed.
+  timestamp: 2026-09-28T22:18:01.259748+00:00
+- actor: claude-code
+  id: 01m3n1trtpsxve2nrhv25t53m5
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 99a4fac). 7 files reviewed. 0 findings, 0 confirmed, 0 refuted, 0 failed. The task has no earlier review findings.
+    - next: none. The task is in done.
+  timestamp: 2026-09-28T22:23:09.654392+00:00
+- actor: claude-code
+  id: 01m3n1tzjdr34zmsg4700dsk9h
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 7 files (2 new)
+    - test: green — swift test, 199 passed, 0 failed, 0 skipped; swiftlint 0 in 82 files; swiftformat 0/82
+    - commit: 99a4fac
+    - review: clean — 7 files, 0 findings
+  timestamp: 2026-09-28T22:23:16.557461+00:00
 depends_on:
 - 01M3MNBPPECY20MSET2VD487DV
 - 01M3MNDY0Q77SYFCYWP376QRQP
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: b180
 title: 'OTel C: add metrics for search duration, ranker duration and catalog size'
 ---
 ## What

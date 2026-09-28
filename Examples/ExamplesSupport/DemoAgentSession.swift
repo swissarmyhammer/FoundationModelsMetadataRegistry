@@ -42,7 +42,7 @@ public struct DemoAgentSession: AgentSession {
     ///   error if the encoded JSON is not valid UTF-8, which `JSONEncoder`
     ///   also never produces.
     public func respond(to _: String) async throws -> String {
-        let encoded = try JSONEncoder().encode(SelectedIds(ids: selectedIds))
+        let encoded = try JSONEncoder().encode([Self.idsKey: selectedIds])
         guard let json = String(bytes: encoded, encoding: .utf8) else {
             throw DecodingError.dataCorrupted(
                 DecodingError.Context(codingPath: [], debugDescription: "JSONEncoder produced non-UTF-8 output"),
@@ -51,14 +51,14 @@ public struct DemoAgentSession: AgentSession {
         return json
     }
 
-    /// The wire shape the selection tier decodes: an ids-only object.
+    /// The one key of the wire shape that the selection tier decodes: an
+    /// object with only an `ids` array.
     ///
-    /// Encoded rather than string-interpolated so every id is escaped the way
-    /// JSON requires -- `BigCatalog`'s ids are URIs, not bare identifiers.
-    private struct SelectedIds: Encodable {
-        /// The selected catalog ids, in selection order.
-        let ids: [String]
-    }
+    /// `respond(to:)` encodes a dictionary with this one key. It does not
+    /// interpolate a string, so `JSONEncoder` escapes each id as JSON
+    /// requires. This is necessary because the ids of `BigCatalog` are URIs,
+    /// not bare identifiers.
+    private static let idsKey = "ids"
 }
 
 // MARK: - GPU-free selection configuration

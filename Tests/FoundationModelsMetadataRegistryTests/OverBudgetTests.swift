@@ -1,4 +1,3 @@
-@testable import BigCatalogCore
 import Foundation
 @testable import FoundationModelsMetadataRegistry
 import Testing
