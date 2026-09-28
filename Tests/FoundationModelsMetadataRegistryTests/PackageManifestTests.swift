@@ -19,18 +19,28 @@ import Testing
 ///
 /// The suite pins the `dependencies:` list itself for the same reason. Since
 /// plan.md decision #16 (2026-09-26), the library is built over two packages:
-/// FoundationModelsRanker and FoundationModelsExtras. The manifest declares
-/// these two packages and no other. A later edit that adds one of the
-/// live-Router packages back fails this suite too.
+/// FoundationModelsRanker and FoundationModelsExtras. The OpenTelemetry
+/// design of 2026-09-28 supersedes the "no other package" part of that
+/// decision: the manifest also declares the three telemetry API packages,
+/// swift-distributed-tracing, swift-log and swift-metrics, and the library
+/// target links their `Tracing`, `Logging` and `Metrics` products. The
+/// manifest declares these five packages and no other. A later edit that
+/// adds one of the live-Router packages back fails this suite too.
 ///
-/// The two entries are not the whole resolved graph. FoundationModelsExtras
+/// The telemetry packages are APIs, not a backend. A library of the family
+/// must not depend on swift-otel, because only an executable bootstraps the
+/// backend. So no target of this package may name a swift-otel product.
+///
+/// The five entries are not the whole resolved graph. FoundationModelsExtras
 /// declares its own dependencies, and SwiftPM resolves all of them. So the
-/// suite also pins the products: of the FoundationModelsExtras package, the
-/// manifest names the core `FoundationModelsExtras` product only. That
-/// product compiles Stencil, Yams, ULID.swift and swift-distributed-tracing,
-/// which the user accepted. The other products (`Operations`,
-/// `OperationsCLI`, `Marketplace`) compile swift-syntax,
-/// swift-argument-parser or libgit2, which the registry must not compile.
+/// suite also pins the products of the FoundationModelsExtras package. The
+/// library target and the example targets name the core
+/// `FoundationModelsExtras` product only. That product compiles Stencil,
+/// Yams, ULID.swift and swift-distributed-tracing, which the user accepted.
+/// The other products (`Operations`, `OperationsCLI`, `Marketplace`) compile
+/// swift-syntax, swift-argument-parser or libgit2, which the registry must not
+/// compile. `TelemetryTestSupport` is test code: the unit test target is the
+/// one target that may also name it.
 ///
 /// Last, the suite pins the *prose*: `Package.swift` and the files under
 /// `Sources/` may not so much as spell `FoundationModelsRouter`,
@@ -73,16 +83,60 @@ struct PackageManifestTests {
     /// decision #16).
     private static let extrasPackageName = "FoundationModelsExtras"
 
-    /// The packages this library depends on, and no other (plan.md decision
-    /// #16).
-    private static let allowedPackageNames = [rankerPackageName, extrasPackageName]
+    /// The package that supplies the tracing API (`Tracing`).
+    private static let tracingPackageName = "swift-distributed-tracing"
 
-    /// The one product of the FoundationModelsExtras package that the
-    /// manifest may name: the core product, which holds the model pool.
+    /// The package that supplies the logging API (`Logging`).
+    private static let logPackageName = "swift-log"
+
+    /// The package that supplies the metrics API (`Metrics`).
+    private static let metricsPackageName = "swift-metrics"
+
+    /// The packages this library depends on, and no other: the two packages
+    /// of plan.md decision #16, and the three telemetry API packages of the
+    /// OpenTelemetry design of 2026-09-28.
+    private static let allowedPackageNames = [
+        rankerPackageName,
+        extrasPackageName,
+        tracingPackageName,
+        logPackageName,
+        metricsPackageName,
+    ]
+
+    /// The API product of each telemetry package, keyed by product name. The
+    /// library target links each of them, and no backend.
+    private static let telemetryAPIProducts = [
+        "Tracing": tracingPackageName,
+        "Logging": logPackageName,
+        "Metrics": metricsPackageName,
+    ]
+
+    /// The package of the OpenTelemetry backend. Only an executable of the
+    /// family may depend on it, so no target of this package names it.
+    private static let swiftOTelPackageName = "swift-otel"
+
+    /// The product of the OpenTelemetry backend.
+    private static let swiftOTelProductName = "OTel"
+
+    /// The name of the library target.
+    private static let libraryTargetName = "FoundationModelsMetadataRegistry"
+
+    /// The name of the unit test target: the one target that may name the
+    /// test support product of the FoundationModelsExtras package.
+    private static let testTargetName = "FoundationModelsMetadataRegistryTests"
+
+    /// The core product of the FoundationModelsExtras package, which holds
+    /// the model pool: the one Extras product that the library target and
+    /// the example targets may name.
     ///
     /// Its name is the same text as `extrasPackageName`, but it is a product
     /// name, not a package name, so it has its own constant.
     private static let extrasCoreProductName = "FoundationModelsExtras"
+
+    /// The test support product of the FoundationModelsExtras package, which
+    /// holds the content-safety helper of the telemetry. Only the test target
+    /// may name it.
+    private static let telemetryTestSupportProductName = "TelemetryTestSupport"
 
     /// The names the Router removal retired, which no covered file may spell
     /// even in prose.
@@ -132,18 +186,34 @@ struct PackageManifestTests {
     /// Reads the manifest, never `Package.resolved`: the resolution file is
     /// in `.gitignore`, so a fresh clone and CI have none to read.
     ///
-    /// The two entries are not the whole resolved graph, because
+    /// The five entries are not the whole resolved graph, because
     /// FoundationModelsExtras declares its own dependencies.
     /// `namesOnlyTheCoreExtrasProduct()` pins the part of that graph that
     /// the build compiles.
-    @Test("Package.swift depends on FoundationModelsRanker and FoundationModelsExtras and nothing else")
-    func dependsOnTheRankerAndExtrasAlone() throws {
+    @Test("Package.swift depends on the Ranker, Extras and the three telemetry API packages and nothing else")
+    func dependsOnTheAllowedPackagesAlone() throws {
         let declared = try ManifestEntries.packageNames()
         #expect(
             declared.sorted() == Self.allowedPackageNames.sorted(),
             """
             Package.swift must declare exactly the dependencies \(Self.allowedPackageNames) \
-            (plan.md decision #16); found: \(declared)
+            (plan.md decision #16 and the OpenTelemetry design); found: \(declared)
+            """,
+        )
+    }
+
+    @Test("The library target links the Tracing, Logging and Metrics API products")
+    func linksTheTelemetryAPIs() throws {
+        let linked = try Self.products(ofTarget: Self.libraryTargetName)
+        let missing = Self.telemetryAPIProducts
+            .filter { name, package in !linked.contains { $0.name == name && $0.package == package } }
+            .keys
+            .sorted()
+        #expect(
+            missing.isEmpty,
+            """
+            The \(Self.libraryTargetName) target must link \(Self.telemetryAPIProducts.keys.sorted()) \
+            (the OpenTelemetry design: a library uses the APIs only); missing: \(missing)
             """,
         )
     }
@@ -151,17 +221,48 @@ struct PackageManifestTests {
     /// Reads each `.product(name:package:)` entry with its constants
     /// resolved, so an entry that names a product through a manifest
     /// constant is read too.
-    @Test("Package.swift names FoundationModelsExtras as the only product of the FoundationModelsExtras package")
+    ///
+    /// The library target and the example targets name the core product
+    /// only: the other products compile swift-syntax, swift-argument-parser
+    /// or libgit2 (plan.md decision #16), and `TelemetryTestSupport` is test
+    /// code. The test target may also name `TelemetryTestSupport`.
+    @Test("Only the test target names an Extras product other than the core product: TelemetryTestSupport")
     func namesOnlyTheCoreExtrasProduct() throws {
-        let extrasProducts = try ManifestEntries.productEntries()
+        let entries = try ManifestEntries.targetProductEntries()
+            .filter { $0.product.package == Self.extrasPackageName }
+        let offenders = entries
+            .filter { !Self.allowedExtrasProducts(forTarget: $0.target).contains($0.product.name) }
+            .map { "\($0.target ?? "no target"): \($0.product.name)" }
+        #expect(
+            offenders.isEmpty,
+            """
+            Package.swift may name only \(Self.extrasCoreProductName) of the \
+            \(Self.extrasPackageName) package, and only \(Self.testTargetName) may also name \
+            \(Self.telemetryTestSupportProductName); found: \(offenders)
+            """,
+        )
+        let libraryExtras = try Self.products(ofTarget: Self.libraryTargetName)
             .filter { $0.package == Self.extrasPackageName }
             .map(\.name)
         #expect(
-            Set(extrasProducts) == [Self.extrasCoreProductName],
+            libraryExtras.contains(Self.extrasCoreProductName),
             """
-            Package.swift must name \(Self.extrasCoreProductName) as the only product of the \
-            \(Self.extrasPackageName) package — the other products compile swift-syntax, \
-            swift-argument-parser or libgit2 (plan.md decision #16); found: \(extrasProducts)
+            The \(Self.libraryTargetName) target must name \(Self.extrasCoreProductName), which holds \
+            the model pool (plan.md decision #16); found: \(libraryExtras)
+            """,
+        )
+    }
+
+    @Test("No target names a swift-otel product")
+    func namesNoSwiftOTelProduct() throws {
+        let otel = try ManifestEntries.productEntries()
+            .filter { $0.package == Self.swiftOTelPackageName || $0.name == Self.swiftOTelProductName }
+            .map { "\($0.name) (\($0.package ?? "no package"))" }
+        #expect(
+            otel.isEmpty,
+            """
+            No target of this library may name a \(Self.swiftOTelPackageName) product — only an \
+            executable of the family bootstraps the backend (the OpenTelemetry design); found: \(otel)
             """,
         )
     }
@@ -188,6 +289,31 @@ struct PackageManifestTests {
     ///   does not compile.
     private static func declaredProductNames() throws -> Set<String> {
         try Set(ManifestEntries.productEntries().map(\.name))
+    }
+
+    /// Reads the product entries that one target of the manifest names.
+    ///
+    /// - Parameter target: the name of the target.
+    /// - Returns: each product entry in the dependency list of that target,
+    ///   with the manifest's constants resolved.
+    /// - Throws: an error when the manifest cannot be read, or when a pattern
+    ///   does not compile.
+    private static func products(ofTarget target: String) throws -> [ManifestEntries.ProductEntry] {
+        try ManifestEntries.targetProductEntries()
+            .filter { $0.target == target }
+            .map(\.product)
+    }
+
+    /// Gives the products of the FoundationModelsExtras package that one
+    /// target may name.
+    ///
+    /// - Parameter target: the name of the target, or `nil` for an entry
+    ///   outside each target declaration.
+    /// - Returns: the core product and `TelemetryTestSupport` for the test
+    ///   target, and the core product alone for each other target.
+    private static func allowedExtrasProducts(forTarget target: String?) -> Set<String> {
+        guard target == testTargetName else { return [extrasCoreProductName] }
+        return [extrasCoreProductName, telemetryTestSupportProductName]
     }
 
     /// Reads the package name of every `.product(package:)` entry the

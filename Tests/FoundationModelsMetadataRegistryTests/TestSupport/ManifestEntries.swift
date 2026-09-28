@@ -19,6 +19,37 @@ enum ManifestEntries {
         let package: String?
     }
 
+    /// One `.product(name:package:)` entry of the manifest, with the target
+    /// whose dependency list holds it.
+    struct TargetProductEntry {
+        /// The name of the target that names the product, or `nil` when the
+        /// entry stands before the first target declaration of the manifest
+        /// (in a helper function, for example).
+        let target: String?
+
+        /// The product entry, with its arguments resolved.
+        let product: ProductEntry
+    }
+
+    /// One product entry of the manifest, with the place where it starts.
+    private struct LocatedProductEntry {
+        /// Where the entry starts in the text of the manifest.
+        let start: String.Index
+
+        /// The product entry, with its arguments resolved.
+        let entry: ProductEntry
+    }
+
+    /// One target declaration of the manifest, with the place where it
+    /// starts.
+    private struct TargetDeclaration {
+        /// Where the declaration starts in the text of the manifest.
+        let start: String.Index
+
+        /// The name of the target, with the manifest's constants resolved.
+        let name: String
+    }
+
     /// The manifest, relative to the repository root.
     static let manifestFileName = "Package.swift"
 
@@ -27,6 +58,11 @@ enum ManifestEntries {
 
     /// The character that starts and ends a string literal in the manifest.
     private static let quoteCharacter: Character = "\""
+
+    /// The pattern of one argument of a manifest entry: a string literal
+    /// with its quotes, or the name of a manifest constant. It captures the
+    /// argument as one group.
+    private static let argumentPattern = #"("[^"]*"|[A-Za-z_][A-Za-z0-9_]*)"#
 
     /// The capture group of a pattern that holds the first part of a match:
     /// the URL of a package entry, the name of a product entry, the name of
@@ -70,17 +106,78 @@ enum ManifestEntries {
     static func productEntries() throws -> [ProductEntry] {
         let text = try manifestText()
         let constants = try manifestConstants(in: text)
-        let argument = #"("[^"]*"|[A-Za-z_][A-Za-z0-9_]*)"#
+        return try locatedProductEntries(in: text, with: constants).map(\.entry)
+    }
+
+    /// Reads every `.product(name:package:)` entry the manifest declares,
+    /// each with the target whose dependency list holds it, in the order the
+    /// manifest declares them.
+    ///
+    /// An entry belongs to the last target declaration that starts before
+    /// it. A target declaration is `.target(`, `.testTarget(` or
+    /// `.executableTarget(` with a `name:` argument that a comma follows. A
+    /// dependency reference such as `.target(name: packageName)` closes its
+    /// parenthesis after the name, so it does not start a declaration.
+    ///
+    /// - Returns: each product entry, with its arguments resolved, and the
+    ///   name of its target.
+    /// - Throws: an error when the manifest cannot be read, or when a pattern
+    ///   does not compile.
+    static func targetProductEntries() throws -> [TargetProductEntry] {
+        let text = try manifestText()
+        let constants = try manifestConstants(in: text)
+        let declarations = try targetDeclarations(in: text, with: constants)
+        return try locatedProductEntries(in: text, with: constants).map { located in
+            let owner = declarations.last { $0.start < located.start }
+            return TargetProductEntry(target: owner?.name, product: located.entry)
+        }
+    }
+
+    /// Reads every `.product(name:package:)` entry of the manifest, with the
+    /// place where each one starts.
+    ///
+    /// - Parameters:
+    ///   - text: the whole text of the manifest.
+    ///   - constants: the manifest's string constants.
+    /// - Returns: each product entry, with its arguments resolved.
+    /// - Throws: an error when a pattern does not compile.
+    private static func locatedProductEntries(
+        in text: String,
+        with constants: [String: String],
+    ) throws -> [LocatedProductEntry] {
         let entryPattern = try Regex(
-            #"\.product\(\s*name:\s*"# + argument + #"(?:\s*,\s*package:\s*"# + argument + ")?",
+            #"\.product\(\s*name:\s*"# + argumentPattern + #"(?:\s*,\s*package:\s*"# + argumentPattern + ")?",
         )
         return try text.matches(of: entryPattern).compactMap { match in
             guard let name = capture(firstCaptureIndex, of: match) else { return nil }
             let package = capture(secondCaptureIndex, of: match)
-            return try ProductEntry(
+            let entry = try ProductEntry(
                 name: resolved(name, with: constants),
                 package: package.map { try resolved($0, with: constants) },
             )
+            return LocatedProductEntry(start: match.range.lowerBound, entry: entry)
+        }
+    }
+
+    /// Reads every target declaration of the manifest, with the place where
+    /// each one starts.
+    ///
+    /// - Parameters:
+    ///   - text: the whole text of the manifest.
+    ///   - constants: the manifest's string constants.
+    /// - Returns: each target declaration, with its name resolved, in the
+    ///   order of the manifest.
+    /// - Throws: an error when a pattern does not compile.
+    private static func targetDeclarations(
+        in text: String,
+        with constants: [String: String],
+    ) throws -> [TargetDeclaration] {
+        let declarationPattern = try Regex(
+            #"\.(?:target|testTarget|executableTarget)\(\s*name:\s*"# + argumentPattern + #"\s*,"#,
+        )
+        return try text.matches(of: declarationPattern).compactMap { match in
+            guard let name = capture(firstCaptureIndex, of: match) else { return nil }
+            return try TargetDeclaration(start: match.range.lowerBound, name: resolved(name, with: constants))
         }
     }
 

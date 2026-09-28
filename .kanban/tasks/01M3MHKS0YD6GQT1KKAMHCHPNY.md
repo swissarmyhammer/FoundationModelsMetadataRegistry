@@ -93,8 +93,31 @@ comments:
     - note on the "failed loading cached manifest ... disk I/O error" warning from the last run: it does persist, and it is not caused by this package's code. `sqlite3 ~/Library/Caches/org.swift.swiftpm/manifests/manifest.db "PRAGMA integrity_check;"` fails with "disk I/O error (10)" even run from an unrelated directory, with no swift process active. this proves the shared, global SwiftPM manifest cache database is corrupt in this environment. a `swift package plugin --list` run reproduced the same "failed loading cached manifest" and "failed storing manifest" warnings for every package in the graph, including this one. this is an environment fault in the local manifest cache, not a defect in this repository's code. it did not fail the build or the tests; SwiftPM falls back to reparsing the manifest when the cache read fails. a person or CI job can clear it by deleting `~/Library/Caches/org.swift.swiftpm/manifests` to force a fresh cache.
     - next: none. board can move this task forward.
   timestamp: 2026-09-28T19:00:56.445905+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m3mpaszpb60xtzr7hvmag4ng
+  text: |-
+    ### commit — changed
+    - evidence: 1ee5675 fix(catalog): remove duplicate embed-and-merge code
+    - next: run review again on the fix.
+  timestamp: 2026-09-28T19:02:12.214355+00:00
+- actor: claude-code
+  id: 01m3mpj34ze9atmz22nk3axsb8
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 1ee5675). 7 files reviewed. 0 findings, 0 confirmed, 0 refuted, 0 failed. All prior findings are checked.
+    - next: None. The task is in done.
+  timestamp: 2026-09-28T19:06:10.975376+00:00
+- actor: claude-code
+  id: 01m3mpjasgvby3dtcacdygrhmm
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 7 files
+    - test: green — swift test, 161 passed, 0 failed, 0 skipped; swiftlint 0; swiftformat 0/73
+    - commit: 1ee5675
+    - review: clean — 7 files, 0 findings, 1/1 prior finding checked
+  timestamp: 2026-09-28T19:06:18.800925+00:00
+position_column: done
+position_ordinal: ad80
 title: Let two synchronously built MetadataSearchers share one catalog embed
 ---
 ## What

@@ -1,6 +1,15 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m3mtwkkw343exa9jqb6yk7jh
+  text: |-
+    ### Facts from swissarmyhammer-05 about FoundationModelsExtras (2026-09-28)
+    Extras OTel A-D are done locally but are not on Extras origin/main yet. Do not start this task until they are on origin/main.
+    1. TelemetryCapture (TelemetryTestSupport) bootstraps logging one time only. A test process that uses it must NOT call LoggingSystem.bootstrap itself.
+    2. A logger that is made before the first capture does not go to the capture. A `static let` logger that a test uses before the capture starts is lost. Make the logger per call or per instance, or make sure that the capture starts first. This applies to MetadataDiagnostic.log.
+  timestamp: 2026-09-28T20:21:49.820409+00:00
 depends_on:
 - 01M3MNBPPECY20MSET2VD487DV
 position_column: todo

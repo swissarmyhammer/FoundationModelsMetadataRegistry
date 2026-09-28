@@ -11,7 +11,7 @@ import PackageDescription
 let packageName = "FoundationModelsMetadataRegistry"
 
 /// The name of the FoundationModelsRanker dependency package — one of the
-/// two packages this manifest declares (plan.md decision #16).
+/// two family packages this manifest declares (plan.md decision #16).
 ///
 /// The shared search/ranking library this package's ported copies were
 /// extracted into (plan.md decision #9). It supplies the retrieval
@@ -30,8 +30,10 @@ let packageName = "FoundationModelsMetadataRegistry"
 let foundationModelsRankerPackage = "FoundationModelsRanker"
 
 /// The name of the FoundationModelsExtras dependency package, and also the
-/// name of the one product of it that this package uses (plan.md decision
-/// #16).
+/// name of its core product, the one product of it that the library and the
+/// examples use (plan.md decision #16). The test target also uses its
+/// `TelemetryTestSupport` product, for the content-safety test of the
+/// OpenTelemetry design of 2026-09-28.
 ///
 /// The core `FoundationModelsExtras` product holds the process-wide model
 /// pool (`ModelPool`, `ModelRef`, `PooledEmbedder`, `GenerationQueue`). In one
@@ -45,6 +47,44 @@ let foundationModelsRankerPackage = "FoundationModelsRanker"
 /// Wired as a remote dependency (`main` branch), for the same reason as
 /// `foundationModelsRankerPackage`.
 let foundationModelsExtrasPackage = "FoundationModelsExtras"
+
+/// The name of the swift-distributed-tracing package: the tracing API
+/// (`Tracing`) of the OpenTelemetry design of 2026-09-28.
+///
+/// API only, no backend. A library of the family uses only the telemetry
+/// APIs. It does not depend on swift-otel and it does not bootstrap a
+/// backend: an executable of the family does that. Until an executable does,
+/// `InstrumentationSystem.tracer` is a no-op tracer, so an application that
+/// does not trace pays nothing.
+///
+/// The core `FoundationModelsExtras` product also depends on this package.
+/// This manifest declares it too, because the library target links its
+/// `Tracing` product directly. The floor is 1.5.0, because the unit tests
+/// bind a tracer to a task with `withTracer(_:_:)`, which that release adds.
+let swiftDistributedTracingPackage = "swift-distributed-tracing"
+
+/// The name of the swift-log package: the logging API (`Logging`) of the
+/// OpenTelemetry design of 2026-09-28.
+///
+/// API only, no backend: no target of this package calls
+/// `LoggingSystem.bootstrap`. Until an executable of the family bootstraps
+/// the backend, each logger of the library does nothing. The version floor
+/// is the floor that the core `FoundationModelsExtras` target declares.
+let swiftLogPackage = "swift-log"
+
+/// The name of the swift-metrics package: the metrics API (`Metrics`) of the
+/// OpenTelemetry design of 2026-09-28.
+///
+/// API only, no backend: no target of this package calls
+/// `MetricsSystem.bootstrap`. Until an executable of the family bootstraps
+/// the backend, each metric of the library does nothing. The version floor
+/// is the floor that the core `FoundationModelsExtras` target declares.
+let swiftMetricsPackage = "swift-metrics"
+
+/// The GitHub organization URL base of the telemetry API packages
+/// (`swiftDistributedTracingPackage`, `swiftLogPackage` and
+/// `swiftMetricsPackage`).
+let appleOrg = "https://github.com/apple/"
 
 /// The GitHub organization URL base the swissarmyhammer-family dependencies
 /// (`foundationModelsRankerPackage` and `foundationModelsExtrasPackage`)
@@ -131,8 +171,9 @@ func exampleCoreTarget(name: String) -> Target {
 
 /// The SwiftPM manifest for FoundationModelsMetadataRegistry (plan.md §10).
 ///
-/// A single library target over the FoundationModelsRanker sibling and the
-/// core FoundationModelsExtras product (plan.md decision #16), a Swift
+/// A single library target over the FoundationModelsRanker sibling, the
+/// core FoundationModelsExtras product (plan.md decision #16) and the
+/// `Tracing`, `Logging` and `Metrics` APIs (the OpenTelemetry design), a Swift
 /// Testing unit test target, and the `Examples/` executable targets (§13):
 /// `CatalogSearch` (keyword-only) and `SemanticSearch` (`ExamplesSupport`'s
 /// deterministic embedder joining the cosine signal, with a `--no-embedder`
@@ -148,7 +189,8 @@ let package = Package(
     name: packageName,
     // Commit to macOS 27 / FoundationModels v2, no pre-27 fallback (plan.md
     // §10). FoundationModelsRanker and FoundationModelsExtras declare the same
-    // floor, so the two dependencies impose no higher one.
+    // floor, and the three telemetry API packages declare no higher floor, so
+    // no dependency imposes a higher one.
     platforms: [
         .macOS("27.0"),
     ],
@@ -161,6 +203,9 @@ let package = Package(
     dependencies: [
         .package(url: "\(swissArmyHammerOrg)\(foundationModelsRankerPackage).git", branch: "main"),
         .package(url: "\(swissArmyHammerOrg)\(foundationModelsExtrasPackage).git", branch: "main"),
+        .package(url: "\(appleOrg)\(swiftDistributedTracingPackage).git", from: "1.5.0"),
+        .package(url: "\(appleOrg)\(swiftLogPackage).git", from: "1.15.1"),
+        .package(url: "\(appleOrg)\(swiftMetricsPackage).git", from: "2.11.0"),
     ],
     targets: [
         .target(
@@ -168,6 +213,11 @@ let package = Package(
             dependencies: [
                 .product(name: foundationModelsRankerPackage, package: foundationModelsRankerPackage),
                 .product(name: foundationModelsExtrasPackage, package: foundationModelsExtrasPackage),
+                // The telemetry APIs, and no backend: the spans, the logger
+                // and the metrics that `RegistryTelemetry` names.
+                .product(name: "Tracing", package: swiftDistributedTracingPackage),
+                .product(name: "Logging", package: swiftLogPackage),
+                .product(name: "Metrics", package: swiftMetricsPackage),
             ],
             path: "Sources/\(packageName)",
         ),
@@ -195,6 +245,15 @@ let package = Package(
                 .target(name: "BigCatalogCore"),
                 .target(name: "HotReloadCore"),
                 .target(name: "LibrarianCore"),
+                // `RegistryTelemetryTests` binds an in-memory tracer to a
+                // task and reads which tracer the library resolves.
+                .product(name: "Tracing", package: swiftDistributedTracingPackage),
+                .product(name: "InMemoryTracing", package: swiftDistributedTracingPackage),
+                // `TelemetryContentSafetyTests` runs each public entry point
+                // inside a `TelemetryCapture`, which records an issue for each
+                // span, log record or metric that holds content. Only this
+                // test target may name this product.
+                .product(name: "TelemetryTestSupport", package: foundationModelsExtrasPackage),
             ],
             path: "Tests/\(packageName)Tests",
         ),

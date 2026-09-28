@@ -1,6 +1,16 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m3mtwh7jz1p53cxkrbhbmmpk
+  text: |-
+    ### Facts from swissarmyhammer-05 about FoundationModelsExtras (2026-09-28)
+    Extras OTel A-D are done locally but are not on Extras origin/main yet. Do not start this task until they are on origin/main.
+    1. TelemetryCapture (TelemetryTestSupport) uses task-local withTracer and withMetricsFactory. It bootstraps logging one time only. A test process that uses it must NOT call LoggingSystem.bootstrap itself.
+    2. A logger or metric that is made before the first capture does not go to the capture. A `static let` logger or metric that a test uses before the capture starts is lost. Make loggers and metrics per call or per instance, or make sure that the capture starts first.
+    3. TracedCall.run (the span plus "enter" log helper) gets the trace id and the span id from the traceparent that the tracer injects. InMemoryTracer does not inject, so its records have no ids. A test that checks the ids needs a tracer that injects.
+  timestamp: 2026-09-28T20:21:47.378075+00:00
 depends_on:
 - 01M3MNBPPECY20MSET2VD487DV
 position_column: todo
