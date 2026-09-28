@@ -1,7 +1,7 @@
 @testable import FoundationModelsMetadataRegistry
 import Testing
 
-/// Tests for `MetadataIndex.embedPendingEntries(with:onDiagnostic:)` and
+/// Tests for `MetadataIndex.embedPendingEntries(with:source:onDiagnostic:)` and
 /// `MetadataIndex.EmbeddedBatch.merged(into:)` (plan.md §8): the one
 /// embed-and-merge step that each catalog embed of this package goes through.
 /// Every embedder here is a scripted fake behind the `TextEmbedding` seam.
@@ -42,7 +42,8 @@ struct EmbedPendingEntriesTests {
         let embedder = Self.countingEmbedder()
         let recorder = DiagnosticRecorder()
 
-        let batch = try #require(await index.embedPendingEntries(with: embedder, onDiagnostic: { recorder.record($0) }))
+        let embedded = await index.embedPendingEntries(with: embedder, source: .reload) { recorder.record($0) }
+        let batch = try #require(embedded)
         let merged = batch.merged(into: index)
 
         #expect(embedder.embeddedBatches == [Self.catalog.map(\.block)])
@@ -59,7 +60,7 @@ struct EmbedPendingEntriesTests {
         let embedder = Self.countingEmbedder()
         let recorder = DiagnosticRecorder()
 
-        let batch = await embedded.embedPendingEntries(with: embedder, onDiagnostic: { recorder.record($0) })
+        let batch = await embedded.embedPendingEntries(with: embedder, source: .reload) { recorder.record($0) }
 
         #expect(batch == nil)
         #expect(embedder.embeddedBatches.isEmpty)
@@ -72,7 +73,7 @@ struct EmbedPendingEntriesTests {
         let embedder = FakeEmbedder(dimension: Self.embeddingDimension, failure: EmbedFailure())
         let recorder = DiagnosticRecorder()
 
-        let batch = await index.embedPendingEntries(with: embedder, onDiagnostic: { recorder.record($0) })
+        let batch = await index.embedPendingEntries(with: embedder, source: .reload) { recorder.record($0) }
 
         #expect(batch == nil)
         #expect(embedder.embeddedBatches == [Self.catalog.map(\.block)])
@@ -84,7 +85,7 @@ struct EmbedPendingEntriesTests {
     @Test
     func mergeSkipsAnEntryWhoseEmbeddedTextChangedAfterTheEmbed() async throws {
         let index = MetadataIndex(items: Self.catalog)
-        let batch = try #require(await index.embedPendingEntries(with: Self.countingEmbedder()))
+        let batch = try #require(await index.embedPendingEntries(with: Self.countingEmbedder(), source: .reload))
         let changed = FixtureItem(id: Self.catalog[0].id, block: "a new text for the same id")
         let live = MetadataIndex(items: [changed, Self.catalog[1]])
 

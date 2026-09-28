@@ -101,8 +101,31 @@ comments:
     - note: The `swift test` log shows no "failed loading cached manifest" or "disk I/O error" lines this run. The broken global manifest cache at `~/Library/Caches/org.swift.swiftpm/manifests` may still be there. The cache is not touched.
     - next: none. The build is clean.
   timestamp: 2026-09-28T20:45:02.471138+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m3mw8jtmeb79pe722g0bqjpz
+  text: |-
+    ### commit — changed
+    - evidence: 9e337bb feat(telemetry): add OTel vocabulary file, API dependencies, and content-safety test. 18 files. Local commit only, not pushed.
+    - next: none. The task is ready to leave `doing`.
+  timestamp: 2026-09-28T20:45:50.804776+00:00
+- actor: claude-code
+  id: 01m3mwjb4009rpq9q5wvtpy33z
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 9e337bb). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. 6 files reviewed. 12 .kanban files not reviewed because of .reviewignore. The task has no prior review findings.
+    - next: The task is in done. Tasks OTel A, OTel B and OTel C (01M3MNDY0Q77SYFCYWP376QRQP, 01M3MNEZX1FNTCQRY9K9Z2NBER, 01M3MNFYXF1120A7XFT4VJ0GG9) can start.
+  timestamp: 2026-09-28T20:51:10.592529+00:00
+- actor: claude-code
+  id: 01m3mwjxk493863j1be2m3epdb
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 4 files; Extras updated to 70ad74d
+    - test: green — swift test, 171 passed, 0 failed, 0 skipped; swiftlint 0 in 76 files; swiftformat 0/76
+    - commit: 9e337bb
+    - review: clean — 6 files, 0 findings
+  timestamp: 2026-09-28T20:51:29.508808+00:00
+position_column: done
+position_ordinal: ae80
 title: 'OTel D: add the telemetry vocabulary file, the API dependencies and the content-safety test'
 ---
 ## What

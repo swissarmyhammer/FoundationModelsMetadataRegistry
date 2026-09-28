@@ -81,7 +81,8 @@ public actor SharedCatalogEmbedding<Item: SearchableMetadata> {
     /// Returns the embedded batch of the pending entries of `index`, and embeds them on the first call only.
     ///
     /// The first call starts the catalog embed in a stored `Task`, through
-    /// `MetadataIndex.embedPendingEntries(with:onDiagnostic:)`. Every other
+    /// `MetadataIndex.embedPendingEntries(with:source:onDiagnostic:)`, with
+    /// the `shared` embed source for its span. Every other
     /// call, concurrent or later, awaits that same task. The task is not
     /// cancelled when a caller is cancelled, so one cancelled search does not
     /// cancel the embed that the other searchers wait for. Each sharing
@@ -98,7 +99,9 @@ public actor SharedCatalogEmbedding<Item: SearchableMetadata> {
             let index = index
             let embedder = embedder
             let onDiagnostic = onDiagnostic
-            let task = Task { await index.embedPendingEntries(with: embedder, onDiagnostic: onDiagnostic) }
+            let task = Task {
+                await index.embedPendingEntries(with: embedder, source: .shared, onDiagnostic: onDiagnostic)
+            }
             catalogEmbed = .started(task)
             return await task.value
         }

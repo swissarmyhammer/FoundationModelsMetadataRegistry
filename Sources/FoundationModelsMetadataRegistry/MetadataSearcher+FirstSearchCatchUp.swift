@@ -74,6 +74,6 @@ extension MetadataSearcher {
             return
         }
         guard let embedder else { return }
-        await catchUpEmbeddings(with: embedder)
+        await catchUpEmbeddings(with: embedder, source: .firstSearch)
     }
 }

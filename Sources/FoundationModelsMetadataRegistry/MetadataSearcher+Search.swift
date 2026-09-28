@@ -1,6 +1,9 @@
-/// Hot reload and the `.selection`/`.retrieval` search tiers for
-/// `MetadataSearcher` (plan.md §5, §6, §8). The first-search embed catch-up
-/// lives in `MetadataSearcher+FirstSearchCatchUp.swift`.
+import Tracing
+
+/// Hot reload, the search entry point and the `.selection` search tier for
+/// `MetadataSearcher` (plan.md §6, §8). The `.retrieval` tier lives in
+/// `MetadataSearcher+RetrievalTier.swift`, and the first-search embed
+/// catch-up lives in `MetadataSearcher+FirstSearchCatchUp.swift`.
 extension MetadataSearcher {
     /// Hot-reloads this searcher's catalog from `items`.
     ///
@@ -58,10 +61,29 @@ extension MetadataSearcher {
     /// of the newest catalog at once, the same as a caller that sends no
     /// burst. An embed that fails leaves its items pending for the next call.
     ///
+    /// Each call runs in one `RegistryTelemetry.SpanName.catalogUpdate` span,
+    /// the hash-guarded no-op included. The span records the item count, the
+    /// size of the new catalog, whether the content changed, and the count
+    /// of entries that wait for an embed. The embed of the reload loop runs
+    /// in its own child `catalogEmbed` span.
+    ///
     /// - Parameter items: the catalog's new/refreshed items, in first-seen-
     ///   wins duplicate-id order (forwarded to `MetadataIndex`'s duplicate-id
     ///   policy).
     public func update(items: [Item]) async {
+        await RegistryTelemetry.tracer(explicit: nil).withSpan(RegistryTelemetry.SpanName.catalogUpdate) { span in
+            span.attributes[RegistryTelemetry.AttributeKey.catalogItemCount] = items.count
+            await reload(items: items, recordingIn: span)
+        }
+    }
+
+    /// Does the work of `update(items:)` in its span.
+    ///
+    /// - Parameters:
+    ///   - items: the catalog's new/refreshed items.
+    ///   - span: the `catalogUpdate` span, which gets the catalog size, the
+    ///     content-changed flag and the pending embed count.
+    private func reload(items: [Item], recordingIn span: any Span) async {
         // A reload owns the catch-up from here on: whatever this call leaves
         // pending is served keyword-only in the interim and embedded by this
         // call (or the next reload), never by a first search embedding the
@@ -76,6 +98,9 @@ extension MetadataSearcher {
         let baseline = result.baseline
 
         let contentChanged = !baseline.hasIdenticalContent(to: previous)
+        span.attributes[RegistryTelemetry.AttributeKey.catalogSize] = baseline.count
+        span.attributes[RegistryTelemetry.AttributeKey.catalogContentChanged] = contentChanged
+        span.attributes[RegistryTelemetry.AttributeKey.catalogPendingEmbedCount] = result.pendingEmbedIDs.count
         guard contentChanged || !result.pendingEmbedIDs.isEmpty else { return }
 
         index = baseline
@@ -99,9 +124,9 @@ extension MetadataSearcher {
     /// (`runReloadEmbedLoop(with:)`) and the first-search catch-up
     /// (`runFirstSearchCatchUp()`). Internal, not private, because both
     /// callers live in their own files. The embed goes through
-    /// `MetadataIndex.embedPendingEntries(with:onDiagnostic:)`: a no-op when
-    /// nothing is pending, and otherwise one `.embedCatchUp` report before
-    /// the embedder call.
+    /// `MetadataIndex.embedPendingEntries(with:source:onDiagnostic:)`: a no-op
+    /// when nothing is pending, and otherwise one `.embedCatchUp` report
+    /// before the embedder call, which runs in one `catalogEmbed` span.
     ///
     /// Merges into `index` as it stands *after* the suspension -- not into
     /// the stale baseline this batch was embedded from -- and only where
@@ -124,9 +149,13 @@ extension MetadataSearcher {
     /// embedder:previous:onDiagnostic:)`; a later search then reports the
     /// still-absent embeddings via `.embeddingUnavailable`.
     ///
-    /// - Parameter embedder: the embedder to embed the pending entries with.
-    func catchUpEmbeddings(with embedder: any TextEmbedding) async {
-        guard let batch = await index.embedPendingEntries(with: embedder, onDiagnostic: onDiagnostic) else { return }
+    /// - Parameters:
+    ///   - embedder: the embedder to embed the pending entries with.
+    ///   - source: the path that started this catch-up, for the embed span:
+    ///     `.reload` or `.firstSearch`.
+    func catchUpEmbeddings(with embedder: any TextEmbedding, source: RegistryTelemetry.EmbedSource) async {
+        let batch = await index.embedPendingEntries(with: embedder, source: source, onDiagnostic: onDiagnostic)
+        guard let batch else { return }
         index = batch.merged(into: index)
     }
 
@@ -136,6 +165,17 @@ extension MetadataSearcher {
     /// embeds every not-yet-embedded catalog entry before it ranks, one
     /// time, whichever tier `mode` selects (see `FirstSearchCatchUp`); every
     /// later call ranks straight away.
+    ///
+    /// Each call runs in one `RegistryTelemetry.SpanName.search` span, which
+    /// also covers the first-search catch-up. The span records the mode, the
+    /// limit, the catalog size, the tier that answered, the signals that
+    /// ranked and the count of matches. The call to the ranker runs in one
+    /// child `rank` span. A model session and an embedder can wait for a long
+    /// time, so the span opens through
+    /// `RegistryTelemetry.withTracedSpan(_:attributes:_:)` (rule 8, hang
+    /// detection). When the call throws, the span records the error status
+    /// and the type of the error, never the message of the error. The span
+    /// never holds `intent` (rule 4).
     ///
     /// - Parameters:
     ///   - intent: the search query.
@@ -149,7 +189,59 @@ extension MetadataSearcher {
     ///   selection tier is configured (`init(..., selection:)`); otherwise
     ///   whatever the underlying selection session throws.
     public func search(intent: String, limit: Int) async throws -> [Match<Item>] {
+        let attributes: SpanAttributes = [
+            RegistryTelemetry.AttributeKey.searchMode: .string(RegistryTelemetry.modeName(of: mode)),
+            RegistryTelemetry.AttributeKey.searchLimit: limit.toSpanAttribute(),
+        ]
+        return try await RegistryTelemetry.withTracedSpan(
+            RegistryTelemetry.SpanName.search,
+            attributes: attributes,
+        ) { span in
+            try await self.answer(intent: intent, limit: limit, recordingIn: span)
+        }
+    }
+
+    /// The answer of one tier, and the facts about it that the search span records.
+    struct TierAnswer: Sendable {
+        /// The tier that answered.
+        let tier: RegistryTelemetry.Tier
+
+        /// The signals that ranked the answer, in a fixed order.
+        let signals: [RegistryTelemetry.Signal]
+
+        /// The matches of the answer.
+        let matches: [Match<Item>]
+    }
+
+    /// Does the work of `search(intent:limit:)` in its span.
+    ///
+    /// - Parameters:
+    ///   - intent: the search query.
+    ///   - limit: the maximum number of matches to return.
+    ///   - span: the `search` span, which gets the catalog size, the tier,
+    ///     the signals and the count of matches.
+    /// - Returns: the matches of the tier that `mode` selects.
+    /// - Throws: what `tierAnswer(intent:limit:)` throws.
+    private func answer(intent: String, limit: Int, recordingIn span: any Span) async throws -> [Match<Item>] {
         await catchUpEmbeddingsBeforeFirstSearch()
+        span.attributes[RegistryTelemetry.AttributeKey.catalogSize] = index.count
+        let answer = try await tierAnswer(intent: intent, limit: limit)
+        span.attributes[RegistryTelemetry.AttributeKey.searchTier] = answer.tier.rawValue
+        span.attributes[RegistryTelemetry.AttributeKey.searchRankers] = answer.signals.map(\.rawValue)
+        span.attributes[RegistryTelemetry.AttributeKey.searchResultCount] = answer.matches.count
+        return answer.matches
+    }
+
+    /// Answers one search with the tier that `mode` selects.
+    ///
+    /// - Parameters:
+    ///   - intent: the search query.
+    ///   - limit: the maximum number of matches to return.
+    /// - Returns: the answer of the tier.
+    /// - Throws: `SelectionTierUnavailable` when `mode == .selection` and no
+    ///   selection tier is configured; otherwise whatever the underlying
+    ///   selection session throws.
+    private func tierAnswer(intent: String, limit: Int) async throws -> TierAnswer {
         switch mode {
         case .retrieval:
             return await retrievalSearch(intent: intent, limit: limit)
@@ -181,145 +273,39 @@ extension MetadataSearcher {
     /// resolves in that snapshot by construction (the tier filters unknown
     /// ids itself); the `compactMap` is defensive.
     ///
+    /// The call to the tier runs in one `RegistryTelemetry.SpanName.rank`
+    /// span, with the `selection` ranker and the snapshot size as the
+    /// candidate count. The tier waits on a model session, so the span opens
+    /// through `RegistryTelemetry.withTracedSpan(_:attributes:_:)` (rule 8).
+    ///
     /// - Parameters:
     ///   - selection: the tier to search, paired with the index snapshot it
     ///     answers over.
     ///   - intent: the plain-language search intent.
     ///   - limit: the maximum number of matches to return.
-    /// - Returns: the selected items' verbatim `Match`es, at most `limit`.
+    /// - Returns: the selected items' verbatim `Match`es, at most `limit`,
+    ///   with the `selection` tier and signal.
     /// - Throws: whatever the tier's underlying session throws.
     private static func selectionSearch(
         _ selection: ConfiguredSelectionTier,
         intent: String,
         limit: Int,
-    ) async throws -> [Match<Item>] {
-        let selectionMatches = try await selection.tier.search(intent: intent, limit: limit)
+    ) async throws -> TierAnswer {
         let snapshot = selection.snapshot
-        return selectionMatches.compactMap { match in
+        let attributes: SpanAttributes = [
+            RegistryTelemetry.AttributeKey.rankRanker: .string(RegistryTelemetry.Ranker.selection.rawValue),
+            RegistryTelemetry.AttributeKey.rankCandidateCount: snapshot.count.toSpanAttribute(),
+        ]
+        let selectionMatches = try await RegistryTelemetry.withTracedSpan(
+            RegistryTelemetry.SpanName.rank,
+            attributes: attributes,
+        ) { _ in
+            try await selection.tier.search(intent: intent, limit: limit)
+        }
+        let matches = selectionMatches.compactMap { match -> Match<Item>? in
             guard let item = snapshot.item(forID: match.id) else { return nil }
             return Match(id: match.id, block: match.block, score: match.score, signals: match.signals, item: item)
         }
-    }
-
-    // MARK: - Retrieval tier (plan.md §5, via FoundationModelsRanker)
-
-    /// Runs the `.retrieval` tier through FoundationModelsRanker's `HybridRanker.topMatches`.
-    ///
-    /// `HybridRanker.topMatches(ids:documents:query:cosineScores:weights:
-    /// limit:)` fuses the BM25 + trigram + cosine rankings and normalizes to
-    /// `[0, 1]`; the hits map back through the catalog to verbatim `Match`es
-    /// (plan.md §5). Only ever returns documents at least one signal
-    /// actually ranked.
-    private func retrievalSearch(intent: String, limit: Int) async -> [Match<Item>] {
-        guard limit > 0, !index.ids.isEmpty else { return [] }
-
-        let cosineScores = await Self.computeCosineScores(
-            intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic,
-        )
-        let hits = HybridRanker.topMatches(
-            ids: index.ids,
-            documents: Self.rankedDocuments(in: index),
-            query: intent,
-            cosineScores: cosineScores,
-            weights: weights,
-            limit: limit,
-        )
-        return Self.matches(fromHits: hits, in: index)
-    }
-
-    // MARK: - Shared ranking inputs and Hit -> Match mapping
-
-    /// Every indexed entry's precomputed `RankedDocument`, positionally aligned with `index.ids`.
-    ///
-    /// This is the `documents` array `HybridRanker.topMatches` scores.
-    /// Every id in `index.ids` resolves by construction
-    /// (`ids` is exactly the set `rankedDocument(forID:)` can answer for),
-    /// so the `compactMap` never drops anything; `HybridRanker`'s own
-    /// `ids.count == documents.count` precondition would trap if that
-    /// invariant ever broke.
-    ///
-    /// - Parameter index: the catalog index to gather documents from.
-    /// - Returns: one `RankedDocument` per indexed id, in `ids` order.
-    private static func rankedDocuments(in index: MetadataIndex<Item>) -> [RankedDocument] {
-        index.ids.compactMap { index.rankedDocument(forID: $0) }
-    }
-
-    /// Computes the raw per-document cosine scores `HybridRanker` fuses as
-    /// its cosine signal, or `nil` to skip the signal entirely.
-    ///
-    /// `intent` is embedded through `embedder` and scored
-    /// against each catalog entry's stored block embedding via
-    /// `CosineScoring.cosineSimilarity(_:_:)` (plan.md §5 "brute-force
-    /// scoring — plain per-row dot products for cosine — is exact and
-    /// effectively instant" at metadata scale; decision #10, no vector
-    /// store).
-    ///
-    /// Degrades to keyword-only (`nil`) and reports `.embeddingUnavailable`
-    /// via `onDiagnostic` — exactly once per search — whenever cosine can't
-    /// contribute: no `embedder` is configured, none of the catalog's items
-    /// carry an embedding yet, or embedding the query itself fails
-    /// (including a misbehaving embedder returning no vector at all for a
-    /// one-element input — a degradation worth reporting, not a silent
-    /// skip; plan.md §1 "every degradation is reported, never silent").
-    /// A zero `weights.cosine` also returns `nil`, but *without* the
-    /// diagnostic: the caller doesn't want the signal, so there's no reason
-    /// to embed the query or warn about a missing embedder for it. An item
-    /// with no stored embedding scores `0.0` — the absent-signal rule
-    /// (plan.md §5): it contributes nothing to cosine but still ranks via
-    /// BM25 + trigram.
-    ///
-    /// - Parameters:
-    ///   - intent: the search query.
-    ///   - index: the catalog index whose stored embeddings are scored.
-    ///   - weights: the per-signal fusion weights (cosine is only computed
-    ///     when `weights.cosine > 0.0`).
-    ///   - embedder: the embedder to embed `intent` with, or `nil` to
-    ///     degrade to keyword-only.
-    ///   - onDiagnostic: called with `.embeddingUnavailable` when cosine
-    ///     was wanted but can't contribute.
-    /// - Returns: one raw cosine score per document, positionally aligned
-    ///   with `index.ids`, or `nil` to skip the cosine signal.
-    private static func computeCosineScores(
-        intent: String,
-        index: MetadataIndex<Item>,
-        weights: Weights,
-        embedder: (any TextEmbedding)?,
-        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void,
-    ) async -> [Double]? {
-        // Cosine only runs when configured to actually count: a zero weight
-        // means the caller doesn't want the signal, so there's no reason to
-        // embed the query or warn about a missing embedder for it.
-        guard weights.cosine > 0.0 else { return nil }
-        guard let embedder, index.ids.contains(where: { index.embedding(forID: $0) != nil }),
-              let queryEmbedding = try? await embedder.embed([intent]).first
-        else {
-            onDiagnostic(.embeddingUnavailable)
-            return nil
-        }
-
-        return index.ids.map { id in
-            guard let itemEmbedding = index.embedding(forID: id) else { return 0.0 }
-            return CosineScoring.cosineSimilarity(queryEmbedding, itemEmbedding)
-        }
-    }
-
-    /// Maps FoundationModelsRanker's `Hit`s back into this package's typed `Match<Item>`es.
-    ///
-    /// Each hit's id is looked up in `index` — the id,
-    /// fused score, and raw per-signal `Signals` carry over verbatim, and
-    /// the catalog's stored block and typed `item` are re-attached here (a
-    /// `Hit` carries neither). Every id a hit carries resolves in `index`
-    /// by construction (the hits were ranked over `index.ids`); the
-    /// `compactMap` is defensive.
-    ///
-    /// - Parameters:
-    ///   - hits: the ranked hits to map, in the order the result preserves.
-    ///   - index: the catalog index to look items/blocks up in.
-    /// - Returns: one `Match` per resolvable hit, in order.
-    private static func matches(fromHits hits: [Hit], in index: MetadataIndex<Item>) -> [Match<Item>] {
-        hits.compactMap { hit in
-            guard let item = index.item(forID: hit.id), let block = index.block(forID: hit.id) else { return nil }
-            return Match(id: hit.id, block: block, score: hit.score, signals: hit.signals, item: item)
-        }
+        return TierAnswer(tier: .selection, signals: [.selection], matches: matches)
     }
 }

@@ -31,6 +31,10 @@ struct TelemetryContentSafetyTests {
     /// ``RegistryTelemetry`` adds it to this list too.
     private static let registryNames = [
         RegistryTelemetry.loggerLabel,
+        RegistryTelemetry.SpanName.search,
+        RegistryTelemetry.SpanName.rank,
+        RegistryTelemetry.SpanName.catalogUpdate,
+        RegistryTelemetry.SpanName.catalogEmbed,
     ]
 
     @Test("Each RegistryTelemetry name starts with the module prefix", arguments: registryNames)
@@ -163,6 +167,25 @@ struct TelemetryContentSafetyTests {
         }
 
         #expect(matches.map(\.id) == [Self.selectedID])
+    }
+
+    /// An error path can leak content too: the search span and the rank span
+    /// record the failure of the session, and the capture checks both.
+    @Test
+    func selectionSearchWhoseSessionThrowsKeepsContentOutOfTheTelemetry() async throws {
+        try await TelemetryCapture.run(forbidding: Marker.all) { context in
+            let factory = RecordingSessionFactory(responses: [])
+            let searcher = MetadataSearcher(
+                items: Self.catalog,
+                mode: .selection,
+                selection: SelectionConfig(model: factory.makeSession),
+            )
+            await #expect(throws: (any Error).self) {
+                try await searcher.search(intent: Self.query, limit: Self.searchLimit)
+            }
+
+            #expect(context.spans.contains { $0.status?.code == .error })
+        }
     }
 
     @Test

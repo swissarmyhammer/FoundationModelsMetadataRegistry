@@ -1,3 +1,5 @@
+import Tracing
+
 /// Index-build/update-time embedding support for `MetadataIndex`: hash-keyed
 /// incremental re-embedding (plan.md §8), the redundant-update guard, and
 /// the batch-merge helpers `MetadataSearcher`'s catch-up paths call through.
@@ -16,7 +18,7 @@ extension MetadataIndex {
 
     /// The vectors of one embed batch, and the index that the batch was embedded from.
     ///
-    /// `embedPendingEntries(with:onDiagnostic:)` makes it. The caller merges
+    /// `embedPendingEntries(with:source:onDiagnostic:)` makes it. The caller merges
     /// it with `merged(into:)`, into the index that it has after the embed.
     struct EmbeddedBatch: Sendable {
         /// The ids of the embedded entries, positionally aligned with `vectors`.
@@ -99,7 +101,8 @@ extension MetadataIndex {
         let baseline = incrementalBaseline(items: items, previous: previous, onDiagnostic: onDiagnostic).baseline
         // An index build reports no `.embedCatchUp`: the embed is part of the
         // build, not a catch-up of an index that exists already.
-        guard let embedder, let batch = await baseline.embedPendingEntries(with: embedder) else { return baseline }
+        guard let embedder, let batch = await baseline.embedPendingEntries(with: embedder, source: .build)
+        else { return baseline }
         return batch.merged(into: baseline)
     }
 
@@ -167,7 +170,7 @@ extension MetadataIndex {
     ///
     /// This is the batch an embed catch-up hands the embedder (plan.md §8).
     /// `incrementalBaseline(items:previous:onDiagnostic:)` reads its ids off
-    /// the baseline it just built, and `embedPendingEntries(with:
+    /// the baseline it just built, and `embedPendingEntries(with:source:
     /// onDiagnostic:)` reads it for each catalog embed.
     ///
     /// - Returns: the pending ids and their embedded texts, or two empty
@@ -305,14 +308,21 @@ extension MetadataIndex {
     /// and `SharedCatalogEmbedding`. The caller merges the result with
     /// `EmbeddedBatch.merged(into:)`.
     ///
-    /// A no-op, with no diagnostic and no embedder call, when no entry is
-    /// pending. Otherwise reports `.embedCatchUp(pending:total:)` one time
-    /// before the embedder call. A failed embed is graceful degradation, not
-    /// an error that the caller must handle: the caller keeps the embeddings
-    /// it had.
+    /// A no-op, with no diagnostic, no span and no embedder call, when no
+    /// entry is pending. Otherwise reports `.embedCatchUp(pending:total:)` one
+    /// time before the embedder call. A failed embed is graceful degradation,
+    /// not an error that the caller must handle: the caller keeps the
+    /// embeddings it had.
+    ///
+    /// The embedder call runs in one `RegistryTelemetry.SpanName.catalogEmbed`
+    /// span, which records the pending count, the catalog size, `source` and
+    /// the outcome. An embedder can wait for a long time, so the span opens
+    /// through `RegistryTelemetry.withTracedSpan(_:attributes:_:)` (rule 8,
+    /// hang detection). A failed embed also marks the span as failed.
     ///
     /// - Parameters:
     ///   - embedder: the embedder to embed the pending entries with.
+    ///   - source: the path that started this embed, for the span.
     ///   - onDiagnostic: called with `.embedCatchUp(pending:total:)` before
     ///     the embedder call. Defaults to reporting nothing.
     /// - Returns: the embedded batch, or `nil` when no entry is pending, when
@@ -320,13 +330,63 @@ extension MetadataIndex {
     ///   the pending count.
     func embedPendingEntries(
         with embedder: any TextEmbedding,
+        source: RegistryTelemetry.EmbedSource,
         onDiagnostic: @Sendable (MetadataDiagnostic) -> Void = { _ in },
     ) async -> EmbeddedBatch? {
         let pending = pendingEmbeddings()
         guard !pending.ids.isEmpty else { return nil }
         onDiagnostic(.embedCatchUp(pending: pending.ids.count, total: count))
-        guard let vectors = try? await embedder.embed(pending.texts), vectors.count == pending.texts.count
-        else { return nil }
-        return EmbeddedBatch(ids: pending.ids, vectors: vectors, source: self)
+        let attributes: SpanAttributes = [
+            RegistryTelemetry.AttributeKey.embedPendingCount: pending.ids.count.toSpanAttribute(),
+            RegistryTelemetry.AttributeKey.catalogSize: count.toSpanAttribute(),
+            RegistryTelemetry.AttributeKey.embedSource: .string(source.rawValue),
+        ]
+        do {
+            let vectors = try await RegistryTelemetry.withTracedSpan(
+                RegistryTelemetry.SpanName.catalogEmbed,
+                attributes: attributes,
+            ) { span in
+                try await Self.checkedVectors(for: pending.texts, with: embedder, in: span)
+            }
+            return EmbeddedBatch(ids: pending.ids, vectors: vectors, source: self)
+        } catch {
+            // Graceful degradation: the span recorded the failure, and the
+            // caller keeps the embeddings it had.
+            return nil
+        }
+    }
+
+    /// Embeds `texts` and checks that the embedder gave one vector for each
+    /// text, then records the outcome on `span`.
+    ///
+    /// - Parameters:
+    ///   - texts: the embedded texts of the pending entries.
+    ///   - embedder: the embedder to embed `texts` with.
+    ///   - span: the embed span, which gets `RegistryTelemetry.AttributeKey.embedOutcome`.
+    /// - Returns: one vector for each text, in the order of `texts`.
+    /// - Throws: the error of `embed(_:)`, or `EmbedVectorCountMismatch` when
+    ///   the embedder gave a count of vectors other than the count of texts.
+    private static func checkedVectors(
+        for texts: [String],
+        with embedder: any TextEmbedding,
+        in span: any Span,
+    ) async throws -> [[Float]] {
+        let outcomeKey = RegistryTelemetry.AttributeKey.embedOutcome
+        do {
+            let vectors = try await embedder.embed(texts)
+            guard vectors.count == texts.count else {
+                throw EmbedVectorCountMismatch()
+            }
+            span.attributes[outcomeKey] = RegistryTelemetry.EmbedOutcome.embedded.rawValue
+            return vectors
+        } catch {
+            span.attributes[outcomeKey] = RegistryTelemetry.EmbedOutcome.failed.rawValue
+            throw error
+        }
     }
 }
+
+/// Thrown inside a catalog embed when the embedder gives a count of vectors
+/// other than the count of texts that it got. The embed span records it as
+/// the failure of the embed.
+struct EmbedVectorCountMismatch: Error {}
