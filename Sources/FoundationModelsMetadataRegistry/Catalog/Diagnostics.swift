@@ -1,4 +1,4 @@
-import os
+import Logging
 
 /// The single shared diagnostics surface every tier of
 /// `FoundationModelsMetadataRegistry` emits through (plan.md §1 "Graceful
@@ -58,37 +58,86 @@ public enum MetadataDiagnostic: Sendable, Equatable {
     /// of `total` catalog items have no embedding yet.
     case embedCatchUp(pending: Int, total: Int)
 
-    /// Where the default `onDiagnostic` conformer logs.
-    private static let logger = Logger(subsystem: "FoundationModelsMetadataRegistry", category: "MetadataDiagnostic")
-
     /// The default `onDiagnostic` conformer every tier falls back to: logs
-    /// `diagnostic` via `Self.logger` rather than doing nothing, so
-    /// degradation is never silent even when a caller supplies no callback
-    /// of its own.
+    /// `diagnostic` rather than doing nothing, so degradation is never silent
+    /// even when a caller supplies no callback of its own.
+    ///
+    /// Writes one `.notice` record through the swift-log logger of the
+    /// registry (``RegistryTelemetry/loggerLabel``). Each call makes a new
+    /// logger through ``RegistryTelemetry/makeLogger()``, so the record goes
+    /// to the log backend that the host bootstrapped, also when the host
+    /// bootstrapped it after the first call. The metadata of the record holds
+    /// the case name and each associated value under its own
+    /// ``RegistryTelemetry/MetadataKey``, so a backend can query a value
+    /// without a parse of the message. The record holds ids and counts only,
+    /// never content of an item or of a query.
     ///
     /// - Parameter diagnostic: the diagnostic to log.
     public static func log(_ diagnostic: MetadataDiagnostic) {
-        switch diagnostic {
+        let record = diagnostic.logRecord
+        RegistryTelemetry.makeLogger().notice(record.message, metadata: record.metadata)
+    }
+
+    /// The log record that ``log(_:)`` writes for one diagnostic.
+    private struct LogRecord {
+        /// The name of the case that the record reports.
+        let diagnosticCase: RegistryTelemetry.DiagnosticCase
+
+        /// The message of the record. It holds ids and counts only.
+        let message: Logger.Message
+
+        /// The metadata values of the record other than the case name.
+        let values: Logger.Metadata
+
+        /// The metadata of the record: ``values``, and the case name under
+        /// ``RegistryTelemetry/MetadataKey/diagnosticCase``.
+        var metadata: Logger.Metadata {
+            values.merging([RegistryTelemetry.MetadataKey.diagnosticCase: .string(diagnosticCase.rawValue)]) { $1 }
+        }
+    }
+
+    /// The log record that ``log(_:)`` writes for this diagnostic.
+    private var logRecord: LogRecord {
+        typealias Key = RegistryTelemetry.MetadataKey
+        switch self {
         case .duplicateId(let id):
-            logger.notice(
-                "duplicate id \"\(id, privacy: .public)\" in catalog; first occurrence kept, duplicate dropped.",
+            return LogRecord(
+                diagnosticCase: .duplicateId,
+                message: "duplicate id \"\(id)\" in catalog; first occurrence kept, duplicate dropped.",
+                values: [Key.catalogId: .string(id)],
             )
         case .embeddingUnavailable:
-            logger.notice(
-                "no embedder configured or catalog not yet embedded; results are keyword-only (BM25 + trigram).",
+            return LogRecord(
+                diagnosticCase: .embeddingUnavailable,
+                message: """
+                no embedder configured or catalog not yet embedded; \
+                results are keyword-only (BM25 + trigram).
+                """,
+                values: [:],
             )
         case .unknownSelectedId(let id):
-            logger.notice("selection model returned unknown id \"\(id, privacy: .public)\"; ignored.")
+            return LogRecord(
+                diagnosticCase: .unknownSelectedId,
+                message: "selection model returned unknown id \"\(id)\"; ignored.",
+                values: [Key.catalogId: .string(id)],
+            )
         case .retrievalCut(let considered, let kept):
-            logger.notice(
-                """
-                retrieval cut candidates from \(considered, privacy: .public) \
-                to \(kept, privacy: .public) before selection.
-                """,
+            return LogRecord(
+                diagnosticCase: .retrievalCut,
+                message: "retrieval cut candidates from \(considered) to \(kept) before selection.",
+                values: [
+                    Key.retrievalConsidered: .stringConvertible(considered),
+                    Key.retrievalKept: .stringConvertible(kept),
+                ],
             )
         case .embedCatchUp(let pending, let total):
-            logger.notice(
-                "embedding catch-up: \(pending, privacy: .public)/\(total, privacy: .public) item(s) pending.",
+            return LogRecord(
+                diagnosticCase: .embedCatchUp,
+                message: "embedding catch-up: \(pending)/\(total) item(s) pending.",
+                values: [
+                    Key.embedPendingCount: .stringConvertible(pending),
+                    Key.catalogSize: .stringConvertible(total),
+                ],
             )
         }
     }

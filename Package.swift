@@ -249,6 +249,9 @@ let package = Package(
                 // task and reads which tracer the library resolves.
                 .product(name: "Tracing", package: swiftDistributedTracingPackage),
                 .product(name: "InMemoryTracing", package: swiftDistributedTracingPackage),
+                // `DiagnosticsTests` reads the level and the metadata of each
+                // log record that `MetadataDiagnostic.log(_:)` writes.
+                .product(name: "Logging", package: swiftLogPackage),
                 // `TelemetryContentSafetyTests` runs each public entry point
                 // inside a `TelemetryCapture`, which records an issue for each
                 // span, log record or metric that holds content. Only this

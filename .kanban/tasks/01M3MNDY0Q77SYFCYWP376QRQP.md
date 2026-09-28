@@ -97,10 +97,33 @@ comments:
     - note: The run showed no "failed loading cached manifest ... disk I/O error" lines this time. This message comes from a damaged global SwiftPM manifest cache on this machine. The agent did not delete that cache.
     - next: none. The build is clean.
   timestamp: 2026-09-28T21:39:57.598780+00:00
+- actor: claude-code
+  id: 01m3mzcjh39kvrk8qq7q4jd5fd
+  text: |-
+    ### commit — changed
+    - evidence: b897cd9 fix(telemetry): use SearchMode raw value for the search mode attribute
+    - next: none
+  timestamp: 2026-09-28T21:40:27.299656+00:00
+- actor: claude-code
+  id: 01m3mzh424qsw63x8apjb3j97s
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit b897cd9). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. 4 files reviewed. 2 .kanban files not reviewed (ignore rule). All items in the earlier Review Findings section have a check mark.
+    - next: The task is in done. No work remains on this task.
+  timestamp: 2026-09-28T21:42:56.324226+00:00
+- actor: claude-code
+  id: 01m3mzhedkadk6bzmwsqwd723x
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 4 files
+    - test: green — swift test, 188 passed, 0 failed, 0 skipped; swiftlint 0 in 80 files; swiftformat 0/80
+    - commit: b897cd9
+    - review: clean — 4 files, 0 findings, 1/1 prior finding checked
+  timestamp: 2026-09-28T21:43:06.931071+00:00
 depends_on:
 - 01M3MNBPPECY20MSET2VD487DV
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: af80
 title: 'OTel A: add a span for each search and for each catalog build, update and embed'
 ---
 ## What

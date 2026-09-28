@@ -301,8 +301,8 @@ Mechanics, lifted from the shipped `Librarian` and generalized:
 - **One diagnostics channel.** Instead of per-event closures (`onPrefilterCut`-style),
   everything reports through `onDiagnostic: (MetadataDiagnostic) -> Void` — cases
   `.duplicateId`, `.embeddingUnavailable`, `.unknownSelectedId`,
-  `.retrievalCut(considered:kept:)`, `.embedCatchUp(pending:total:)` — defaulting to an
-  `os.Logger` sink (`MetadataDiagnostic.log`).
+  `.retrievalCut(considered:kept:)`, `.embedCatchUp(pending:total:)` — defaulting to a
+  swift-log sink (`MetadataDiagnostic.log`).
 - The session comes through the **`AgentSession` seam** (`respond(to:)` + `fork()` +
   default `respond(to:generating:)` decoding via `GeneratedContent(json:)`), with
   `RoutedAgentSession` wrapping a session vended by
@@ -520,7 +520,7 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
 13. *(shipped refinement)* **One diagnostics channel, not per-event closures** —
     `onDiagnostic: (MetadataDiagnostic) -> Void` with a typed case per event
     (`.duplicateId`, `.embeddingUnavailable`, `.unknownSelectedId`, `.retrievalCut`,
-    `.embedCatchUp`), defaulting to an `os.Logger` sink. New diagnostics add a case,
+    `.embedCatchUp`), defaulting to a swift-log sink. New diagnostics add a case,
     not a parameter.
 14. *(2026-08-30 — supersedes §10's `FoundationModelsRouter` bullet, §1's
     `RoutedSession`/`RoutedEmbedder` seam note, and every "Router-backed" reading of

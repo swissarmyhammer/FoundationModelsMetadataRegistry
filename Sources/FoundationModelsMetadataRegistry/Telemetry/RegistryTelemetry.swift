@@ -185,14 +185,51 @@ enum RegistryTelemetry {
     /// a metric obeys the "no content" rule of ``RegistryTelemetry``.
     enum MetricName {}
 
-    // The logging task of the OpenTelemetry design adds the first keys.
-    // periphery:ignore
     /// The key of each metadata value that a log record of the registry
     /// holds.
     ///
     /// Read the "no content" rule of ``RegistryTelemetry`` before you add a
     /// key. A metadata value is an identifier, a name, a count or a size.
-    enum MetadataKey {}
+    enum MetadataKey {
+        /// The name of the `MetadataDiagnostic` case that the record reports,
+        /// as a ``DiagnosticCase`` raw value.
+        static let diagnosticCase = "diagnostic.case"
+
+        /// The catalog id that a diagnostic names. An id is an identifier of
+        /// the catalog, not content of an item, so it is safe.
+        static let catalogId = "catalog.id"
+
+        /// The count of candidates that a retrieval cut examined.
+        static let retrievalConsidered = "retrieval.considered"
+
+        /// The count of candidates that a retrieval cut kept.
+        static let retrievalKept = "retrieval.kept"
+
+        /// The count of catalog entries that have no embedding yet.
+        static let embedPendingCount = "embed.pending_count"
+
+        /// The count of entries in the catalog.
+        static let catalogSize = "catalog.size"
+    }
+
+    /// The name of one `MetadataDiagnostic` case: the value of
+    /// ``MetadataKey/diagnosticCase``. The raw value is the name of the case.
+    enum DiagnosticCase: String {
+        /// `MetadataDiagnostic.duplicateId(id:)`.
+        case duplicateId
+
+        /// `MetadataDiagnostic.embeddingUnavailable`.
+        case embeddingUnavailable
+
+        /// `MetadataDiagnostic.unknownSelectedId(id:)`.
+        case unknownSelectedId
+
+        /// `MetadataDiagnostic.retrievalCut(considered:kept:)`.
+        case retrievalCut
+
+        /// `MetadataDiagnostic.embedCatchUp(pending:total:)`.
+        case embedCatchUp
+    }
 
     /// Selects the tracer that a call opens its span through.
     ///

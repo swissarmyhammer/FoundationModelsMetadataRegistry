@@ -217,12 +217,16 @@ struct TelemetryContentSafetyTests {
         #expect(selectionMatches.map(\.id) == [Self.selectedID])
     }
 
-    /// The capture is the assertion: it records an issue for each telemetry
-    /// place of the log call that holds a marker.
+    /// The capture records an issue for each telemetry place of the log call
+    /// that holds a marker. The test also makes sure that the capture sees
+    /// the one log record of the call, so the check examines a real record.
     @Test(arguments: diagnostics)
     func loggingADiagnosticKeepsContentOutOfTheTelemetry(diagnostic: MetadataDiagnostic) async throws {
-        try await TelemetryCapture.run(forbidding: Marker.all) { _ in
+        let logRecordCount = try await TelemetryCapture.run(forbidding: Marker.all) { context in
             MetadataDiagnostic.log(diagnostic)
+            return context.logRecords.count
         }
+
+        #expect(logRecordCount == 1)
     }
 }

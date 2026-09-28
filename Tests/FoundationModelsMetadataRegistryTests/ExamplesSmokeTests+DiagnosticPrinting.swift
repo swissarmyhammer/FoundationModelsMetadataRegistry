@@ -72,9 +72,12 @@ extension ExamplesSmokeTests {
             }
         }
 
-        // `MetadataDiagnostic.log(_:)` writes to os.Logger, not to stdout.
-        // `DiagnosticsTests` examines that log. Here, the branch that logs
-        // must not print a line with the diagnostic prefix.
+        // `MetadataDiagnostic.log(_:)` writes to the swift-log logger of the
+        // registry. `DiagnosticsTests` examines that log. When no telemetry
+        // capture bootstrapped swift-log, its default handler writes the
+        // record to stdout, but that line starts with a timestamp, never with
+        // the diagnostic prefix. Here, the branch that logs must not print a
+        // line with the diagnostic prefix.
         #expect(recorder.diagnostics == [Self.duplicateIdDiagnostic])
         #expect(lines.isEmpty)
     }
