@@ -1,6 +1,11 @@
 /// Which tier `MetadataSearcher.search(intent:limit:)` answers a query with
 /// (plan.md §7).
-public enum SearchMode: Sendable {
+///
+/// The raw value of each case is the name of the mode in the telemetry of
+/// the registry: the span attribute `search.mode` holds it. That name is
+/// part of the observable surface of the registry, so change a raw value
+/// only as a deliberate break.
+public enum SearchMode: String, Sendable {
     /// Signals + RRF only — no session, no tokens. Cheap and fast: the whole
     /// story for an MCP resource picker, a UI typeahead, or Skills' "Spotlight
     /// RAG for large catalogs" idea. Answers in milliseconds with `signals`

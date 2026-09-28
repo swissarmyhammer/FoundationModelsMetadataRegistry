@@ -64,8 +64,8 @@ enum RegistryTelemetry {
     /// key. A key names an identifier, a name, a count or a size. It never
     /// names content of the caller.
     enum AttributeKey {
-        /// The configured `SearchMode` of the searcher, as its
-        /// ``RegistryTelemetry/modeName(of:)``.
+        /// The configured `SearchMode` of the searcher, as a `SearchMode` raw
+        /// value.
         static let searchMode = "search.mode"
 
         /// The tier that answered the search, as a ``Tier`` raw value.
@@ -175,22 +175,6 @@ enum RegistryTelemetry {
         /// The embedder threw, or gave a count of vectors other than the
         /// count of pending entries.
         case failed
-    }
-
-    /// Gives the name of a search mode, as ``AttributeKey/searchMode`` holds
-    /// it.
-    ///
-    /// - Parameter mode: the configured mode of a searcher.
-    /// - Returns: `retrieval`, `selection` or `auto`.
-    static func modeName(of mode: SearchMode) -> String {
-        switch mode {
-        case .retrieval:
-            "retrieval"
-        case .selection:
-            "selection"
-        case .auto:
-            "auto"
-        }
     }
 
     // The metrics task of the OpenTelemetry design adds the first names.

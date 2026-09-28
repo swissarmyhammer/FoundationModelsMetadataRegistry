@@ -190,7 +190,7 @@ extension MetadataSearcher {
     ///   whatever the underlying selection session throws.
     public func search(intent: String, limit: Int) async throws -> [Match<Item>] {
         let attributes: SpanAttributes = [
-            RegistryTelemetry.AttributeKey.searchMode: .string(RegistryTelemetry.modeName(of: mode)),
+            RegistryTelemetry.AttributeKey.searchMode: .string(mode.rawValue),
             RegistryTelemetry.AttributeKey.searchLimit: limit.toSpanAttribute(),
         ]
         return try await RegistryTelemetry.withTracedSpan(

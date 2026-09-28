@@ -48,6 +48,55 @@ comments:
     - note: swift build shows warning lines for 'failed loading cached manifest' and 'failed storing manifest ... disk I/O error' for every dependency (swift-metrics, swift-log, foundationmodelsextras, foundationmodelsranker, swift-distributed-tracing, swift-service-context, swift-libgit2, swift-syntax, ulid.swift, yams, stencil, swift-argument-parser, spectre, pathkit). This comes from a damaged global SwiftPM manifest cache on this machine, not from package code. The cache was not deleted. The build still completes and all tests pass.
     - next: none. The build is clean.
   timestamp: 2026-09-28T21:24:48.052273+00:00
+- actor: claude-code
+  id: 01m3myh8dkb4zgx4qqxsd1zwan
+  text: |-
+    ### commit — changed
+    - evidence: d0cb65a feat(telemetry): add spans for search, rank, catalog update, and catalog embed. 16 files. Local commit only, not pushed.
+    - next: none. The task is ready for review.
+  timestamp: 2026-09-28T21:25:32.211988+00:00
+- actor: claude-code
+  id: 01m3mywzhpz0cwphqt261vx5fz
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (commit d0cb65a). 1 finding, 1 confirmed, 0 refuted. Sources/FoundationModelsMetadataRegistry/Telemetry/RegistryTelemetry.swift:185 (code-hygiene/data-driven).
+    - next: Do the open item in "Review Findings (2026-09-28 16:25)". Remove this cause from the full file. Then commit and review again. The task stays in review.
+  timestamp: 2026-09-28T21:31:56.342212+00:00
+- actor: claude-code
+  id: 01m3myx97kbced563cxs2jd9sg
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 12 files (3 new); Extras updated to 6c399a4
+    - test: green — swift test, 187 passed, 0 failed, 0 skipped; swiftlint 0 in 79 files; swiftformat 0/79
+    - commit: d0cb65a
+    - review: findings — Sources/FoundationModelsMetadataRegistry/Telemetry/RegistryTelemetry.swift:185
+  timestamp: 2026-09-28T21:32:06.259569+00:00
+- actor: claude-code
+  id: 01m3mz710bc8t3gmyjx424gbxx
+  text: |-
+    ### Fix for finding code-hygiene/data-driven (RegistryTelemetry.swift)
+    - SearchMode is in this package (Sources/.../SearchMode.swift). It has no associated values. Thus the fix compiles, and there is no conflict.
+    - I did not use a `Dictionary<SearchMode, String>`. The carve-out of the data-driven rule says that a map lookup gives an optional, so a new case compiles and makes a missing row at run time. The rule accepts a fix only when the lookup is total, for example a raw value.
+    - Change: `public enum SearchMode: String, Sendable`. The implicit raw values are `retrieval`, `selection`, `auto`, the same names as before. The switch `RegistryTelemetry.modeName(of:)` is deleted. `search(intent:limit:)` now sets `search.mode` to `mode.rawValue`, the same pattern as `Tier`, `Ranker`, `EmbedSource` and `EmbedOutcome`. The doc of `AttributeKey.searchMode` and of `SearchMode` tell this.
+    - Public API note: `SearchMode` now also conforms to `RawRepresentable` (it has `rawValue` and `init?(rawValue:)`). This is an addition, not a break.
+    - No other switch that is a table was in the diff of this task. The `switch mode` in `tierAnswer(intent:limit:)` calls different code in each arm, so it is control flow.
+    - TDD: the new test `Tests/.../SearchModeRawValueTests.swift` failed first with "value of type 'SearchMode' has no member 'rawValue'". It passes now.
+  timestamp: 2026-09-28T21:37:25.515323+00:00
+- actor: claude-code
+  id: 01m3mz73meyc3d3er2nj03me09
+  text: |-
+    ### implement — changed
+    - evidence: 4 files — Sources/FoundationModelsMetadataRegistry/SearchMode.swift, Sources/FoundationModelsMetadataRegistry/Telemetry/RegistryTelemetry.swift, Sources/FoundationModelsMetadataRegistry/MetadataSearcher+Search.swift, Tests/FoundationModelsMetadataRegistryTests/SearchModeRawValueTests.swift (new). `swift test`: 188 tests in 21 suites passed, 0 warnings. `swiftlint lint`: 0 violations. `swiftformat . --lint`: 0/80 files need formatting.
+    - next: /review. The task stays in doing. Not committed.
+  timestamp: 2026-09-28T21:37:28.206381+00:00
+- actor: claude-code
+  id: 01m3mzbngymevjn50w961tewh7
+  text: |-
+    ### test — green
+    - evidence: `swift test` — 188 tests in 21 suites passed, 0 failed, 0 skipped. `swiftlint` — 0 violations in 80 files. `swiftformat . --lint` — 0 of 80 files need format changes, 2 files skipped by config.
+    - note: The run showed no "failed loading cached manifest ... disk I/O error" lines this time. This message comes from a damaged global SwiftPM manifest cache on this machine. The agent did not delete that cache.
+    - next: none. The build is clean.
+  timestamp: 2026-09-28T21:39:57.598780+00:00
 depends_on:
 - 01M3MNBPPECY20MSET2VD487DV
 position_column: doing
@@ -87,3 +136,12 @@ Subtasks:
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
 - Do not run `swift format`. #otel #search-tools #catalog #embedding
+
+## Review Findings (2026-09-28 16:25)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 12 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsMetadataRegistry/Telemetry/RegistryTelemetry.swift:185` `code-hygiene/data-driven` — A switch statement over a closed enum (`SearchMode`) where each arm returns only a different string constant. This is a table written as control flow. The same logic can be expressed as a data-driven lookup (e.g., a static dictionary or a rawValue property), which is easier to read, extend, and verify correct. Replace the switch with a static `Dictionary<SearchMode, String>` or, if `SearchMode` has a `rawValue` property matching the output strings, use `mode.rawValue` directly.
