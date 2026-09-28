@@ -60,36 +60,20 @@ extension MetadataSearcher {
     ///
     /// A searcher built with `init(sharing:mode:weights:selection:
     /// onDiagnostic:)` does not embed the catalog itself. It awaits the one
-    /// shared embed of its `SharedCatalogEmbedding` and merges those vectors
-    /// into its own `index` (see `mergeSharedEmbeddings(from:)`).
+    /// shared embed of its `SharedCatalogEmbedding` and merges that batch
+    /// into its own live `index`, through the same hash-checked
+    /// `MetadataIndex.EmbeddedBatch.merged(into:)` as its own catch-up. Thus
+    /// an `update(items:)` that changed `index` during the shared embed
+    /// always wins. When the shared embed failed, there is no batch and this
+    /// searcher stays keyword-only for the pending entries.
     private func runFirstSearchCatchUp() async {
         defer { firstSearchCatchUp = .done }
         if let sharedEmbedding {
-            await mergeSharedEmbeddings(from: sharedEmbedding.embeddedIndex())
+            guard let batch = await sharedEmbedding.embeddedBatch() else { return }
+            index = batch.merged(into: index)
             return
         }
         guard let embedder else { return }
-        let pending = index.pendingEmbeddings()
-        guard !pending.ids.isEmpty else { return }
-        await catchUpEmbeddings(ids: pending.ids, texts: pending.texts, embeddedFrom: index, with: embedder)
-    }
-
-    /// Merges the stored embeddings of `embedded` into the live `index`.
-    ///
-    /// `embedded` is the result of the one shared catalog embed (see
-    /// `SharedCatalogEmbedding`). The merge goes through the hash check of
-    /// `MetadataIndex.mergingEmbeddings(ids:vectors:embeddedFrom:into:)`, so
-    /// a vector lands only where the live entry still has the embedded text
-    /// that the vector was made from. Thus an `update(items:)` that changed
-    /// `index` during the shared embed always wins. When the shared embed
-    /// failed, `embedded` has no new vectors and this searcher stays
-    /// keyword-only for the pending entries.
-    ///
-    /// - Parameter embedded: the index that the shared catalog embed returned.
-    private func mergeSharedEmbeddings(from embedded: MetadataIndex<Item>) {
-        let stored = embedded.storedEmbeddings()
-        index = MetadataIndex.mergingEmbeddings(
-            ids: stored.ids, vectors: stored.vectors, embeddedFrom: embedded, into: index,
-        )
+        await catchUpEmbeddings(with: embedder)
     }
 }

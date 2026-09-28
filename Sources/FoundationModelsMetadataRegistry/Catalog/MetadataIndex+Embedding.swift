@@ -3,8 +3,8 @@
 /// the batch-merge helpers `MetadataSearcher`'s catch-up paths call through.
 extension MetadataIndex {
     /// The result of `incrementalBaseline(items:previous:onDiagnostic:)`: the
-    /// rebuilt baseline index, plus the ids and rendered texts of every
-    /// entry still needing an embedder call, positionally aligned.
+    /// rebuilt baseline index, plus the ids of every entry still needing an
+    /// embedder call.
     struct IncrementalBaseline: Sendable {
         /// The rebuilt index, with every reusable embedding already carried
         /// over from `previous`.
@@ -12,9 +12,38 @@ extension MetadataIndex {
 
         /// The ids of every entry `baseline` still has no embedding for.
         let pendingEmbedIDs: [String]
+    }
 
-        /// The rendered embedded texts, positionally aligned with `pendingEmbedIDs`.
-        let textsToEmbed: [String]
+    /// The vectors of one embed batch, and the index that the batch was embedded from.
+    ///
+    /// `embedPendingEntries(with:onDiagnostic:)` makes it. The caller merges
+    /// it with `merged(into:)`, into the index that it has after the embed.
+    struct EmbeddedBatch: Sendable {
+        /// The ids of the embedded entries, positionally aligned with `vectors`.
+        let ids: [String]
+
+        /// One vector for each id in `ids`.
+        let vectors: [[Float]]
+
+        /// The index that the batch was embedded from. Its embedded-text
+        /// hashes are what the merge target must still match.
+        let source: MetadataIndex<Item>
+
+        /// Returns a copy of `index` with the vectors of this batch merged in.
+        ///
+        /// The merge goes through the hash check of
+        /// `mergingEmbeddings(ids:vectors:embeddedFrom:into:)`: a vector lands
+        /// only where the entry of `index` still has the embedded text that
+        /// the vector was made from.
+        ///
+        /// - Parameter index: the index to merge into. This is `source` for
+        ///   an index build, or the live index of a searcher, which can have
+        ///   changed during the embed.
+        /// - Returns: a copy of `index` with the vectors applied wherever the
+        ///   hash check passed.
+        func merged(into index: MetadataIndex<Item>) -> MetadataIndex<Item> {
+            mergingEmbeddings(ids: ids, vectors: vectors, embeddedFrom: source, into: index)
+        }
     }
 
     /// Builds an in-memory index from `items` with optional async embedding.
@@ -67,15 +96,11 @@ extension MetadataIndex {
         previous: MetadataIndex<Item>? = nil,
         onDiagnostic: @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
     ) async -> MetadataIndex<Item> {
-        let result = incrementalBaseline(items: items, previous: previous, onDiagnostic: onDiagnostic)
-        guard let embedder, !result.pendingEmbedIDs.isEmpty,
-              let vectors = await embedder.checkedVectors(for: result.textsToEmbed)
-        else {
-            return result.baseline
-        }
-        return mergingEmbeddings(
-            ids: result.pendingEmbedIDs, vectors: vectors, embeddedFrom: result.baseline, into: result.baseline,
-        )
+        let baseline = incrementalBaseline(items: items, previous: previous, onDiagnostic: onDiagnostic).baseline
+        // An index build reports no `.embedCatchUp`: the embed is part of the
+        // build, not a catch-up of an index that exists already.
+        guard let embedder, let batch = await baseline.embedPendingEntries(with: embedder) else { return baseline }
+        return batch.merged(into: baseline)
     }
 
     /// The synchronous, hash-guarded half of index-build/update.
@@ -88,7 +113,7 @@ extension MetadataIndex {
     /// Factored out of `build(items:embedder:previous:onDiagnostic:)` so
     /// `MetadataSearcher.update(items:)` (plan.md §8, hot reload) can assign
     /// the returned baseline to its actor-isolated `index` *before* awaiting
-    /// an embedder call with the returned `pendingEmbedIDs`/`textsToEmbed` —
+    /// an embedder call for the returned `pendingEmbedIDs` —
     /// actor reentrancy across that later `await` is what lets a concurrent
     /// `search(intent:limit:)` see this rebuilt baseline and serve
     /// keyword-only results for the still-pending items in the interim,
@@ -101,8 +126,8 @@ extension MetadataIndex {
     ///   - onDiagnostic: forwarded to `init(items:onDiagnostic:)` for
     ///     duplicate-id reporting.
     /// - Returns: the baseline index (embeddings carried over wherever reuse
-    ///   applied, `nil` everywhere else), plus the ids and matching texts
-    ///   still needing an embedder call, positionally aligned.
+    ///   applied, `nil` everywhere else), plus the ids still needing an
+    ///   embedder call.
     static func incrementalBaseline(
         items: [Item],
         previous: MetadataIndex<Item>?,
@@ -135,17 +160,15 @@ extension MetadataIndex {
         }
 
         let reused = MetadataIndex(ids: baseline.ids, entriesByID: entriesByID)
-        let pending = reused.pendingEmbeddings()
-        return IncrementalBaseline(baseline: reused, pendingEmbedIDs: pending.ids, textsToEmbed: pending.texts)
+        return IncrementalBaseline(baseline: reused, pendingEmbedIDs: reused.pendingEmbeddings().ids)
     }
 
     /// The ids and embedded texts of every entry with no embedding yet, positionally aligned, in `ids` order.
     ///
     /// This is the batch an embed catch-up hands the embedder (plan.md §8).
-    /// `incrementalBaseline(items:previous:onDiagnostic:)` reads it off the
-    /// baseline it just built, and `MetadataSearcher`'s first-search
-    /// catch-up reads it off a synchronously built index no embedder has
-    /// seen yet.
+    /// `incrementalBaseline(items:previous:onDiagnostic:)` reads its ids off
+    /// the baseline it just built, and `embedPendingEntries(with:
+    /// onDiagnostic:)` reads it for each catalog embed.
     ///
     /// - Returns: the pending ids and their embedded texts, or two empty
     ///   arrays when every entry already carries an embedding.
@@ -155,22 +178,6 @@ extension MetadataIndex {
             return (id, entry.embeddedText)
         }
         return (pending.map(\.id), pending.map(\.text))
-    }
-
-    /// The ids and stored embeddings of every entry that has an embedding, positionally aligned, in `ids` order.
-    ///
-    /// This is the opposite of `pendingEmbeddings()`. A `MetadataSearcher`
-    /// that shares a `SharedCatalogEmbedding` reads it off the shared
-    /// embedded index, and merges these vectors into its own index.
-    ///
-    /// - Returns: the embedded ids and their vectors, or two empty arrays
-    ///   when no entry has an embedding.
-    func storedEmbeddings() -> (ids: [String], vectors: [[Float]]) {
-        let stored = ids.compactMap { id -> (id: String, vector: [Float])? in
-            guard let embedding = entriesByID[id]?.embedding else { return nil }
-            return (id, embedding)
-        }
-        return (stored.map(\.id), stored.map(\.vector))
     }
 
     /// Returns a copy of `index` with `ids`' embeddings replaced by `vectors`.
@@ -289,21 +296,37 @@ extension MetadataIndex {
     }
 }
 
-/// The one catalog-batch embed call that every catalog embed of this package goes through.
-extension TextEmbedding {
-    /// Embeds `texts` in one batch, and returns the vectors only when there is one for each text.
+/// The one embed step that every catalog embed of this package goes through.
+extension MetadataIndex {
+    /// Embeds the entries of this index that have no embedding, in one batch.
     ///
     /// Every catalog embed calls through this function: index build, the
-    /// catch-ups of `MetadataSearcher`, and `SharedCatalogEmbedding`. A
-    /// failed embed is graceful degradation, not an error that the caller
-    /// must handle: the caller keeps the embeddings it had.
+    /// first-search catch-up and the reload embed loop of `MetadataSearcher`,
+    /// and `SharedCatalogEmbedding`. The caller merges the result with
+    /// `EmbeddedBatch.merged(into:)`.
     ///
-    /// - Parameter texts: the texts to embed.
-    /// - Returns: one vector for each text, positionally aligned with
-    ///   `texts`, or `nil` when `embed(_:)` throws or returns a vector count
-    ///   other than `texts.count`.
-    func checkedVectors(for texts: [String]) async -> [[Float]]? {
-        guard let vectors = try? await embed(texts), vectors.count == texts.count else { return nil }
-        return vectors
+    /// A no-op, with no diagnostic and no embedder call, when no entry is
+    /// pending. Otherwise reports `.embedCatchUp(pending:total:)` one time
+    /// before the embedder call. A failed embed is graceful degradation, not
+    /// an error that the caller must handle: the caller keeps the embeddings
+    /// it had.
+    ///
+    /// - Parameters:
+    ///   - embedder: the embedder to embed the pending entries with.
+    ///   - onDiagnostic: called with `.embedCatchUp(pending:total:)` before
+    ///     the embedder call. Defaults to reporting nothing.
+    /// - Returns: the embedded batch, or `nil` when no entry is pending, when
+    ///   `embed(_:)` throws, or when it returns a vector count other than
+    ///   the pending count.
+    func embedPendingEntries(
+        with embedder: any TextEmbedding,
+        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void = { _ in },
+    ) async -> EmbeddedBatch? {
+        let pending = pendingEmbeddings()
+        guard !pending.ids.isEmpty else { return nil }
+        onDiagnostic(.embedCatchUp(pending: pending.ids.count, total: count))
+        guard let vectors = try? await embedder.embed(pending.texts), vectors.count == pending.texts.count
+        else { return nil }
+        return EmbeddedBatch(ids: pending.ids, vectors: vectors, source: self)
     }
 }

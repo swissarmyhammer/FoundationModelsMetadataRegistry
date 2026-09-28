@@ -35,6 +35,64 @@ comments:
     - evidence: `swift test` — 157 tests passed, 0 failed, 0 skipped, 0 warnings. `swiftformat . --lint` — 0 of 72 files need a change. `swiftlint` — 0 rule breaks, 0 serious rule breaks, in 72 files.
     - next: The code can go to review.
   timestamp: 2026-09-28T18:40:08.426716+00:00
+- actor: claude-code
+  id: 01m3mn3ht3j700d67dzb7x0hgh
+  text: |-
+    ### commit — changed
+    - evidence: bf058c6 feat(searcher): add SharedCatalogEmbedding for two searchers
+    - next: run review
+  timestamp: 2026-09-28T18:40:45.891259+00:00
+- actor: claude-code
+  id: 01m3mnfm1encsrbfmgqfdyvp7c
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (bf058c6). 1 finding (1 confirmed, 2 refuted). Sources/FoundationModelsMetadataRegistry/SharedCatalogEmbedding.swift:118 duplication/duplication.
+    - next: Extract the embed-and-merge logic into one shared function. Make embeddingPendingEntries() and catchUpEmbeddings() use it. Then do the review again.
+  timestamp: 2026-09-28T18:47:21.390424+00:00
+- actor: claude-code
+  id: 01m3mnfwn94vw3smev86rjcz8c
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 6 files
+    - test: green — swift test, 157 passed, 0 failed, 0 skipped, 0 warnings; swiftlint 0; swiftformat 0/72
+    - commit: bf058c6
+    - review: findings — Sources/FoundationModelsMetadataRegistry/SharedCatalogEmbedding.swift:118
+  timestamp: 2026-09-28T18:47:30.217410+00:00
+- actor: claude-code
+  id: 01m3mnjmdaz4rfxtvngz222eef
+  text: |-
+    Picked up the review finding again. Research:
+    - Four sites do "get the pending entries, stop when there are none, report `.embedCatchUp`, call `checkedVectors`, stop when it fails, merge": `SharedCatalogEmbedding.embeddingPendingEntries`, `MetadataIndex.build`, `runFirstSearchCatchUp` (MetadataSearcher+FirstSearchCatchUp.swift) with `catchUpEmbeddings`, and `runReloadEmbedLoop` (MetadataSearcher+ReloadEmbedLoop.swift) with `catchUpEmbeddings`.
+    - The merge target is different: build and the shared embed merge into the index that they embedded; the searcher merges into its live `index` after the `await`, because an `update(items:)` can change it.
+    - `build` does not report `.embedCatchUp`. The other three sites do.
+    Plan: add `MetadataIndex.embedPendingEntries(with:onDiagnostic:) async -> EmbeddedBatch?` and `EmbeddedBatch.merged(into:)`. All four sites use it. `catchUpEmbeddings` loses its `ids`/`texts`/`embeddedFrom` parameters and reads the pending entries itself. `IncrementalBaseline.textsToEmbed` then has no reader, so I remove it.
+  timestamp: 2026-09-28T18:49:00.074663+00:00
+- actor: claude-code
+  id: 01m3mp1xyzv8rv8314jmw8v3pe
+  text: |-
+    Fix for the duplication finding landed (TDD: I wrote 4 tests in the new EmbedPendingEntriesTests.swift first; they did not compile because `embedPendingEntries` did not exist).
+    - New `MetadataIndex.embedPendingEntries(with:onDiagnostic:) async -> EmbeddedBatch?`: it reads the pending entries, stops when there are none, reports `.embedCatchUp`, embeds in one batch, and checks the vector count. The default `onDiagnostic` reports nothing, so `build` keeps its old behavior (no `.embedCatchUp`).
+    - New `MetadataIndex.EmbeddedBatch` (ids, vectors, source) with `merged(into:)`, the one caller of the hash-checked `mergingEmbeddings`.
+    - All catalog embeds now use these two functions: `MetadataIndex.build`, `SharedCatalogEmbedding.embeddedBatch()` (was `embeddedIndex()`; it now keeps the batch, not a merged index), `MetadataSearcher.catchUpEmbeddings(with:)` (lost its `ids`/`texts`/`embeddedFrom` parameters), and the shared path of `runFirstSearchCatchUp`.
+    - Removed code with no callers after the change: `TextEmbedding.checkedVectors(for:)`, `MetadataIndex.storedEmbeddings()`, `IncrementalBaseline.textsToEmbed`, `SharedCatalogEmbedding.embeddingPendingEntries`, `MetadataSearcher.mergeSharedEmbeddings(from:)`, and the pending guards in `runReloadEmbedLoop` and `runFirstSearchCatchUp`.
+    - Note: `swift build`/`swift test` print SwiftPM "failed loading cached manifest ... disk I/O error" warnings. These come from the SwiftPM manifest cache, not from the code. The compiler gave 0 warnings.
+  timestamp: 2026-09-28T18:57:21.375161+00:00
+- actor: claude-code
+  id: 01m3mp215ndrh7zjethnjhd4bn
+  text: |-
+    ### implement — changed
+    - evidence: `swift test` 161 tests in 17 suites passed, 0 compiler warnings; swiftlint 0 violations in 73 files; `swiftformat . --lint` 0/73 files. Files: Sources/FoundationModelsMetadataRegistry/Catalog/MetadataIndex+Embedding.swift, Sources/FoundationModelsMetadataRegistry/SharedCatalogEmbedding.swift, Sources/FoundationModelsMetadataRegistry/MetadataSearcher+Search.swift, Sources/FoundationModelsMetadataRegistry/MetadataSearcher+FirstSearchCatchUp.swift, Sources/FoundationModelsMetadataRegistry/MetadataSearcher+ReloadEmbedLoop.swift, Sources/FoundationModelsMetadataRegistry/MetadataSearcher.swift, Tests/FoundationModelsMetadataRegistryTests/EmbedPendingEntriesTests.swift (new)
+    - next: /review
+  timestamp: 2026-09-28T18:57:24.661122+00:00
+- actor: claude-code
+  id: 01m3mp8fzx7yn17pkqhv080186
+  text: |-
+    ### test — green
+    - evidence: `swift test` — 161 tests passed, 0 failed, 0 skipped, in 17 suites. `swiftlint` — 0 violations in 73 files. `swiftformat . --lint` — 0 of 73 files need a change, 2 files skipped by rule.
+    - no code fix was needed. all tests, lint, and format checks were clean on this run.
+    - note on the "failed loading cached manifest ... disk I/O error" warning from the last run: it does persist, and it is not caused by this package's code. `sqlite3 ~/Library/Caches/org.swift.swiftpm/manifests/manifest.db "PRAGMA integrity_check;"` fails with "disk I/O error (10)" even run from an unrelated directory, with no swift process active. this proves the shared, global SwiftPM manifest cache database is corrupt in this environment. a `swift package plugin --list` run reproduced the same "failed loading cached manifest" and "failed storing manifest" warnings for every package in the graph, including this one. this is an environment fault in the local manifest cache, not a defect in this repository's code. it did not fail the build or the tests; SwiftPM falls back to reparsing the manifest when the cache read fails. a person or CI job can clear it by deleting `~/Library/Caches/org.swift.swiftpm/manifests` to force a fresh cache.
+    - next: none. board can move this task forward.
+  timestamp: 2026-09-28T19:00:56.445905+00:00
 position_column: doing
 position_ordinal: '80'
 title: Let two synchronously built MetadataSearchers share one catalog embed
@@ -68,3 +126,12 @@ FoundationModelsMultitool task ^57bedj6 (01M3FPF7XG14A2MKW8457BEDJ6) waits on th
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #cross-repo #embedding
+
+## Review Findings (2026-09-28 13:41)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 6 file(s) reviewed, 6 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+- [x] `Sources/FoundationModelsMetadataRegistry/SharedCatalogEmbedding.swift:118` `duplication/duplication` — `embeddingPendingEntries()` duplicates the embed-and-merge pattern already in `build()` (MetadataIndex+Embedding.swift:64) and `catchUpEmbeddings()` (MetadataSearcher+Search.swift:132). All three get pending embeddings, guard, report diagnostic, call `checkedVectors`, guard result, and merge. Extract the embed-and-merge logic into a shared function. Both `embeddingPendingEntries()` and `catchUpEmbeddings()` can delegate to it, parameterizing how the pending entries are obtained and how the result is returned.

@@ -68,9 +68,7 @@ extension MetadataSearcher {
     private func runReloadEmbedLoop(with embedder: any TextEmbedding) async {
         defer { reloadEmbedLoop = .idle }
         repeat {
-            let pending = index.pendingEmbeddings()
-            guard !pending.ids.isEmpty else { continue }
-            await catchUpEmbeddings(ids: pending.ids, texts: pending.texts, embeddedFrom: index, with: embedder)
+            await catchUpEmbeddings(with: embedder)
         } while takeNewerCatalogRequest()
     }
 

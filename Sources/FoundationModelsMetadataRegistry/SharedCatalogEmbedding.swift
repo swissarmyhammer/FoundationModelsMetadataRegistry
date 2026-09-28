@@ -31,9 +31,10 @@ public actor SharedCatalogEmbedding<Item: SearchableMetadata> {
         case pending
 
         /// A search started the catalog embed. `task` returns the embedded
-        /// index. Every later caller awaits the same `task`, also after it
+        /// batch, or `nil` when nothing was pending or the embed failed.
+        /// Every later caller awaits the same `task`, also after it
         /// completed, so the catalog is embedded one time only.
-        case started(Task<MetadataIndex<Item>, Never>)
+        case started(Task<MetadataIndex<Item>.EmbeddedBatch?, Never>)
     }
 
     /// The index that each sharing searcher starts from. It is not embedded
@@ -77,17 +78,19 @@ public actor SharedCatalogEmbedding<Item: SearchableMetadata> {
         catalogEmbed = .pending
     }
 
-    /// Returns `index` with its pending entries embedded, and embeds them on the first call only.
+    /// Returns the embedded batch of the pending entries of `index`, and embeds them on the first call only.
     ///
-    /// The first call starts the catalog embed in a stored `Task`. Every
-    /// other call, concurrent or later, awaits that same task. The task is
-    /// not cancelled when a caller is cancelled, so one cancelled search does
-    /// not cancel the embed that the other searchers wait for.
+    /// The first call starts the catalog embed in a stored `Task`, through
+    /// `MetadataIndex.embedPendingEntries(with:onDiagnostic:)`. Every other
+    /// call, concurrent or later, awaits that same task. The task is not
+    /// cancelled when a caller is cancelled, so one cancelled search does not
+    /// cancel the embed that the other searchers wait for. Each sharing
+    /// searcher merges the batch into its own index with
+    /// `MetadataIndex.EmbeddedBatch.merged(into:)`.
     ///
-    /// - Returns: `index` with an embedding for each entry that the embed
-    ///   gave a vector. When the embed failed, `index` with no new
-    ///   embeddings.
-    func embeddedIndex() async -> MetadataIndex<Item> {
+    /// - Returns: the one embedded batch, or `nil` when no entry of `index`
+    ///   was pending or the embed failed.
+    func embeddedBatch() async -> MetadataIndex<Item>.EmbeddedBatch? {
         switch catalogEmbed {
         case .started(let task):
             return await task.value
@@ -95,36 +98,10 @@ public actor SharedCatalogEmbedding<Item: SearchableMetadata> {
             let index = index
             let embedder = embedder
             let onDiagnostic = onDiagnostic
-            let task = Task {
-                await Self.embeddingPendingEntries(of: index, with: embedder, onDiagnostic: onDiagnostic)
-            }
+            let task = Task { await index.embedPendingEntries(with: embedder, onDiagnostic: onDiagnostic) }
             catalogEmbed = .started(task)
             return await task.value
         }
-    }
-
-    /// Embeds the pending entries of `index` in one batch, and returns the embedded index.
-    ///
-    /// A no-op, with no diagnostic and no embedder call, when no entry of
-    /// `index` is pending. Otherwise reports `.embedCatchUp(pending:total:)`
-    /// one time before the embedder call.
-    ///
-    /// - Parameters:
-    ///   - index: the index to embed the pending entries of.
-    ///   - embedder: the embedder to embed them with.
-    ///   - onDiagnostic: called with `.embedCatchUp(pending:total:)`.
-    /// - Returns: `index` with the new vectors merged in, or `index` with no
-    ///   change when the embed failed.
-    private static func embeddingPendingEntries(
-        of index: MetadataIndex<Item>,
-        with embedder: any TextEmbedding,
-        onDiagnostic: @Sendable (MetadataDiagnostic) -> Void,
-    ) async -> MetadataIndex<Item> {
-        let pending = index.pendingEmbeddings()
-        guard !pending.ids.isEmpty else { return index }
-        onDiagnostic(.embedCatchUp(pending: pending.ids.count, total: index.count))
-        guard let vectors = await embedder.checkedVectors(for: pending.texts) else { return index }
-        return MetadataIndex.mergingEmbeddings(ids: pending.ids, vectors: vectors, embeddedFrom: index, into: index)
     }
 }
 

@@ -67,7 +67,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// degrades to keyword-only. Catalog items are embedded in batches, not
     /// per search: at index-build time via `MetadataIndex.build(items:
     /// embedder:previous:onDiagnostic:)`, and by the two catch-ups that
-    /// share `catchUpEmbeddings(ids:texts:embeddedFrom:with:)` — the
+    /// share `catchUpEmbeddings(with:)` — the
     /// single-flight reload loop of `update(items:)` for the blocks a reload
     /// changed (see `ReloadEmbedLoop`), and the first search for a
     /// synchronously built index (see `FirstSearchCatchUp`).

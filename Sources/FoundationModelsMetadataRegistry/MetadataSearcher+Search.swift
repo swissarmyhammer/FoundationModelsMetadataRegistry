@@ -93,19 +93,21 @@ extension MetadataSearcher {
         await embedNewestCatalog(with: embedder)
     }
 
-    /// Embeds `texts` through `embedder`, then merges the vectors into the live `index` under `ids`.
+    /// Embeds every entry of the live `index` that has no embedding, then merges the vectors into the live `index`.
     ///
     /// The one place a catch-up batch lands, shared by the reload embed loop
     /// (`runReloadEmbedLoop(with:)`) and the first-search catch-up
-    /// (`runFirstSearchCatchUp()`). Internal, not private, because the reload
-    /// embed loop lives in its own file. Reports the
-    /// pending/total gap via `.embedCatchUp` before the embedder call, once.
+    /// (`runFirstSearchCatchUp()`). Internal, not private, because both
+    /// callers live in their own files. The embed goes through
+    /// `MetadataIndex.embedPendingEntries(with:onDiagnostic:)`: a no-op when
+    /// nothing is pending, and otherwise one `.embedCatchUp` report before
+    /// the embedder call.
     ///
     /// Merges into `index` as it stands *after* the suspension -- not into
-    /// the stale `baseline` this batch was embedded from -- and only where
-    /// `index`'s current entry still matches `baseline`'s block hash for
-    /// that id (`MetadataIndex.mergingEmbeddings(ids:vectors:embeddedFrom:
-    /// into:)`'s hash check). A concurrent `update(items:)` call may have
+    /// the stale baseline this batch was embedded from -- and only where
+    /// `index`'s current entry still matches the baseline's block hash for
+    /// that id (`MetadataIndex.EmbeddedBatch.merged(into:)`'s hash check).
+    /// A concurrent `update(items:)` call may have
     /// moved the catalog on in the meantime (actor reentrancy across the
     /// `await`); its result must win, never be silently clobbered by this
     /// call's now-stale vector finishing late -- including when that
@@ -116,29 +118,16 @@ extension MetadataSearcher {
     /// never content, and the tier ranks nothing, so a caught-up embedding
     /// changes no answer the tier can give.
     ///
-    /// An embedder that throws, or returns a vector count other than
-    /// `ids.count`, leaves every entry with whatever embedding it had --
+    /// An embedder that throws, or returns a vector count other than the
+    /// pending count, leaves every entry with whatever embedding it had --
     /// graceful degradation, the same as `MetadataIndex.build(items:
     /// embedder:previous:onDiagnostic:)`; a later search then reports the
     /// still-absent embeddings via `.embeddingUnavailable`.
     ///
-    /// - Parameters:
-    ///   - ids: the ids to embed, positionally aligned with `texts`.
-    ///   - texts: the rendered blocks to embed, one per id.
-    ///   - baseline: the index this batch was read from -- `ids`' block
-    ///     hashes there are what `index`'s current entries must still match
-    ///     for the merge to apply.
-    ///   - embedder: the embedder to embed `texts` with.
-    func catchUpEmbeddings(
-        ids: [String],
-        texts: [String],
-        embeddedFrom baseline: MetadataIndex<Item>,
-        with embedder: any TextEmbedding,
-    ) async {
-        onDiagnostic(.embedCatchUp(pending: ids.count, total: baseline.count))
-        guard let vectors = await embedder.checkedVectors(for: texts) else { return }
-        let merged = MetadataIndex.mergingEmbeddings(ids: ids, vectors: vectors, embeddedFrom: baseline, into: index)
-        index = merged
+    /// - Parameter embedder: the embedder to embed the pending entries with.
+    func catchUpEmbeddings(with embedder: any TextEmbedding) async {
+        guard let batch = await index.embedPendingEntries(with: embedder, onDiagnostic: onDiagnostic) else { return }
+        index = batch.merged(into: index)
     }
 
     /// Searches the catalog for `intent`, returning at most `limit` matches ordered by descending fused score.
