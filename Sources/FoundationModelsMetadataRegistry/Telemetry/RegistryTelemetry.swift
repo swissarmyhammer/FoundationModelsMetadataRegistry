@@ -177,13 +177,74 @@ enum RegistryTelemetry {
         case failed
     }
 
-    // The metrics task of the OpenTelemetry design adds the first names.
-    // periphery:ignore
     /// The name of each metric that the registry records.
     ///
     /// Each name starts with ``RegistryTelemetry/namePrefix``. A dimension of
-    /// a metric obeys the "no content" rule of ``RegistryTelemetry``.
-    enum MetricName {}
+    /// a metric obeys the "no content" rule of ``RegistryTelemetry``: its
+    /// value comes from a small fixed set. A catalog id, a searcher id or any
+    /// other value with no fixed limit is never a dimension.
+    ///
+    /// The registry makes each metric at the time that it records a value,
+    /// and never keeps a metric in a `static let`. A metric keeps the
+    /// metrics factory of the time that it was made, so a kept metric that
+    /// was made before the host bootstrapped its metrics backend would never
+    /// reach that backend.
+    enum MetricName {
+        /// A `Timer` (nanoseconds): the duration of one
+        /// `MetadataSearcher.search(intent:limit:)` call, the first-search
+        /// catch-up included. Each call records one value, also a call that
+        /// throws.
+        ///
+        /// Dimensions: ``DimensionKey/tier``, as a ``Tier`` raw value, or
+        /// ``noTier`` when a `.selection` search has no selection tier; and
+        /// ``DimensionKey/outcome``, as an ``Outcome`` raw value.
+        static let searchDuration = namePrefix + "search.duration"
+
+        /// A `Timer` (nanoseconds): the duration of one call to a ranker of
+        /// a search, the hybrid ranker of the retrieval tier or the
+        /// selection tier. A search that ranks nothing records no value.
+        ///
+        /// Dimension: ``DimensionKey/ranker``, as a ``Ranker`` raw value.
+        static let rankDuration = namePrefix + "rank.duration"
+
+        /// A `Gauge` (a count of items): the count of entries in the catalog
+        /// index of a searcher. A searcher records it when it is made, and
+        /// when `update(items:)` changes the catalog. The hash-guarded no-op
+        /// of `update(items:)` records nothing.
+        ///
+        /// No dimensions. When two or more searchers are in one process, the
+        /// gauge holds the last value that any searcher recorded.
+        static let catalogSize = namePrefix + "catalog.size"
+    }
+
+    /// The key of each dimension that a metric of the registry holds.
+    ///
+    /// Read the "no content" rule of ``RegistryTelemetry`` before you add a
+    /// key. The value of each key comes from a small fixed set.
+    enum DimensionKey {
+        /// The tier that answered a search, as a ``Tier`` raw value, or
+        /// ``noTier``.
+        static let tier = "tier"
+
+        /// The result of a search, as an ``Outcome`` raw value.
+        static let outcome = "outcome"
+
+        /// The ranker of a rank duration, as a ``Ranker`` raw value.
+        static let ranker = "ranker"
+    }
+
+    /// The value of ``DimensionKey/tier`` when no tier answered: a
+    /// `.selection` search on a searcher that has no selection tier.
+    static let noTier = "none"
+
+    /// The result of a search: the value of ``DimensionKey/outcome``.
+    enum Outcome: String {
+        /// The search returned its matches.
+        case success
+
+        /// The search threw.
+        case error
+    }
 
     /// The key of each metadata value that a log record of the registry
     /// holds.

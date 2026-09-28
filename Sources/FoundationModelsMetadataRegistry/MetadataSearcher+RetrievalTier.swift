@@ -14,9 +14,11 @@ extension MetadataSearcher {
     /// The `HybridRanker` call runs in one `RegistryTelemetry.SpanName.rank`
     /// span, with the `hybrid` ranker and the count of indexed ids as the
     /// candidate count. The call is synchronous and cannot hang, so the span
-    /// opens directly on the tracer and writes no "enter" log record. A call
-    /// with no candidate (`limit <= 0` or an empty catalog) ranks nothing,
-    /// so it opens no span and names no signal.
+    /// opens directly on the tracer and writes no "enter" log record. The
+    /// call records one `RegistryTelemetry.MetricName.rankDuration` value
+    /// with the `hybrid` ranker. A call with no candidate (`limit <= 0` or
+    /// an empty catalog) ranks nothing, so it opens no span, records no rank
+    /// duration and names no signal.
     ///
     /// Internal, not private, because `search(intent:limit:)` lives in its
     /// own file.
@@ -37,14 +39,16 @@ extension MetadataSearcher {
         let hits = RegistryTelemetry.tracer(explicit: nil).withSpan(RegistryTelemetry.SpanName.rank) { span in
             span.attributes[RegistryTelemetry.AttributeKey.rankRanker] = RegistryTelemetry.Ranker.hybrid.rawValue
             span.attributes[RegistryTelemetry.AttributeKey.rankCandidateCount] = index.ids.count
-            return HybridRanker.topMatches(
-                ids: index.ids,
-                documents: Self.rankedDocuments(in: index),
-                query: intent,
-                cosineScores: cosineScores,
-                weights: weights,
-                limit: limit,
-            )
+            return RegistryTelemetry.rankTimer(for: .hybrid).measure {
+                HybridRanker.topMatches(
+                    ids: index.ids,
+                    documents: Self.rankedDocuments(in: index),
+                    query: intent,
+                    cosineScores: cosineScores,
+                    weights: weights,
+                    limit: limit,
+                )
+            }
         }
         return TierAnswer(
             tier: .retrieval,

@@ -50,10 +50,33 @@ comments:
     - note: swift build shows warning lines about a bad global manifest cache, for example "warning: 'swift-log': failed loading cached manifest for 'swift-log': disk I/O error". This is a known fault on this machine's cache, not a code fault. Per instruction, the cache stays as is.
     - next: no action needed. The build is clean.
   timestamp: 2026-09-28T21:55:51.120395+00:00
+- actor: claude-code
+  id: 01m3n0akpqr4m536j35r22ctqr
+  text: |-
+    ### commit — changed
+    - evidence: bb9e230 feat(telemetry): use swift-log in MetadataDiagnostic.log, not os.Logger
+    - next: none
+  timestamp: 2026-09-28T21:56:51.543890+00:00
+- actor: claude-code
+  id: 01m3n0htbf38xeq5bd851ea279
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (bb9e230). 0 findings, 0 confirmed, 0 refuted. 7 validator runs, 0 failed. 6 files reviewed. An ignore rule excluded 4 .kanban files. No validator matched plan.md. The task has no earlier Review Findings sections.
+    - next: None. The task moved to done.
+  timestamp: 2026-09-28T22:00:47.727916+00:00
+- actor: claude-code
+  id: 01m3n0j1peahpprkyk87ztsbwn
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 7 files
+    - test: green — swift test, 190 passed, 0 failed, 0 skipped; swiftlint 0 in 80 files; swiftformat 0/80
+    - commit: bb9e230
+    - review: clean — 6 files, 0 findings
+  timestamp: 2026-09-28T22:00:55.246142+00:00
 depends_on:
 - 01M3MNBPPECY20MSET2VD487DV
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: b080
 title: 'OTel B: replace the os.Logger in MetadataDiagnostic.log with swift-log'
 ---
 ## What

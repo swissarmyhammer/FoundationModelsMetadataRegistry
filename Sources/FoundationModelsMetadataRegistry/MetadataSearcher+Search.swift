@@ -65,7 +65,10 @@ extension MetadataSearcher {
     /// the hash-guarded no-op included. The span records the item count, the
     /// size of the new catalog, whether the content changed, and the count
     /// of entries that wait for an embed. The embed of the reload loop runs
-    /// in its own child `catalogEmbed` span.
+    /// in its own child `catalogEmbed` span. A call that assigns a new
+    /// baseline records its size in the
+    /// `RegistryTelemetry.MetricName.catalogSize` gauge. The hash-guarded
+    /// no-op records nothing.
     ///
     /// - Parameter items: the catalog's new/refreshed items, in first-seen-
     ///   wins duplicate-id order (forwarded to `MetadataIndex`'s duplicate-id
@@ -104,6 +107,7 @@ extension MetadataSearcher {
         guard contentChanged || !result.pendingEmbedIDs.isEmpty else { return }
 
         index = baseline
+        RegistryTelemetry.recordCatalogSize(baseline.count)
         // Only a genuine content change warrants dropping the cached root
         // session -- catching up an embedding for otherwise-unchanged
         // content doesn't affect keyword search or the selection prefix at
@@ -177,6 +181,11 @@ extension MetadataSearcher {
     /// and the type of the error, never the message of the error. The span
     /// never holds `intent` (rule 4).
     ///
+    /// Each call records one `RegistryTelemetry.MetricName.searchDuration`
+    /// value, also when it throws, and one
+    /// `RegistryTelemetry.MetricName.rankDuration` value when a ranker ran.
+    /// No metric dimension holds `intent` (rule 4).
+    ///
     /// - Parameters:
     ///   - intent: the search query.
     ///   - limit: the maximum number of matches to return. `limit <= 0`
@@ -213,7 +222,48 @@ extension MetadataSearcher {
         let matches: [Match<Item>]
     }
 
+    /// The tier that `mode` selects for one search.
+    ///
+    /// One value for the choice, so the tier that answers and the tier that
+    /// the metrics of a failed search name come from the same switch.
+    enum TierRoute {
+        /// The retrieval tier answers.
+        case retrieval
+
+        /// The configured selection tier answers.
+        case selection(ConfiguredSelectionTier)
+
+        /// `mode` is `.selection`, and no selection tier is configured.
+        case unavailable
+
+        /// The tier of this route, or `nil` for `unavailable`.
+        var tier: RegistryTelemetry.Tier? {
+            switch self {
+            case .retrieval: .retrieval
+            case .selection: .selection
+            case .unavailable: nil
+            }
+        }
+    }
+
+    /// The tier that `mode` selects now: `.auto` selects the selection tier
+    /// when one is configured, and the retrieval tier when none is.
+    private var tierRoute: TierRoute {
+        switch mode {
+        case .retrieval:
+            .retrieval
+        case .selection:
+            selectionTier.map(TierRoute.selection) ?? .unavailable
+        case .auto:
+            selectionTier.map(TierRoute.selection) ?? .retrieval
+        }
+    }
+
     /// Does the work of `search(intent:limit:)` in its span.
+    ///
+    /// Records one `RegistryTelemetry.MetricName.searchDuration` value, also
+    /// when the search throws. The `tier` dimension of a search that returns
+    /// is the tier that the span records.
     ///
     /// - Parameters:
     ///   - intent: the search query.
@@ -221,38 +271,43 @@ extension MetadataSearcher {
     ///   - span: the `search` span, which gets the catalog size, the tier,
     ///     the signals and the count of matches.
     /// - Returns: the matches of the tier that `mode` selects.
-    /// - Throws: what `tierAnswer(intent:limit:)` throws.
+    /// - Throws: what `tierAnswer(_:intent:limit:)` throws.
     private func answer(intent: String, limit: Int, recordingIn span: any Span) async throws -> [Match<Item>] {
+        let start = ContinuousClock.now
         await catchUpEmbeddingsBeforeFirstSearch()
         span.attributes[RegistryTelemetry.AttributeKey.catalogSize] = index.count
-        let answer = try await tierAnswer(intent: intent, limit: limit)
+        let route = tierRoute
+        let answer: TierAnswer
+        do {
+            answer = try await tierAnswer(route, intent: intent, limit: limit)
+        } catch {
+            RegistryTelemetry.recordSearchDuration(start.duration(to: .now), tier: route.tier, outcome: .error)
+            throw error
+        }
+        RegistryTelemetry.recordSearchDuration(start.duration(to: .now), tier: answer.tier, outcome: .success)
         span.attributes[RegistryTelemetry.AttributeKey.searchTier] = answer.tier.rawValue
         span.attributes[RegistryTelemetry.AttributeKey.searchRankers] = answer.signals.map(\.rawValue)
         span.attributes[RegistryTelemetry.AttributeKey.searchResultCount] = answer.matches.count
         return answer.matches
     }
 
-    /// Answers one search with the tier that `mode` selects.
+    /// Answers one search with the tier of `route`.
     ///
     /// - Parameters:
+    ///   - route: the tier that `mode` selected.
     ///   - intent: the search query.
     ///   - limit: the maximum number of matches to return.
     /// - Returns: the answer of the tier.
-    /// - Throws: `SelectionTierUnavailable` when `mode == .selection` and no
-    ///   selection tier is configured; otherwise whatever the underlying
-    ///   selection session throws.
-    private func tierAnswer(intent: String, limit: Int) async throws -> TierAnswer {
-        switch mode {
+    /// - Throws: `SelectionTierUnavailable` when `route` is `unavailable`;
+    ///   otherwise whatever the underlying selection session throws.
+    private func tierAnswer(_ route: TierRoute, intent: String, limit: Int) async throws -> TierAnswer {
+        switch route {
         case .retrieval:
             return await retrievalSearch(intent: intent, limit: limit)
-        case .selection:
-            guard let selectionTier else { throw SelectionTierUnavailable() }
-            return try await Self.selectionSearch(selectionTier, intent: intent, limit: limit)
-        case .auto:
-            if let selectionTier {
-                return try await Self.selectionSearch(selectionTier, intent: intent, limit: limit)
-            }
-            return await retrievalSearch(intent: intent, limit: limit)
+        case .selection(let selection):
+            return try await Self.selectionSearch(selection, intent: intent, limit: limit)
+        case .unavailable:
+            throw SelectionTierUnavailable()
         }
     }
 
@@ -277,6 +332,8 @@ extension MetadataSearcher {
     /// span, with the `selection` ranker and the snapshot size as the
     /// candidate count. The tier waits on a model session, so the span opens
     /// through `RegistryTelemetry.withTracedSpan(_:attributes:_:)` (rule 8).
+    /// The call records one `RegistryTelemetry.MetricName.rankDuration`
+    /// value with the `selection` ranker, also when the session throws.
     ///
     /// - Parameters:
     ///   - selection: the tier to search, paired with the index snapshot it
@@ -300,7 +357,9 @@ extension MetadataSearcher {
             RegistryTelemetry.SpanName.rank,
             attributes: attributes,
         ) { _ in
-            try await selection.tier.search(intent: intent, limit: limit)
+            try await RegistryTelemetry.rankTimer(for: .selection).measure {
+                try await selection.tier.search(intent: intent, limit: limit)
+            }
         }
         let matches = selectionMatches.compactMap { match -> Match<Item>? in
             guard let item = snapshot.item(forID: match.id) else { return nil }

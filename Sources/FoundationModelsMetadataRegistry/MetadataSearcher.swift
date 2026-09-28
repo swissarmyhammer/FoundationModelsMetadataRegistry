@@ -324,7 +324,8 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// The designated initializer that every other initializer calls. Each
     /// parameter is the same as in `init(index:mode:weights:embedder:
     /// selection:onDiagnostic:)`, and `sharedEmbedding` is the shared catalog
-    /// embed that the first search awaits, or `nil`.
+    /// embed that the first search awaits, or `nil`. It records the size of
+    /// `index` in the `RegistryTelemetry.MetricName.catalogSize` gauge.
     init(
         index: MetadataIndex<Item>,
         mode: SearchMode,
@@ -346,6 +347,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         selectionTier = Self.buildSelectionTierIfConfigured(
             config: selection, index: index, onDiagnostic: onDiagnostic,
         )
+        RegistryTelemetry.recordCatalogSize(index.count)
     }
 
     /// Builds FoundationModelsRanker's `SelectionTier` over `index` when

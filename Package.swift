@@ -252,6 +252,10 @@ let package = Package(
                 // `DiagnosticsTests` reads the level and the metadata of each
                 // log record that `MetadataDiagnostic.log(_:)` writes.
                 .product(name: "Logging", package: swiftLogPackage),
+                // `RegistryMetricsTests` reads each timer and gauge that the
+                // registry records into the `TestMetrics` factory of a
+                // `TelemetryCapture`.
+                .product(name: "MetricsTestKit", package: swiftMetricsPackage),
                 // `TelemetryContentSafetyTests` runs each public entry point
                 // inside a `TelemetryCapture`, which records an issue for each
                 // span, log record or metric that holds content. Only this
