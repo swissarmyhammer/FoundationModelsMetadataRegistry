@@ -116,36 +116,17 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     /// grammar derived from the new id set.
     var selectionTier: ConfiguredSelectionTier?
 
-    /// Where the one-time embed catch-up a synchronously built searcher runs at its first search stands.
-    ///
-    /// `init(index:mode:weights:embedder:selection:onDiagnostic:)` cannot
-    /// await an embedder, so a searcher built that way over not-yet-embedded
-    /// items starts cosine-blind. Rather than reporting
-    /// `.embeddingUnavailable` on every search until a caller runs
-    /// `update(items:)`, the first `search(intent:limit:)` embeds every
-    /// pending block itself, one time, before it ranks (plan.md §5, §8).
-    /// One enum rather than a flag beside an optional task, so "not started",
-    /// "in flight" and "finished" can never hold at once.
-    enum FirstSearchCatchUp {
-        /// No search has run yet; the first one runs the catch-up.
-        case pending
-
-        /// A search started the catch-up. Every search that arrives while
-        /// `task` runs awaits it instead of embedding the same blocks a
-        /// second time.
-        case running(Task<Void, Never>)
-
-        /// The catch-up ran, or `update(items:)` took the catch-up over, or
-        /// there is no embedder to run it with.
-        case done
-    }
-
     /// This searcher's first-search catch-up state (see `FirstSearchCatchUp`).
     ///
     /// Starts `.done` when no embedder is configured — a keyword-only
     /// searcher has nothing to catch up, and its behavior is unchanged —
     /// and `.pending` otherwise.
     var firstSearchCatchUp: FirstSearchCatchUp
+
+    /// The catalog embed that the first search awaits in place of an embed of
+    /// its own (see `runFirstSearchCatchUp()`), or `nil`. Set only by
+    /// `init(sharing:mode:weights:selection:onDiagnostic:)`.
+    let sharedEmbedding: SharedCatalogEmbedding<Item>?
 
     /// This searcher's reload embed loop state (see `ReloadEmbedLoop` in
     /// `MetadataSearcher+ReloadEmbedLoop.swift`).
@@ -329,10 +310,35 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         selection: SelectionConfig? = nil,
         onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
     ) {
+        self.init(
+            index: index,
+            mode: mode,
+            weights: weights,
+            embedder: embedder,
+            sharedEmbedding: nil,
+            selection: selection,
+            onDiagnostic: onDiagnostic,
+        )
+    }
+
+    /// The designated initializer that every other initializer calls. Each
+    /// parameter is the same as in `init(index:mode:weights:embedder:
+    /// selection:onDiagnostic:)`, and `sharedEmbedding` is the shared catalog
+    /// embed that the first search awaits, or `nil`.
+    init(
+        index: MetadataIndex<Item>,
+        mode: SearchMode,
+        weights: Weights,
+        embedder: (any TextEmbedding)?,
+        sharedEmbedding: SharedCatalogEmbedding<Item>?,
+        selection: SelectionConfig?,
+        onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void,
+    ) {
         self.index = index
         self.mode = mode
         self.weights = weights
         self.embedder = embedder
+        self.sharedEmbedding = sharedEmbedding
         self.onDiagnostic = onDiagnostic
         selectionConfig = selection
         firstSearchCatchUp = embedder == nil ? .done : .pending

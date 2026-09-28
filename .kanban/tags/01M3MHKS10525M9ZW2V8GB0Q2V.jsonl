@@ -1,0 +1,1 @@
+{"id":"01M3MHKS10TQBF638W6CWRXPW0","timestamp":"2026-09-28T17:39:43.264507Z","op":"create","item_id":"01M3MHKS10525M9ZW2V8GB0Q2V","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: f9c513\n+tag_name: embedding\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: f9c513\n-tag_name: embedding\n","transaction_id":null}

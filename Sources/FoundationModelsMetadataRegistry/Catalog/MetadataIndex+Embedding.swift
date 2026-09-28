@@ -69,8 +69,7 @@ extension MetadataIndex {
     ) async -> MetadataIndex<Item> {
         let result = incrementalBaseline(items: items, previous: previous, onDiagnostic: onDiagnostic)
         guard let embedder, !result.pendingEmbedIDs.isEmpty,
-              let vectors = try? await embedder.embed(result.textsToEmbed),
-              vectors.count == result.pendingEmbedIDs.count
+              let vectors = await embedder.checkedVectors(for: result.textsToEmbed)
         else {
             return result.baseline
         }
@@ -156,6 +155,22 @@ extension MetadataIndex {
             return (id, entry.embeddedText)
         }
         return (pending.map(\.id), pending.map(\.text))
+    }
+
+    /// The ids and stored embeddings of every entry that has an embedding, positionally aligned, in `ids` order.
+    ///
+    /// This is the opposite of `pendingEmbeddings()`. A `MetadataSearcher`
+    /// that shares a `SharedCatalogEmbedding` reads it off the shared
+    /// embedded index, and merges these vectors into its own index.
+    ///
+    /// - Returns: the embedded ids and their vectors, or two empty arrays
+    ///   when no entry has an embedding.
+    func storedEmbeddings() -> (ids: [String], vectors: [[Float]]) {
+        let stored = ids.compactMap { id -> (id: String, vector: [Float])? in
+            guard let embedding = entriesByID[id]?.embedding else { return nil }
+            return (id, embedding)
+        }
+        return (stored.map(\.id), stored.map(\.vector))
     }
 
     /// Returns a copy of `index` with `ids`' embeddings replaced by `vectors`.
@@ -271,5 +286,24 @@ extension MetadataIndex {
     private init(ids: [String], entriesByID: [String: Entry]) {
         self.ids = ids
         self.entriesByID = entriesByID
+    }
+}
+
+/// The one catalog-batch embed call that every catalog embed of this package goes through.
+extension TextEmbedding {
+    /// Embeds `texts` in one batch, and returns the vectors only when there is one for each text.
+    ///
+    /// Every catalog embed calls through this function: index build, the
+    /// catch-ups of `MetadataSearcher`, and `SharedCatalogEmbedding`. A
+    /// failed embed is graceful degradation, not an error that the caller
+    /// must handle: the caller keeps the embeddings it had.
+    ///
+    /// - Parameter texts: the texts to embed.
+    /// - Returns: one vector for each text, positionally aligned with
+    ///   `texts`, or `nil` when `embed(_:)` throws or returns a vector count
+    ///   other than `texts.count`.
+    func checkedVectors(for texts: [String]) async -> [[Float]]? {
+        guard let vectors = try? await embed(texts), vectors.count == texts.count else { return nil }
+        return vectors
     }
 }

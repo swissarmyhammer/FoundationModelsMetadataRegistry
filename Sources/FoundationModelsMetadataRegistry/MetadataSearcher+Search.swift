@@ -1,5 +1,6 @@
-/// Hot reload, first-search embed catch-up, and the `.selection`/`.retrieval`
-/// search tiers for `MetadataSearcher` (plan.md §5, §6, §8).
+/// Hot reload and the `.selection`/`.retrieval` search tiers for
+/// `MetadataSearcher` (plan.md §5, §6, §8). The first-search embed catch-up
+/// lives in `MetadataSearcher+FirstSearchCatchUp.swift`.
 extension MetadataSearcher {
     /// Hot-reloads this searcher's catalog from `items`.
     ///
@@ -135,7 +136,7 @@ extension MetadataSearcher {
         with embedder: any TextEmbedding,
     ) async {
         onDiagnostic(.embedCatchUp(pending: ids.count, total: baseline.count))
-        guard let vectors = try? await embedder.embed(texts), vectors.count == ids.count else { return }
+        guard let vectors = await embedder.checkedVectors(for: texts) else { return }
         let merged = MetadataIndex.mergingEmbeddings(ids: ids, vectors: vectors, embeddedFrom: baseline, into: index)
         index = merged
     }
@@ -172,45 +173,6 @@ extension MetadataSearcher {
             }
             return await retrievalSearch(intent: intent, limit: limit)
         }
-    }
-
-    // MARK: - First-search embed catch-up (plan.md §5, §8)
-
-    /// Runs the first-search catch-up (see `FirstSearchCatchUp`) if it is still pending, or awaits the one in flight.
-    ///
-    /// Returns at once when the catch-up is `.done`. The stored `Task` is
-    /// what makes two searches that arrive before the first embed resolves
-    /// share one embedder call: the second one awaits the first one's task
-    /// instead of embedding the same blocks again. The task is created here,
-    /// stored in `firstSearchCatchUp`, and awaited by every caller, so it
-    /// never outlives the catch-up it runs.
-    private func catchUpEmbeddingsBeforeFirstSearch() async {
-        switch firstSearchCatchUp {
-        case .done:
-            return
-        case .running(let task):
-            await task.value
-        case .pending:
-            let task = Task { await self.runFirstSearchCatchUp() }
-            firstSearchCatchUp = .running(task)
-            await task.value
-        }
-    }
-
-    /// Embeds every catalog entry that carries no embedding yet, then marks the first-search catch-up `.done`.
-    ///
-    /// A no-op -- no diagnostic, no embedder call -- when no embedder is
-    /// configured or nothing is pending (an index the async initializer
-    /// already embedded), so a searcher that needs no catch-up pays nothing
-    /// beyond this check on its first search. Marks `.done` on every exit,
-    /// a transient embed failure included: the catch-up runs one time, and
-    /// the next `update(items:)` retries whatever is still pending.
-    private func runFirstSearchCatchUp() async {
-        defer { firstSearchCatchUp = .done }
-        guard let embedder else { return }
-        let pending = index.pendingEmbeddings()
-        guard !pending.ids.isEmpty else { return }
-        await catchUpEmbeddings(ids: pending.ids, texts: pending.texts, embeddedFrom: index, with: embedder)
     }
 
     // MARK: - Selection tier (plan.md §6, via FoundationModelsRanker)
