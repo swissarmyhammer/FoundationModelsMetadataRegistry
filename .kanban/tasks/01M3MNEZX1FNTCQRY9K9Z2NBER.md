@@ -73,6 +73,14 @@ comments:
     - commit: bb9e230
     - review: clean — 6 files, 0 findings
   timestamp: 2026-09-28T22:00:55.246142+00:00
+- actor: claude-code
+  id: 01m3n95gp84cewjn4r0zsmmkd3
+  text: |-
+    ### Follow-up: check the logger label on each log record
+    - Now: a TelemetryCapture log record does not hold the logger label. Thus DiagnosticsTests checks the label on `RegistryTelemetry.makeLogger()`, not on each record that `MetadataDiagnostic.log(_:)` writes.
+    - Extras OTel F ^92q1rms (01M3N95083T1NCMA59E92Q1RMS), "TelemetryCapture keeps the logger label on each log record", is on the FoundationModelsExtras board. It is not started (2026-09-28).
+    - When it is on Extras origin/main: run `swift package update FoundationModelsExtras`, then change DiagnosticsTests to check the label `FoundationModelsMetadataRegistry.MetadataDiagnostic` on each captured record.
+  timestamp: 2026-09-29T00:31:21.800568+00:00
 depends_on:
 - 01M3MNBPPECY20MSET2VD487DV
 position_column: done

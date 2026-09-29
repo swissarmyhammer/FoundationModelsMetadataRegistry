@@ -38,8 +38,31 @@ comments:
     - note: SwiftPM prints 30 "failed loading/storing cached manifest ... disk I/O error" warning lines during resolve. These come from a damaged global SwiftPM manifest cache on this machine, not from this package's code. The cache was not deleted. These lines do not block a green build.
     - next: ready for review.
   timestamp: 2026-09-28T22:31:26.224777+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m3n2b8ncb98j7w8a5t29sx6t
+  text: |-
+    ### commit — changed
+    - evidence: f0defdd fix(quality): remove four periphery warnings outside the OTel work
+    - next: ready for review.
+  timestamp: 2026-09-28T22:32:10.156023+00:00
+- actor: claude-code
+  id: 01m3n2f3pnrkjx2mxe1s810jrm
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (f0defdd). 0 findings, 0 confirmed, 0 refuted. The engine reviewed 3 files. It did not review 4 .kanban files because of .reviewignore. The task has no prior review findings.
+    - next: none. The task is in done.
+  timestamp: 2026-09-28T22:34:16.149460+00:00
+- actor: claude-code
+  id: 01m3n2f9zj8b8z9nhs48x5x6vx
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 3 files; periphery: 4 warnings before, none after
+    - test: green — swift test, 199 passed, 0 failed, 0 skipped; swiftlint 0 in 82 files; swiftformat 0/82
+    - commit: f0defdd
+    - review: clean — 3 files, 0 findings
+  timestamp: 2026-09-28T22:34:22.578100+00:00
+position_column: done
+position_ordinal: b280
 title: Clear the four periphery warnings in files outside the OTel work
 ---
 ## What
