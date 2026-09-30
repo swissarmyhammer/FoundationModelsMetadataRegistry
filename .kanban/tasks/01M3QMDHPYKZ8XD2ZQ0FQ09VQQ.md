@@ -65,10 +65,27 @@ comments:
     - evidence: 6 files — Examples/ExamplesSupport/ExamplesSupport.swift, Examples/Package.swift, Examples/CatalogSearch/main.swift, Examples/SemanticSearch/main.swift, Examples/Librarian/main.swift, Examples/BigCatalog/main.swift, Examples/HotReload/main.swift (7 with Package.swift). `grep -rn "print(" Examples --include=*.swift` (with .build excluded): 0 matches. `swift build --package-path Examples`: exit 0. The only warning is the SwiftPM "missing creator for mutated node" on mlx-swift_Cmlx.bundle, and it is not from Examples/. Runs: CatalogSearch 0, SemanticSearch 0, SemanticSearch --no-embedder 0, Librarian 0 (tripCities, weather, packingList), BigCatalog 0 (needle rank 1 in retrieval; selection empty, as before), HotReload 0 (4 updates -> 2 embed calls; root session built 1 then 2 times). Root swift test: 180 tests in 22 suites passed. Both findings are flipped to [x].
     - next: /review
   timestamp: 2026-09-30T17:33:10.978471+00:00
+- actor: claude-code
+  id: 01m3spjs7xhpexk1ey1616vx1z
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (958d88a): 0 findings (7 files attempted, 0 failed, 0 skipped; 2 .kanban files excluded by .reviewignore). The 2 prior findings are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-09-30T17:42:45.757209+00:00
+- actor: claude-code
+  id: 01m3spk1xm22w6g324h519bz4n
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — shared `Report.write` in ExamplesSupport replaces every `print(`; shared `exampleSelectionModel` and `exampleEmbedder`; six runs exit 0
+    - test: green — root 180 tests / 22 suites; Examples build clean (forced recompile); no `print(` in Examples
+    - commit: 958d88a refactor(examples): share report output and model names
+    - review: clean — 0 findings; task moved to done
+    - next: push; final run of all examples
+  timestamp: 2026-09-30T17:42:54.644558+00:00
 depends_on:
 - 01M3QMDH61DM9VH8581H9QQTZY
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: b680
 title: 'Examples: select with a real Qwen3-4B PooledModel, no scripted session'
 ---
 **Wait for:** FoundationModelsRanker tasks 01M3QMD9X40XA640Z9CXCREQAM ("Async session factory…") and 01M3QMDA82DXPZNEASMVXTP31M ("Depend on Extras; PooledSession is an AgentSession…") on the Ranker board: done and pushed.
