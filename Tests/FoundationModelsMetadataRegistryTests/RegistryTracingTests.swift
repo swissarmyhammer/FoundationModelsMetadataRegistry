@@ -66,6 +66,18 @@ struct RegistryTracingTests {
         FakeEmbedder(vectorsByText: vectorsByText)
     }
 
+    /// Makes a retrieval searcher over `catalog` whose index is embedded
+    /// before the searcher exists: it builds the index with
+    /// `MetadataIndex.build(items:embedder:previous:onDiagnostic:)`, so the
+    /// searcher has no pending embed.
+    ///
+    /// - Returns: the searcher.
+    static func makeEmbeddedSearcher() async -> MetadataSearcher<FixtureItem> {
+        let embedder = makeEmbedder()
+        let index = await MetadataIndex.build(items: catalog, embedder: embedder)
+        return MetadataSearcher(index: index, mode: .retrieval, embedder: embedder)
+    }
+
     /// Makes an embedder whose each call throws `EmbedFailure`.
     static func makeFailingEmbedder() -> FakeEmbedder {
         FakeEmbedder(failure: EmbedFailure())
@@ -128,7 +140,7 @@ struct RegistryTracingTests {
     @Test
     func retrievalSearchWithAnEmbeddedCatalogAlsoRanksWithCosine() async throws {
         try await TelemetryCapture.run(forbidding: Self.forbidden) { context in
-            let searcher = await MetadataSearcher(items: Self.catalog, mode: .retrieval, embedder: Self.makeEmbedder())
+            let searcher = MetadataSearcher(items: Self.catalog, mode: .retrieval, embedder: Self.makeEmbedder())
             _ = try await searcher.search(intent: Self.query, limit: Self.searchLimit)
 
             let search = try Self.onlySpan(named: SpanName.search, in: context)
@@ -245,7 +257,9 @@ extension RegistryTracingTests {
     @Test
     func updateThatChangesTheContentEmbedsTheNewItemInAChildSpan() async throws {
         try await TelemetryCapture.run(forbidding: Self.forbidden) { context in
-            let searcher = await MetadataSearcher(items: Self.catalog, mode: .retrieval, embedder: Self.makeEmbedder())
+            // The first catalog is embedded before the update, so the update
+            // embeds only the new item.
+            let searcher = await Self.makeEmbeddedSearcher()
             await searcher.update(items: Self.reloadedCatalog)
 
             let update = try Self.onlySpan(named: SpanName.catalogUpdate, in: context)
@@ -267,7 +281,8 @@ extension RegistryTracingTests {
     @Test
     func updateWithIdenticalContentIsANoOpThatStillEndsItsSpan() async throws {
         try await TelemetryCapture.run(forbidding: Self.forbidden) { context in
-            let searcher = await MetadataSearcher(items: Self.catalog, mode: .retrieval, embedder: Self.makeEmbedder())
+            // The catalog is embedded before the update, so nothing is pending.
+            let searcher = await Self.makeEmbeddedSearcher()
             await searcher.update(items: Self.catalog)
 
             let update = try Self.onlySpan(named: SpanName.catalogUpdate, in: context)
@@ -284,7 +299,7 @@ extension RegistryTracingTests {
     @Test
     func reloadEmbedThatFailsEndsItsSpanWithTheFailedOutcome() async throws {
         try await TelemetryCapture.run(forbidding: Self.forbidden) { context in
-            let searcher = await MetadataSearcher(
+            let searcher = MetadataSearcher(
                 items: Self.catalog,
                 mode: .retrieval,
                 embedder: Self.makeFailingEmbedder(),

@@ -54,7 +54,10 @@ struct HotReloadTests {
                 "bravo block CHANGED": [0, -1],
             ],
         )
-        let searcher = await MetadataSearcher(items: [itemA, itemB, itemC], embedder: embedder)
+        // The index is embedded before the update, so the count below shows
+        // the embed of the update alone.
+        let index = await MetadataIndex.build(items: [itemA, itemB, itemC], embedder: embedder)
+        let searcher = MetadataSearcher(index: index, embedder: embedder)
         #expect(embedder.embeddedTextCount == 3)
 
         await searcher.update(items: [itemA, FixtureItem(id: "b", block: "bravo block CHANGED"), itemC])
@@ -72,7 +75,8 @@ struct HotReloadTests {
         let itemA = FixtureItem(id: "a", block: "alpha block")
         let itemB = FixtureItem(id: "b", block: "bravo block")
         let embedder = FakeEmbedder(vectorsByText: ["alpha block": [1, 0], "bravo block": [0, 1]])
-        let searcher = await MetadataSearcher(items: [itemA], embedder: embedder)
+        let index = await MetadataIndex.build(items: [itemA], embedder: embedder)
+        let searcher = MetadataSearcher(index: index, embedder: embedder)
         #expect(embedder.embeddedTextCount == 1)
 
         await searcher.update(items: [itemA, itemB])
@@ -95,7 +99,8 @@ struct HotReloadTests {
             factoryCallCount.increment()
             return root
         })
-        let searcher = await MetadataSearcher(items: items, mode: .selection, embedder: embedder, selection: config)
+        let index = await MetadataIndex.build(items: items, embedder: embedder)
+        let searcher = MetadataSearcher(index: index, mode: .selection, embedder: embedder, selection: config)
         #expect(embedder.embeddedTextCount == 1)
 
         _ = try await searcher.search(intent: "task", limit: 5)
@@ -124,11 +129,10 @@ struct HotReloadTests {
         let recorder = DiagnosticRecorder()
         let items = [FixtureItem(id: "a", block: "alpha block")]
         let embedder = FakeEmbedder(vectorsByText: ["alpha block": [1, 0]])
-        let searcher = await MetadataSearcher(
-            items: items,
-            embedder: embedder,
-            onDiagnostic: { recorder.record($0) },
-        )
+        // An embedded catalog: no entry waits for an embed, so the update
+        // with the same content has nothing to catch up.
+        let index = await MetadataIndex.build(items: items, embedder: embedder, onDiagnostic: { recorder.record($0) })
+        let searcher = MetadataSearcher(index: index, embedder: embedder, onDiagnostic: { recorder.record($0) })
 
         await searcher.update(items: items)
 
@@ -183,11 +187,9 @@ struct HotReloadTests {
         let itemA = FixtureItem(id: "a", block: "alpha block")
         let itemB = FixtureItem(id: "b", block: "bravo block")
         let embedder = FakeEmbedder(vectorsByText: ["alpha block": [1, 0], "bravo block": [0, 1]])
-        let searcher = await MetadataSearcher(
-            items: [itemA],
-            embedder: embedder,
-            onDiagnostic: { recorder.record($0) },
-        )
+        // "a" is embedded before the update, so only "b" is pending.
+        let index = await MetadataIndex.build(items: [itemA], embedder: embedder, onDiagnostic: { recorder.record($0) })
+        let searcher = MetadataSearcher(index: index, embedder: embedder, onDiagnostic: { recorder.record($0) })
 
         await searcher.update(items: [itemA, itemB])
 
@@ -230,7 +232,7 @@ struct HotReloadTests {
         )
         // Construct with an empty catalog so init itself never touches the
         // gate -- there's nothing to embed yet.
-        let searcher = await MetadataSearcher(items: [FixtureItem](), embedder: embedder)
+        let searcher = MetadataSearcher(items: [FixtureItem](), embedder: embedder)
 
         let updateTask = Task { await searcher.update(items: [commit]) }
 

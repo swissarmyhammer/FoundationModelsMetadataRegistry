@@ -169,15 +169,16 @@ struct SearchableMetadataTextsTests {
 
     @Test
     func updateWithOnlyTheBlockChangedRefreshesTheVerbatimBlock() async throws {
-        // The searcher is built through the embedding initializer, so every
-        // entry already carries an embedding and nothing is pending. The
+        // The index is built with `MetadataIndex.build`, so every entry
+        // already carries an embedding and nothing is pending. The
         // changed block is then the only thing that can carry `update`'s
         // redundant-update guard past its early return.
         let sharedEmbeddedText = "saves your work"
         let first = EmbeddedTextMetadata(id: "commit", block: "first block", embeddedText: sharedEmbeddedText)
         let second = EmbeddedTextMetadata(id: "commit", block: "second block", embeddedText: sharedEmbeddedText)
         let embedder = FakeEmbedder(vectorsByText: [sharedEmbeddedText: [1, 0]])
-        let searcher = await MetadataSearcher(items: [first], embedder: embedder)
+        let index = await MetadataIndex.build(items: [first], embedder: embedder)
+        let searcher = MetadataSearcher(index: index, embedder: embedder)
 
         await searcher.update(items: [second])
         let matches = try await searcher.search(intent: "block", limit: 5)

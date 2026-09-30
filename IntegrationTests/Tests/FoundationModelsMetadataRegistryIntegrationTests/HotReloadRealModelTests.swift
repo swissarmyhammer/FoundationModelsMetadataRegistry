@@ -33,9 +33,9 @@ import Testing
 /// `SelectionConfig.defaultCapacityCharacterLimit` of 32,000, so no query here
 /// reaches the over-budget one-off path — see `IntegrationCatalog`'s own note
 /// on the budget. No embed catch-up and no cosine assertion either: this
-/// package ships no real embedder, so `update(items:)` returns straight after
-/// the tier rebuild, and FoundationModels exposes no embedding API to wire one
-/// from.
+/// scenario gives the searcher no embedder, so `update(items:)` returns
+/// straight after the tier rebuild. `PooledEmbedderRealModelTests` measures
+/// the cosine signal with a real embedding model.
 ///
 /// The package's deployment floor is macOS 27 already, so no redundant
 /// `@available` attribute is needed — Swift Testing's `@Suite`/`@Test` macros

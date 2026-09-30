@@ -1,5 +1,3 @@
-import FoundationModelsExtras
-
 /// Per-signal fusion weights for `MetadataSearcher`'s retrieval tier (plan.md §5).
 ///
 /// FoundationModelsRanker's `SignalWeights` under this package's
@@ -11,8 +9,9 @@ import FoundationModelsExtras
 /// than included at zero, so the ceiling never counts a signal that couldn't
 /// have scored anything (plan.md §5 "absent-signal rule"). `cosine` only
 /// takes effect when the searcher is configured with an embedder
-/// (`init(items:mode:weights:embedder:onDiagnostic:)` or `init(index:mode:
-/// weights:embedder:onDiagnostic:)`) — without one, cosine never ranks
+/// (`init(items:mode:weights:embedder:selection:onDiagnostic:)` or
+/// `init(index:mode:weights:embedder:selection:onDiagnostic:)`) — without
+/// one, cosine never ranks
 /// anything regardless of this weight — and a zero `cosine` weight skips the
 /// cosine computation without an `.embeddingUnavailable` diagnostic.
 public typealias Weights = SignalWeights
@@ -31,9 +30,12 @@ public typealias Weights = SignalWeights
 /// the same "no embedding available" value `Signals.cosine` documents, not a
 /// crash or a special case (plan.md §5 "absent-signal rule") — and
 /// `.embeddingUnavailable` is reported via `onDiagnostic` on every such
-/// search, never silently. A searcher built synchronously with an embedder
-/// over not-yet-embedded items (`init(index:mode:weights:embedder:
-/// selection:onDiagnostic:)`) closes that gap itself: its first
+/// search, never silently. Each initializer that takes an embedder is
+/// synchronous and embeds nothing. A searcher with an embedder over
+/// not-yet-embedded items (`init(items:mode:weights:embedder:selection:
+/// onDiagnostic:)`, or `init(index:mode:weights:embedder:selection:
+/// onDiagnostic:)` over an index with no embeddings) closes that gap
+/// itself: its first
 /// `search(intent:limit:)` embeds every pending block one time before it
 /// ranks (see `FirstSearchCatchUp`), so it never reports
 /// `.embeddingUnavailable` for a catalog its embedder could have embedded.
@@ -138,7 +140,8 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     ///
     /// Cosine never ranks anything and every search degrades to
     /// keyword-only, reported via `.embeddingUnavailable` (plan.md §5). Use
-    /// `init(items:mode:weights:embedder:onDiagnostic:)` to wire up cosine.
+    /// `init(items:mode:weights:embedder:selection:onDiagnostic:)` to wire up
+    /// cosine.
     ///
     /// - Parameters:
     ///   - items: the catalog's items, in first-seen-wins duplicate-id order
@@ -161,7 +164,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
     ) {
         self.init(
-            index: MetadataIndex(items: items, onDiagnostic: onDiagnostic),
+            items: items,
             mode: mode,
             weights: weights,
             embedder: nil,
@@ -170,25 +173,35 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         )
     }
 
-    /// Builds a searcher over `items`, embedding every item's rendered block
-    /// through `embedder` at index-build time (plan.md §5, §8).
+    /// Builds a searcher over `items` synchronously, and embeds nothing here
+    /// (plan.md §5, §8).
     ///
-    /// The stored embeddings are what let cosine join the fused ranking in
-    /// `search(intent:limit:)`.
+    /// This is the one initializer that takes `items` and an `embedder`. The
+    /// index is built with no embedding. The first `search(intent:limit:)`
+    /// embeds every item's block through `embedder`, one time, before that
+    /// search ranks (see `FirstSearchCatchUp`). Thus a caller makes the
+    /// searcher with no `await`, also from an asynchronous context, for
+    /// example over a FoundationModelsExtras `PooledEmbedder`, which loads
+    /// nothing until its first embed:
+    ///
+    ///     let searcher = MetadataSearcher(
+    ///         items: catalog,
+    ///         embedder: PooledEmbedder(ref: "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ"),
+    ///     )
+    ///
+    /// Two searchers whose `PooledEmbedder`s name one model in one
+    /// `ModelPool` share one loaded model: the pool loads each model one time.
     ///
     /// - Parameters:
     ///   - items: the catalog's items, in first-seen-wins duplicate-id order
-    ///     (forwarded to `MetadataIndex.build(items:embedder:previous:
-    ///     onDiagnostic:)`).
+    ///     (forwarded to `MetadataIndex.init(items:onDiagnostic:)`).
     ///   - mode: which tier `search(intent:limit:)` uses. Defaults to
-    ///     `.auto`, which falls back to `.retrieval` until a selection tier
-    ///     is configured.
+    ///     `.auto`.
     ///   - weights: the per-signal fusion weights for the retrieval tier.
     ///     Defaults to `1.0` for every signal.
-    ///   - embedder: the embedder to embed every item's block with at build
-    ///     time, and the query with at search time. `nil` behaves like
-    ///     `init(items:mode:weights:onDiagnostic:)` — keyword-only, with
-    ///     `.embeddingUnavailable` reported on every search.
+    ///   - embedder: the embedder to embed every item's block with at the
+    ///     first search, and the query with at each search. `nil` behaves
+    ///     like `init(items:mode:weights:selection:onDiagnostic:)`.
     ///   - selection: this searcher's selection tier configuration (plan.md
     ///     §6), or `nil` (the default) to leave `.selection` unavailable.
     ///   - onDiagnostic: called for every diagnostic emitted while building
@@ -201,71 +214,9 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
         embedder: (any TextEmbedding)?,
         selection: SelectionConfig? = nil,
         onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
-    ) async {
-        await self.init(
-            index: MetadataIndex.build(items: items, embedder: embedder, onDiagnostic: onDiagnostic),
-            mode: mode,
-            weights: weights,
-            embedder: embedder,
-            selection: selection,
-            onDiagnostic: onDiagnostic,
-        )
-    }
-
-    /// Builds a searcher over `items` whose embedder is the pooled embedding
-    /// model `embeddingModel` (plan.md §5, decision #16).
-    ///
-    /// Acquires a hold of `embeddingModel` from `pool`, wraps it in
-    /// `PooledTextEmbedding`, and then embeds every item's block through it,
-    /// the same as `init(items:mode:weights:embedder:selection:onDiagnostic:)`.
-    /// Two searchers with the same `embeddingModel` in one pool share one
-    /// loaded model, and all their embed calls go through the one work queue
-    /// of that model. The searcher keeps the hold, so the model stays
-    /// resident while the searcher exists. After the last hold goes, the pool
-    /// evicts the model.
-    ///
-    /// The first loader of a key wins. When the model is resident already
-    /// (for example, the router loaded it), the pool does not call `loader`,
-    /// and the searcher embeds through the container that the first loader
-    /// made, through the `PooledEmbedding` protocol only.
-    ///
-    /// - Parameters:
-    ///   - items: the catalog's items, in first-seen-wins duplicate-id order.
-    ///   - mode: which tier `search(intent:limit:)` uses. Defaults to
-    ///     `.auto`.
-    ///   - weights: the per-signal fusion weights for the retrieval tier.
-    ///     Defaults to `1.0` for every signal.
-    ///   - embeddingModel: the embedding model to acquire from `pool`.
-    ///   - footprintBytes: the bytes of the weights of `embeddingModel`. The
-    ///     pool counts them only when this call loads the model.
-    ///   - loader: the loader that loads `embeddingModel` when it is not
-    ///     resident. The caller gives it; this package has no model loader.
-    ///   - pool: the pool to acquire the model from. Defaults to
-    ///     `ModelPool.shared`, the pool of the process.
-    ///   - selection: this searcher's selection tier configuration (plan.md
-    ///     §6), or `nil` (the default) to leave `.selection` unavailable.
-    ///   - onDiagnostic: called for every diagnostic emitted while building
-    ///     the index and while searching. Defaults to logging via
-    ///     `MetadataDiagnostic.log(_:)`.
-    /// - Throws: What `loader` throws, or
-    ///   `PooledEmbedderError.notAnEmbedding(key:containerType:)` when the
-    ///   container of the key does not conform to `PooledEmbedding`.
-    public init(
-        items: [Item],
-        mode: SearchMode = .auto,
-        weights: Weights = Weights(),
-        embeddingModel: ModelRef,
-        footprintBytes: Int64,
-        loader: any PooledModelLoader,
-        pool: ModelPool = .shared,
-        selection: SelectionConfig? = nil,
-        onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
-    ) async throws {
-        let embedder = try await PooledTextEmbedding.acquire(
-            embeddingModel, footprintBytes: footprintBytes, loader: loader, from: pool,
-        )
-        await self.init(
-            items: items,
+    ) {
+        self.init(
+            index: MetadataIndex(items: items, onDiagnostic: onDiagnostic),
             mode: mode,
             weights: weights,
             embedder: embedder,

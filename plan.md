@@ -185,20 +185,20 @@ exceed 1, cosine in [-1,1]):
 3. **Cosine** between the query embedding and block embeddings, via the `TextEmbedding`
    seam (production: Router's `.embedding` slot through `RoutedEmbedderAdapter`).
 
-**The pooled embedder** *(added 2026-09-27 — decision #16)*. `PooledTextEmbedding` is
-a `TextEmbedding` over the `PooledEmbedder` handle of the process-wide `ModelPool` of
-`FoundationModelsExtras`. The handle keeps a `ModelHold`, so the model stays resident
-while the searcher exists, and the pool evicts it after the last hold goes. Each
-`embed(_:)` call goes through the one work queue of the model, so two searchers with
-the same `ModelRef` share one loaded model, and their embed calls (and the concurrent
-`update(items:)` calls of one searcher) reach the model one at a time. The registry
-adds no queue of its own. `MetadataSearcher.init(items:mode:weights:embeddingModel:
-footprintBytes:loader:pool:selection:onDiagnostic:)` acquires the handle (§12).
-**The first loader of a key wins:** the pool gives the container that the first
-loader made to each later caller, whatever loader that caller gives. Thus
-`PooledTextEmbedding` uses the container only through the Extras `PooledEmbedding`
-protocol, and never casts it to a registry type or to the type of its own loader. The
-caller gives the loader; the MLX loader stays out of this package.
+**The pooled embedder** *(added 2026-09-27 — decision #16; changed 2026-09-30)*.
+FoundationModelsRanker makes the `PooledEmbedder` of `FoundationModelsExtras` a
+`TextEmbedding`, so a searcher takes it as its `embedder:` directly. The registry has
+no adapter type of its own: the `PooledTextEmbedding` adapter and the
+`init(items:mode:weights:embeddingModel:footprintBytes:loader:pool:selection:
+onDiagnostic:)` initializer are deleted. `PooledEmbedder(ref:pool:)` loads nothing.
+Its first embed acquires the model from its `ModelPool` (the default is
+`ModelPool.shared`, which loads with the Extras `MLXModelLoader`), and it keeps that
+hold while it exists. Each embed call goes through the one work queue of the model,
+so two searchers whose embedders name one model in one pool share one loaded model,
+and their embed calls reach the model one at a time. The registry adds no queue of
+its own. **The first loader of a key wins:** the pool gives the container that the
+first loader made to each later caller, and `PooledEmbedder` uses that container only
+through the Extras `PooledEmbedding` protocol.
 
 **Fusion is Reciprocal Rank Fusion**, ported intact:
 
@@ -347,8 +347,10 @@ notifications, a Multitool rebuild. Semantics:
    callers-refresh-nothing guarantee are unchanged.)*
 5. Surface the interim gap: `.embedCatchUp(pending:total:)` diagnostics report how many
    items are still serving keyword-only while embedding catches up.
-6. *(2026-09-10)* A searcher built synchronously with an embedder
-   (`init(index:mode:weights:embedder:selection:onDiagnostic:)`) over items that carry
+6. *(2026-09-10; 2026-09-30: each initializer with an embedder is synchronous)* A
+   searcher built synchronously with an embedder
+   (`init(items:mode:weights:embedder:selection:onDiagnostic:)`, or
+   `init(index:mode:weights:embedder:selection:onDiagnostic:)`) over items that carry
    no embedding runs the same catch-up itself, one time, at its first `search()` —
    before it ranks, whichever tier the mode selects. Two searches that arrive before
    that embed resolves share one embedder call. Such a searcher reports
@@ -679,7 +681,7 @@ extension SkillMetadata: SearchableMetadata {
 // parameter is a session factory (§6, decision #12): the tier hands it the
 // assembled prefix and the id-enum grammar it derived for this call; the
 // caller just wires them into a guided session.
-let searcher = await MetadataSearcher(
+let searcher = MetadataSearcher(
   items: registry.metadata().filter(\.isModelVisible),   // visibility = caller's job
   mode: .auto,
   weights: Weights(bm25: 1, trigram: 1, cosine: 1),
@@ -708,38 +710,32 @@ let hits = try await picker.search(intent: "quarterly revenue spreadsheet", limi
 ```
 
 Three initializers ship: `init(items:...)` (sync, keyword-only index),
-`init(items:...embedder:...) async` (embeds the catalog up front), and
+`init(items:...embedder:...)` (sync, the first search embeds the catalog), and
 `init(index:...)` over a prebuilt `MetadataIndex` for precise control.
 `.selection` mode without a `SelectionConfig` throws `SelectionTierUnavailable`.
 
-*(Added 2026-09-27 — decision #16.)* A fourth initializer gets the embedder from
-the process-wide `ModelPool` of `FoundationModelsExtras`:
+*(Changed 2026-09-30 — decision #16.)* The `embeddingModel:` initializer of
+2026-09-27 is deleted. The async `init(items:...embedder:...) async`, which embedded
+the catalog before it returned, is deleted too. The one initializer that takes
+`items` and an `embedder:` is synchronous. It builds the index with no embedding,
+and the first search embeds the catalog (the first-search catch-up of §8). It takes
+a `PooledEmbedder` directly:
 
 ```swift
 import FoundationModelsExtras
 
-let searcher = try await MetadataSearcher(
+let searcher = MetadataSearcher(
   items: registry.metadata(),
-  mode: .auto,
-  embeddingModel: "mlx-community/some-embedding-model",   // a ModelRef
-  footprintBytes: embeddingWeightsBytes,
-  loader: routerLoader,          // the caller gives the loader; no MLX here
-  pool: .shared,                 // the default; a test gives ModelPool()
-  selection: nil,
-  onDiagnostic: { MetadataDiagnostic.log($0) }
+  embedder: PooledEmbedder(ref: "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ")
 )
 ```
 
-It acquires a hold of the `.embedding` key of `embeddingModel`, wraps the
-`PooledEmbedder` handle in `PooledTextEmbedding`, and then embeds the catalog the
-same as `init(items:...embedder:...) async`. It is `async throws`: it throws what
-the loader throws, or `PooledEmbedderError.notAnEmbedding` when the container
-does not conform to `PooledEmbedding`. `mode`, `weights`, `selection` and
-`onDiagnostic` are the same as on the async initializer. **The first loader of a
-key wins:** when the router (or a different loader of the application) loaded the
-key first, the pool does not call `loader`, and the searcher embeds through the
-container that the first loader made. The three initializers that take
-`any TextEmbedding` do not change.
+Why one synchronous initializer: two initializers with the same labels, one async and
+one sync, make the sync one impossible to reach from async code. In an async context
+the compiler always selects the async overload (every `main.swift` is an async
+context). A caller that needs the catalog embedded before a step runs one search
+first, or builds the index with `MetadataIndex.build(items:embedder:previous:
+onDiagnostic:)` and gives it to `init(index:...)`.
 
 ## 13. Examples
 

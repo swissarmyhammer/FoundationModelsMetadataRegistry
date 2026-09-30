@@ -10,6 +10,15 @@ import PackageDescription
 /// whole surface this suite drives.
 private let productPackageName = "FoundationModelsMetadataRegistry"
 
+/// The name of the FoundationModelsExtras package and of its core product,
+/// which holds `PooledEmbedder`, `ModelPool` and `ModelRef`.
+///
+/// The root package depends on this package, but it does not re-export it. So
+/// `PooledEmbedderRealModelTests`, which names `PooledEmbedder`, needs this
+/// product directly. The URL is the URL of the root manifest, so SwiftPM
+/// resolves one package for both.
+private let extrasPackageName = "FoundationModelsExtras"
+
 /// SwiftPM manifest for the real-model integration suite.
 ///
 /// **Why this is a package of its own.** The org test contract
@@ -33,17 +42,20 @@ private let productPackageName = "FoundationModelsMetadataRegistry"
 /// `LanguageModelSession(model: .default)`. `Support/ModelAvailability.swift`
 /// stops a run loudly when the machine cannot serve that model, and
 /// `Support/IntegrationCatalog.swift` holds the fixture every scenario ranks
-/// and selects over.
+/// and selects over. `PooledEmbedderRealModelTests` also measures a real MLX
+/// embedding model, which FoundationModelsExtras loads through
+/// `PooledEmbedder`.
 ///
-/// **Why one dependency is the whole list.** `FoundationModels` is an OS
-/// framework, so it needs no package entry. Everything else this suite names —
-/// `SelectionConfig`, `AgentSession`, `SelectionTier`, `Tokenizer`, and the
-/// retrieval primitives beside them — reaches it through the package under
-/// test's own `@_exported import FoundationModelsRanker`
+/// **Why two dependencies are the whole list.** `FoundationModels` is an OS
+/// framework, so it needs no package entry. `SelectionConfig`, `AgentSession`,
+/// `SelectionTier`, `Tokenizer`, and the retrieval primitives beside them
+/// reach this suite through the package under test's own
+/// `@_exported import FoundationModelsRanker`
 /// (`Sources/FoundationModelsMetadataRegistry/FoundationModelsRankerReexport.swift`),
-/// so `.package(path: "..")` and the one product below are sufficient. The
-/// FoundationModelsRanker package still resolves, as a transitive dependency
-/// of `..`; this manifest simply never names it.
+/// so `.package(path: "..")` gives them. The FoundationModelsRanker package
+/// still resolves, as a transitive dependency of `..`; this manifest never
+/// names it. `PooledEmbedder` and `ModelRef` come from the core
+/// FoundationModelsExtras product (see `extrasPackageName`).
 ///
 /// **The compile coupling this package owes CI.** The root build does not
 /// compile these files at all, so a broken integration test cannot break a
@@ -63,17 +75,21 @@ let package = Package(
     ],
     dependencies: [
         .package(path: ".."),
+        .package(url: "git@github.com:swissarmyhammer/\(extrasPackageName).git", branch: "main"),
     ],
     targets: [
-        // The real-model suite. One dependency, one product: no Router, no
-        // MLX, no Hugging Face, and nothing from `Examples/` — the root
-        // manifest exports a single library product, and `ExamplesSupport` and
-        // the example cores are targets of that package rather than products
-        // of it, so they are not reachable here and must not be made so.
+        // The real-model suite. Two products: the library under test, and the
+        // core FoundationModelsExtras product for `PooledEmbedder`. No Router,
+        // and nothing from `Examples/` — the root manifest exports a single
+        // library product, and `ExamplesSupport` and the example cores are
+        // targets of that package rather than products of it, so they are not
+        // reachable here and must not be made so. MLX and Hugging Face
+        // resolve as dependencies of FoundationModelsExtras only.
         .testTarget(
             name: "\(productPackageName)IntegrationTests",
             dependencies: [
                 .product(name: productPackageName, package: productPackageName),
+                .product(name: extrasPackageName, package: extrasPackageName),
             ],
             path: "Tests/\(productPackageName)IntegrationTests",
         ),

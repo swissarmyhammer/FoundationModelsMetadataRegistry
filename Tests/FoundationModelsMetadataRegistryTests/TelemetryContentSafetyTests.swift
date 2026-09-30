@@ -148,7 +148,7 @@ struct TelemetryContentSafetyTests {
     @Test
     func retrievalSearchWithAnEmbedderKeepsContentOutOfTheTelemetry() async throws {
         let matches = try await TelemetryCapture.run(forbidding: Marker.all) { _ in
-            let searcher = await MetadataSearcher(items: Self.catalog, mode: .retrieval, embedder: Self.makeEmbedder())
+            let searcher = MetadataSearcher(items: Self.catalog, mode: .retrieval, embedder: Self.makeEmbedder())
             return try await searcher.search(intent: Self.query, limit: Self.searchLimit)
         }
 
@@ -191,7 +191,7 @@ struct TelemetryContentSafetyTests {
     @Test
     func updateItemsKeepsContentOutOfTheTelemetry() async throws {
         let matches = try await TelemetryCapture.run(forbidding: Marker.all) { _ in
-            let searcher = await MetadataSearcher(items: Self.catalog, mode: .retrieval, embedder: Self.makeEmbedder())
+            let searcher = MetadataSearcher(items: Self.catalog, mode: .retrieval, embedder: Self.makeEmbedder())
             await searcher.update(items: Self.reloadedCatalog)
             return try await searcher.search(intent: Self.query, limit: Self.searchLimit)
         }

@@ -191,7 +191,7 @@ extension RegistryMetricsTests {
     func eachInitializerRecordsTheCatalogSizeOneTime() async throws {
         try await TelemetryCapture.run(forbidding: Fixtures.forbidden) { context in
             _ = MetadataSearcher(items: Fixtures.catalog, mode: .retrieval, onDiagnostic: { _ in })
-            _ = await MetadataSearcher(items: Fixtures.catalog, mode: .retrieval, embedder: Fixtures.makeEmbedder())
+            _ = MetadataSearcher(items: Fixtures.catalog, mode: .retrieval, embedder: Fixtures.makeEmbedder())
             _ = MetadataSearcher(index: MetadataIndex(items: Fixtures.catalog), mode: .retrieval)
 
             let size = Double(Fixtures.catalog.count)
@@ -216,11 +216,7 @@ extension RegistryMetricsTests {
         try await TelemetryCapture.run(forbidding: Fixtures.forbidden) { context in
             // An embedded catalog: no entry waits for an embed, so an update
             // with the same content takes the hash-guarded no-op path.
-            let searcher = await MetadataSearcher(
-                items: Fixtures.catalog,
-                mode: .retrieval,
-                embedder: Fixtures.makeEmbedder(),
-            )
+            let searcher = await Fixtures.makeEmbeddedSearcher()
             await searcher.update(items: Fixtures.catalog)
 
             let sizes = try Self.catalogSizes(in: context)

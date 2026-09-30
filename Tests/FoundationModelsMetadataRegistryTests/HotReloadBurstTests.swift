@@ -26,7 +26,7 @@ extension HotReloadTests {
             gatedTexts: ["version one text"],
         )
         // Empty initial catalog so construction itself never touches the gate.
-        let searcher = await MetadataSearcher(items: [FixtureItem](), embedder: embedder)
+        let searcher = MetadataSearcher(items: [FixtureItem](), embedder: embedder)
 
         let updateATask = Task { await searcher.update(items: [itemV1]) }
         await gate.waitForStart()
@@ -68,7 +68,7 @@ extension HotReloadTests {
                 toolC.block: [1, 1],
             ],
         )
-        let searcher = await MetadataSearcher(items: [FixtureItem](), embedder: embedder)
+        let searcher = MetadataSearcher(items: [FixtureItem](), embedder: embedder)
 
         // A server connects mid-session and dumps its tools in without
         // coalescing -- every notification forwarded straight to `update`.

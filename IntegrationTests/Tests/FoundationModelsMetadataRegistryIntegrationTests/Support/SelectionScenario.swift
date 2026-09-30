@@ -21,9 +21,10 @@ enum SelectionScenario {
     /// text named here is the preamble `^nwt7nz4` measured every intent
     /// against.
     ///
-    /// **Why no embedder.** This package ships none, and FoundationModels
-    /// exposes no embedding API, so every scenario runs keyword-only and every
-    /// selection search reports `.embeddingUnavailable`. See
+    /// **Why no embedder.** The selection scenarios measure the selection
+    /// tier, not the cosine signal (`PooledEmbedderRealModelTests` measures
+    /// that), so each selection scenario runs keyword-only and each selection
+    /// search reports `.embeddingUnavailable`. See
     /// `expectNoUnknownSelectedId(among:answering:sourceLocation:)` for what
     /// that costs an assertion.
     ///
@@ -62,7 +63,7 @@ enum SelectionScenario {
     /// package makes — 55 of 55 runs measured on `^nwt7nz4` — because
     /// `SelectionTier`'s under-budget path calls `retrievalRanking` once per
     /// call to attach a real `score` and `signals`, and that closure reports
-    /// the missing embedder. This package wires no embedder, so an assertion
+    /// the missing embedder. These scenarios wire no embedder, so an assertion
     /// that no diagnostic was recorded would fail on every run, for a reason
     /// that has nothing to do with the defect a scenario guards.
     ///

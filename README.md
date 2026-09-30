@@ -35,10 +35,22 @@ for match in matches {
 This path does not need an embedder, a model, or a session. Retrieval alone fuses
 BM25 (id field ×5, block ×1) and character-trigram Dice by reciprocal rank fusion.
 Thus `commit` gets the first rank although its own block never says the word
-`commit` — the ×5 id field carries that term. Add a `TextEmbedding` conformer to
-get a cosine signal, or give `init(items:embeddingModel:footprintBytes:loader:)` a
-`ModelRef` to share one pooled embedding model from `FoundationModelsExtras`'s
-`ModelPool`. Add a `SelectionConfig` to let an LLM select verbatim ids
+`commit` — the ×5 id field carries that term. Give an `embedder:` to get a cosine
+signal. A `PooledEmbedder` from `FoundationModelsExtras` is a `TextEmbedding`, and
+searchers that name one model share one pooled copy of it:
+
+```swift
+import FoundationModelsExtras
+
+let semantic = MetadataSearcher(
+    items: commands,
+    embedder: PooledEmbedder(ref: "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ"),
+)
+```
+
+The initializer is synchronous. It embeds nothing, and `PooledEmbedder(ref:)`
+loads nothing. The first search loads the model and embeds the catalog.
+Add a `SelectionConfig` to let an LLM select verbatim ids
 from catalogs too large for one prompt.
 
 ## Install

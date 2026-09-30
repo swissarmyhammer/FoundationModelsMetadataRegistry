@@ -55,8 +55,25 @@ comments:
     - evidence: 1 source file: Tests/FoundationModelsMetadataRegistryTests/HotReloadCoalescingTests.swift. `startBlockedBurst` now calls `GatedEmbedder(vectorsByText: [:], gate: gate, gatedTexts: [firstBurstItem.block])`, with one argument on each line, the same as the other calls. `[:]` is the default of `vectorsByText`, so the gate behavior does not change. A search of Tests/ for `GatedEmbedder(` found 6 calls. The other 5 calls (EmbeddingCatchUpTests, EmbeddingTestDoubleTests, HotReloadBurstTests, SharedCatalogEmbeddingTests, HotReloadTests) already give `vectorsByText:` first. I removed the obsolete blocker section from the description and set the finding to `- [x]`. Root `swift test`: exit 0, 181 tests in 22 suites passed. The one build warning is "missing creator for mutated node" on the mlx-swift_Cmlx.bundle, which is dependency build output, not project code.
     - next: test, commit, review
   timestamp: 2026-09-30T15:18:04.756319+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m3sep25my4j4wchxm61adery
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 815420b): 0 findings, 0 confirmed, 1 refuted. 1 file reviewed. The 2 `.kanban/` files are excluded by `.reviewignore`. All prior review findings are checked.
+    - next: The task moved to done.
+  timestamp: 2026-09-30T15:24:44.596117+00:00
+- actor: claude-code
+  id: 01m3sepftwbzmst7hvzjn90r2x
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — Tests/FoundationModelsMetadataRegistryTests/HotReloadCoalescingTests.swift (`GatedEmbedder(vectorsByText: [:], gate:, gatedTexts:)`); obsolete blocker note removed; finding checked
+    - test: green — swift test 181 tests / 22 suites, 0 failures, 0 skipped; IntegrationTests build complete
+    - commit: 815420b test(embedding): give vectorsByText first in the GatedEmbedder call
+    - review: clean — 0 findings; task moved to done
+    - next: push to origin main (user approved), report the sha to foundationmodelsskills-03 and foundationmodelsagents-9e
+  timestamp: 2026-09-30T15:24:58.588055+00:00
+position_column: done
+position_ordinal: b380
 title: Remove dimension from the registry test doubles
 ---
 **Wait for:** FoundationModelsRanker task 01M3QMD9KJ8T723R02085BEFYY ("Remove dimension from TextEmbedding") on the Ranker board: done and pushed.

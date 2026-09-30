@@ -43,7 +43,7 @@ struct EmbeddingTests {
         let keywordOnlyMatches = try await keywordOnly.search(intent: query, limit: 5)
         #expect(!keywordOnlyMatches.contains { $0.id == "commit" })
 
-        let searcher = await MetadataSearcher(items: [commit, status], embedder: embedder)
+        let searcher = MetadataSearcher(items: [commit, status], embedder: embedder)
         let matches = try await searcher.search(intent: query, limit: 5)
 
         let first = try #require(matches.first)
@@ -84,7 +84,7 @@ struct EmbeddingTests {
     @Test
     func searchWithAnEmbedderReturningNoVectorsEmitsEmbeddingUnavailableDiagnostic() async throws {
         let recorder = DiagnosticRecorder()
-        let searcher = await MetadataSearcher(
+        let searcher = MetadataSearcher(
             items: [FixtureItem(id: "commit", block: "records a snapshot")],
             embedder: EmptyResultEmbedder(),
             onDiagnostic: { recorder.record($0) },
@@ -100,7 +100,7 @@ struct EmbeddingTests {
         let recorder = DiagnosticRecorder()
         let item = FixtureItem(id: "commit", block: "records a snapshot")
         let embedder = FakeEmbedder(vectorsByText: ["commit": [1, 0], item.block: [1, 0]])
-        let searcher = await MetadataSearcher(
+        let searcher = MetadataSearcher(
             items: [item],
             embedder: embedder,
             onDiagnostic: { recorder.record($0) },

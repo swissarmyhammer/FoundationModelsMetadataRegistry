@@ -11,16 +11,20 @@ import Testing
 /// `swift build --build-tests`. `integration-package-path` is what restores
 /// that coupling: it makes the shared workflow's *unit* job build the nested
 /// package on every run, before the expensive integration step, and it makes
-/// the integration job run it. It is also the one input this workflow may
-/// pass. `integration-gate-env` is LEGACY, and the shared workflow stops the
-/// run when it is given beside the package path;
-/// `integration-metallib-glob` colocates an mlx-swift `default.metallib`,
-/// and no MLX package is in this dependency graph.
+/// the integration job run it.
 ///
-/// This suite pins all three halves of that shape: the `uses:` line names the
-/// shared workflow, one line passes the package path, and no line passes any
-/// other `integration-*` input. A later edit that points `uses:` somewhere
-/// else, drops the package path back to a suite CI never builds, adds
+/// `integration-metallib-glob` is the second input. MLX is in the dependency
+/// graph through FoundationModelsExtras, and the integration suite loads a
+/// real MLX embedding model through `PooledEmbedder`. The shared workflow
+/// copies the `default.metallib` that the glob finds beside each `.xctest`
+/// bundle before the run. `integration-gate-env` is LEGACY, and the shared
+/// workflow stops the run when it is given beside the package path.
+///
+/// This suite pins each part of that shape: the `uses:` line names the shared
+/// workflow, one line passes the package path, one line passes the metallib
+/// glob, and no line passes any other `integration-*` input. A later edit that
+/// points `uses:` somewhere else, drops the package path back to a suite CI
+/// never builds, drops the metallib that the real MLX model needs, adds
 /// repo-local test jobs, or reaches for a legacy input, fails this suite.
 @Suite("CI workflow")
 struct CIWorkflowTests {
@@ -31,6 +35,15 @@ struct CIWorkflowTests {
     /// The value that input carries: the nested integration package's
     /// directory, relative to the repository root.
     private static let integrationPackagePath = "IntegrationTests"
+
+    /// The name of the shared workflow input that finds the mlx-swift
+    /// metallib, with the colon that separates it from its value.
+    private static let integrationMetallibGlobKey = "integration-metallib-glob:"
+
+    /// The value that input carries: a find(1) `-path` glob for the
+    /// `default.metallib` that SwiftPM puts in the Cmlx bundle. It is the
+    /// same glob that FoundationModelsExtras gives the shared workflow.
+    private static let integrationMetallibGlob = #""*Cmlx*/default.metallib""#
 
     /// The prefix every input that switches the shared workflow's integration
     /// job on begins with.
@@ -51,17 +64,26 @@ struct CIWorkflowTests {
 
     @Test("ci.yml points integration-package-path at the nested IntegrationTests package")
     func namesTheNestedIntegrationPackage() throws {
-        let lines = try Self.workflowLines()
-        let expected = "\(Self.integrationPackagePathKey) \(Self.integrationPackagePath)"
-        let namesPackage = lines.contains { line in
-            line.trimmingCharacters(in: .whitespaces) == expected
-        }
+        let input = try Self.workflowInput(key: Self.integrationPackagePathKey, value: Self.integrationPackagePath)
         #expect(
-            namesPackage,
+            input.isPassed,
             """
-            ci.yml must pass "\(expected)" to the shared workflow, so its unit job builds the \
+            ci.yml must pass "\(input.line)" to the shared workflow, so its unit job builds the \
             nested package on every run — the root build never compiles it — and its integration \
             job runs the suite.
+            """,
+        )
+    }
+
+    @Test("ci.yml gives integration-metallib-glob the Cmlx default.metallib")
+    func namesTheMLXMetallib() throws {
+        let input = try Self.workflowInput(key: Self.integrationMetallibGlobKey, value: Self.integrationMetallibGlob)
+        #expect(
+            input.isPassed,
+            """
+            ci.yml must pass "\(input.line)" to the shared workflow: the integration suite loads a \
+            real MLX embedding model, and the shared workflow copies the metallib that this glob \
+            finds beside each .xctest bundle before the run.
             """,
         )
     }
@@ -69,6 +91,7 @@ struct CIWorkflowTests {
     @Test("ci.yml passes the shared workflow no other integration-* input")
     func passesNoOtherIntegrationInput() throws {
         let lines = try Self.workflowLines()
+        let allowedKeys = [Self.integrationPackagePathKey, Self.integrationMetallibGlobKey]
         // Matched case-insensitively: GitHub Actions resolves a `with:` key
         // against the called workflow's `inputs:` without regard to case, so
         // `Integration-Gate-Env:` would reach the shared workflow just as
@@ -79,15 +102,14 @@ struct CIWorkflowTests {
             .filter { line in
                 let key = line.lowercased()
                 return key.hasPrefix(Self.integrationInputPrefix)
-                    && !key.hasPrefix(Self.integrationPackagePathKey)
+                    && !allowedKeys.contains { key.hasPrefix($0) }
             }
         #expect(
             otherInputs.isEmpty,
             """
-            ci.yml must pass "\(Self.integrationPackagePathKey)" and no other integration-* \
-            input: integration-gate-env is LEGACY and the shared workflow stops the run when it \
-            is given beside the package path, and integration-metallib-glob colocates an \
-            mlx-swift metallib that nothing in this dependency graph needs; found: \(otherInputs)
+            ci.yml must pass \(allowedKeys) and no other integration-* input: \
+            integration-gate-env is LEGACY and the shared workflow stops the run when it is given \
+            beside the package path; found: \(otherInputs)
             """,
         )
     }
@@ -112,6 +134,22 @@ struct CIWorkflowTests {
             repo-local unit/integration jobs; found job keys: \(jobKeys)
             """,
         )
+    }
+
+    /// Reads whether `ci.yml` has a line, with its indent removed, that is
+    /// `key` and `value` separated by one space.
+    ///
+    /// - Parameters:
+    ///   - key: the input name, with its colon.
+    ///   - value: the value of the input, as the workflow spells it.
+    /// - Returns: the expected line, and whether `ci.yml` holds it.
+    /// - Throws: an error when the file cannot be read.
+    private static func workflowInput(key: String, value: String) throws -> (line: String, isPassed: Bool) {
+        let expected = "\(key) \(value)"
+        let isPassed = try workflowLines().contains { line in
+            line.trimmingCharacters(in: .whitespaces) == expected
+        }
+        return (expected, isPassed)
     }
 
     /// Reads `.github/workflows/ci.yml` from the repository root, resolved

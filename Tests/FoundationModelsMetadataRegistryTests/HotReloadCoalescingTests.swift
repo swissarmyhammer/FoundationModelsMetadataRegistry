@@ -64,7 +64,7 @@ extension HotReloadTests {
             gate: gate,
             gatedTexts: [firstBurstItem.block],
         )
-        let searcher = await MetadataSearcher(
+        let searcher = MetadataSearcher(
             items: [FixtureItem](),
             mode: .retrieval,
             embedder: embedder,

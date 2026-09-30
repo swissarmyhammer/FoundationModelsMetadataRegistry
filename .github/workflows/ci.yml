@@ -9,16 +9,19 @@ name: CI
 #   root run cannot see it.
 # - No environment variable selects a suite. This workflow gives the shared
 #   workflow no `integration-gate-env` (a LEGACY input, kept only for
-#   callers that have not migrated, and refused beside the input below);
+#   callers that have not migrated, and refused beside the package path);
 #   the package path selects the suite by build graph instead.
 # - The shared workflow's unit job builds the nested package on every run,
 #   because the root build does not compile it and a broken integration test
 #   must not stay unseen between runs. Its integration job then builds and
 #   runs that package, ordered after the unit job by the shared workflow's
 #   own internal `needs:` edge.
-# - No `integration-metallib-glob`: that input colocates an mlx-swift
-#   `default.metallib`, and no MLX package is in this dependency graph.
-#   `CIWorkflowTests` pins the delegation, and the one input, from this side.
+# - MLX is in this dependency graph through FoundationModelsExtras, and the
+#   integration suite loads a real MLX embedding model through
+#   `PooledEmbedder`. Thus this workflow gives `integration-metallib-glob`:
+#   the shared workflow copies the `default.metallib` that SwiftPM puts in
+#   the Cmlx bundle beside each `.xctest` bundle before the run.
+#   `CIWorkflowTests` pins the delegation, and the two inputs, from this side.
 
 on:
   push:
@@ -35,3 +38,4 @@ jobs:
     uses: swissarmyhammer/workflows/.github/workflows/swift-ci.yaml@main
     with:
       integration-package-path: IntegrationTests
+      integration-metallib-glob: "*Cmlx*/default.metallib"

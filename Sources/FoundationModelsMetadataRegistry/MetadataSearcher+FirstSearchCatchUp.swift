@@ -5,8 +5,10 @@
 extension MetadataSearcher {
     /// Where the one-time embed catch-up a synchronously built searcher runs at its first search stands.
     ///
-    /// `init(index:mode:weights:embedder:selection:onDiagnostic:)` cannot
-    /// await an embedder, so a searcher built that way over not-yet-embedded
+    /// `init(items:mode:weights:embedder:selection:onDiagnostic:)` and
+    /// `init(index:mode:weights:embedder:selection:onDiagnostic:)` are
+    /// synchronous and cannot await an embedder, so a searcher built that
+    /// way over not-yet-embedded
     /// items starts cosine-blind. Rather than reporting
     /// `.embeddingUnavailable` on every search until a caller runs
     /// `update(items:)`, the first `search(intent:limit:)` embeds every
@@ -52,8 +54,9 @@ extension MetadataSearcher {
     /// Embeds every catalog entry that carries no embedding yet, then marks the first-search catch-up `.done`.
     ///
     /// A no-op -- no diagnostic, no embedder call -- when no embedder is
-    /// configured or nothing is pending (an index the async initializer
-    /// already embedded), so a searcher that needs no catch-up pays nothing
+    /// configured or nothing is pending (an index that
+    /// `MetadataIndex.build(items:embedder:previous:onDiagnostic:)` already
+    /// embedded), so a searcher that needs no catch-up pays nothing
     /// beyond this check on its first search. Marks `.done` on every exit,
     /// a transient embed failure included: the catch-up runs one time, and
     /// the next `update(items:)` retries whatever is still pending.
