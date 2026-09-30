@@ -1,19 +1,24 @@
-import CatalogSearchCore
 import ExamplesSupport
+import FoundationModelsMetadataRegistry
 
-// # The ~30-line hello world (plan.md §13 M1).
+// # CatalogSearch: keyword search over a small catalog.
 //
-// A handful of fixture items conformed to `SearchableMetadata`, a
-// keyword-only `MetadataSearcher(mode: .retrieval)` — no embedder, no
-// model, no session — one query, printed `Match`es with their per-signal
-// `Signals`: BM25, trigram, RRF, and explainability on one screen. Runs
-// anywhere, GPU-free. Run with `swift run CatalogSearch`.
+// The smallest use of the library. A catalog of git subcommands conforms to
+// `SearchableMetadata`, and a `MetadataSearcher` in `.retrieval` mode ranks
+// them for one query. The searcher fuses two keyword signals, BM25 and
+// character-trigram similarity, with reciprocal rank fusion. There is no
+// embedder, no model and no session, so this example needs no GPU and no
+// network.
 //
-// The actual search logic lives in `CatalogSearchCore` so
-// `ExamplesSmokeTests` can invoke it directly; this file is just the
-// runnable entry point.
+// Each printed match shows its rank, its id, its fused score and the value
+// of each signal. The cosine signal is always 0 here, because no embedder
+// is configured.
+//
+// Run with `swift run --package-path Examples CatalogSearch`.
 
 let query = "commit changes to git"
 print("Query: \"\(query)\"\n")
-let matches = try await runCatalogSearch(query: query)
+
+let searcher = MetadataSearcher(items: baseGitCommands, mode: .retrieval)
+let matches = try await searcher.search(intent: query, limit: 5)
 print(formattedMatches(matches: matches))

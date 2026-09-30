@@ -16,10 +16,6 @@ import Testing
 struct ReadmeExampleTests {
     /// The catalog item type the README's example declares, transcribed from
     /// it.
-    ///
-    /// Nested inside the suite rather than declared at file scope because
-    /// `ExamplesSupport` exports a `GitCommand` of its own, and two of that
-    /// name visible in one test target would silently shadow each other.
     struct GitCommand: SearchableMetadata {
         /// This command's id — the README example's join key, and what its
         /// printed output names.

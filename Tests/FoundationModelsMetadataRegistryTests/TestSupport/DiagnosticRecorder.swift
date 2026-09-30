@@ -2,7 +2,7 @@ import Foundation
 @testable import FoundationModelsMetadataRegistry
 
 /// A thread-safe recorder for `onDiagnostic` callbacks, shared by
-/// `CatalogTests`, `RetrievalSearchTests`, and `ExamplesSmokeTests` so every
+/// `CatalogTests`, `RetrievalSearchTests`, and the other suites so every
 /// suite asserts on forwarded `MetadataDiagnostic` values without each
 /// maintaining its own copy of the same helper.
 ///

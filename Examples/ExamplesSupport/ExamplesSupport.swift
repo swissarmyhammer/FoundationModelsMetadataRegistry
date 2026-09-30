@@ -1,61 +1,46 @@
 import Foundation
 import FoundationModelsMetadataRegistry
 
-// # Shared fixture types and helpers for `Examples/` (plan.md §13).
+// # Shared types and helpers for the examples.
 //
-// `CatalogSearchCore` and `SemanticSearchCore` both search the same tiny
-// git-subcommand catalog and both print matches the same way. Rather than
-// maintain two copies of the fixture type, the common fixture prefix, and
-// the formatter, both `*Core` targets depend on this plain library target
-// and share these pieces; each core still owns its own divergent/additional
-// fixture items locally (`SemanticSearchCore` appends a `status` item so its
-// keyword-only degradation path has something real to rank).
+// A simple catalog item type, a small catalog of git subcommands, and a
+// formatter that prints ranked matches with their signals.
 
-/// A generic `SearchableMetadata` fixture item: a stable id paired with a
-/// `block` of text that is both its description and its rendered search
-/// surface (`renderBlock()`).
+/// A simple `SearchableMetadata` item: a stable id and a `block` of text. The
+/// block is both the description of the item and the text that the searcher
+/// indexes.
 ///
-/// `GitCommand` (this file), `BigCatalogItem` (`BigCatalogCore`),
-/// `HotReloadTool` (`HotReloadCore`), and `TripPlanningTool` (`LibrarianCore`)
-/// were four independent types, identical except for their name and the
-/// property name holding the description text (`summary` vs `block`). This
-/// single generic type replaces all four; each `*Core` target aliases it to
-/// its own domain-flavored name for readability at call sites, while keeping
-/// its own catalog *data* (the literal fixture arrays) local.
+/// Each example gives this type a name that fits its catalog, for example
+/// `TripPlanningTool` or `Tool`.
 public struct SearchableFixtureItem: SearchableMetadata {
-    /// The item's stable id — unique within its catalog.
+    /// The stable id of the item, unique in its catalog.
     public let id: String
 
-    /// The item's description, which is also its rendered search surface.
+    /// The description of the item, which is also the text that the searcher indexes.
     public let block: String
 
-    /// Creates one fixture item.
+    /// Creates one item.
     ///
     /// - Parameters:
-    ///   - id: the item's stable id.
-    ///   - block: the item's description, also its rendered search surface.
+    ///   - id: the stable id of the item.
+    ///   - block: the description of the item.
     public init(id: String, block: String) {
         self.id = id
         self.block = block
     }
 
-    /// Renders this item to its search surface: its description block.
+    /// Renders this item to the text that the searcher indexes: its block.
     ///
-    /// - Returns: the item's block text.
+    /// - Returns: the block text of the item.
     public func renderBlock() -> String {
         block
     }
 }
 
-/// `CatalogSearchCore`'s and `SemanticSearchCore`'s domain-flavored alias for
-/// `SearchableFixtureItem`: a git subcommand's name and its one-line
-/// description.
+/// A git subcommand: its name and a one-line description.
 public typealias GitCommand = SearchableFixtureItem
 
-/// The fixture catalog prefix both examples search: five common git subcommands.
-///
-/// `CatalogSearchCore` uses this as-is; `SemanticSearchCore` appends its own
-/// `status` item on top.
+/// A catalog of five common git subcommands.
 public let baseGitCommands: [GitCommand] = [
     GitCommand(id: "commit", block: "Record staged changes as a new snapshot in the repository history."),
     GitCommand(id: "push", block: "Upload local branch history to a remote server."),
@@ -64,16 +49,10 @@ public let baseGitCommands: [GitCommand] = [
     GitCommand(id: "stash", block: "Temporarily set aside uncommitted edits to switch tasks."),
 ]
 
-/// Formats ranked matches, one line each, with their per-signal breakdown.
+/// Formats ranked matches, one line each, with the value of each signal.
 ///
-/// Generic over any `SearchableMetadata` item — not just `GitCommand` — so
-/// every `Examples/` target (`CatalogSearch`/`SemanticSearch`'s git-command
-/// catalog, and `Librarian`/`BigCatalog`/`HotReload`'s own domain-specific
-/// catalogs) shares this one formatter instead of each maintaining its own
-/// copy.
-///
-/// - Parameter matches: the matches to format, in ranked order.
-/// - Returns: one formatted line per match, joined by newlines.
+/// - Parameter matches: the matches to format, in rank order.
+/// - Returns: one line for each match, joined by line breaks.
 public func formattedMatches(matches: [Match<some SearchableMetadata>]) -> String {
     matches.enumerated().map { index, match in
         let breakdown =
@@ -82,38 +61,4 @@ public func formattedMatches(matches: [Match<some SearchableMetadata>]) -> Strin
             } ?? "no signals"
         return String(format: "%d. %@  score=%.3f  [%@]", index + 1, match.id, match.score, breakdown)
     }.joined(separator: "\n")
-}
-
-// MARK: - Shared diagnostic printing (plan.md §1)
-
-/// Prints one diagnostic the way every `Examples/` target's own
-/// `printDiagnostic(_:)` wants to: special-casing the one diagnostic case
-/// central to that example's degradation story with a custom message, and
-/// falling back to the package default `MetadataDiagnostic.log(_:)` for
-/// every other diagnostic (plan.md §1 "every degradation is reported, never
-/// silent").
-///
-/// `SemanticSearchCore` (`.embeddingUnavailable`) and, before its own
-/// diagnostic stopped being reported, `BigCatalogCore` each defined their own
-/// `printDiagnostic(_:)` implementing this identical
-/// check-case/print-message/else-log pattern, differing only in which case
-/// they special-case and what they print for it. This shared helper is that
-/// pattern, parameterized: an example's own `printDiagnostic(_:)` calls it
-/// with a closure that pattern-matches its one diagnostic case and returns
-/// the message to print, or `nil` for every other case.
-///
-/// - Parameters:
-///   - diagnostic: the diagnostic to print.
-///   - describe: given `diagnostic`, returns the message to print for it if
-///     it's the case this call special-cases, or `nil` to fall back to
-///     `MetadataDiagnostic.log(_:)`.
-public func printExampleDiagnostic(
-    _ diagnostic: MetadataDiagnostic,
-    describingSpecialCase describe: (MetadataDiagnostic) -> String?,
-) {
-    if let message = describe(diagnostic) {
-        print("[diagnostic] \(message)")
-    } else {
-        MetadataDiagnostic.log(diagnostic)
-    }
 }

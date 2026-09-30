@@ -52,8 +52,15 @@ Add the package to `Package.swift`:
 ## Documentation
 
 Five runnable examples show each tier — keyword-only, semantic (cosine),
-LLM-driven selection, a 1,000-item catalog, and hot reload — in
-[`Examples/`](Examples/). The full design (architecture, diagnostics, the
+LLM-driven selection, a 1,000-item catalog, and hot reload — in the separate
+[`Examples/`](Examples/) package. The semantic and hot-reload examples embed
+with a small MLX embedding model, which the first run downloads. Run one with:
+
+```sh
+swift run --package-path Examples SemanticSearch
+```
+
+The full design (architecture, diagnostics, the
 hot-reload contract) is in [`plan.md`](plan.md).
 
 ## License

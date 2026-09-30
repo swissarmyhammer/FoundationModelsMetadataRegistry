@@ -92,99 +92,12 @@ let appleOrg = "https://github.com/apple/"
 /// names rather than one literal URL.
 let swissArmyHammerOrg = "git@github.com:swissarmyhammer/"
 
-/// The name of the shared `Examples/ExamplesSupport` library target.
+/// The SwiftPM manifest for FoundationModelsMetadataRegistry.
 ///
-/// Referenced by `exampleDependencies(on:)` — which every `Examples/` target's
-/// dependency list goes through — by the test target, and by the target's own
-/// declaration; extracted here so all three share one source of truth rather
-/// than three string literals that could silently drift.
-let examplesSupportName = "ExamplesSupport"
-
-/// The dependency list every `Examples/` target carries: the one library
-/// target it is written against, plus `ExamplesSupport` for the shared
-/// fixtures, the deterministic embedder, and the match formatter.
-///
-/// Both helpers below spelled this same two-entry list out, differing only in
-/// the library they name — a `*Core` target depends on the main library, and
-/// an executable depends on its own `*Core` — so it lives here instead, and
-/// the rule that an `Examples/` target reaches for nothing else has one home.
-///
-/// - Parameter libraryName: the library target this `Examples/` target is
-///   written against.
-/// - Returns: the dependency list.
-func exampleDependencies(on libraryName: String) -> [Target.Dependency] {
-    [
-        .target(name: libraryName),
-        .target(name: examplesSupportName),
-    ]
-}
-
-/// Builds an `Examples/` executable target: a thin runnable entry point that
-/// depends only on its own `*Core` library target plus `ExamplesSupport`,
-/// rooted at `Examples/<name>`.
-///
-/// `CatalogSearch`, `SemanticSearch`, `Librarian`, `BigCatalog`, and
-/// `HotReload` each declared this identical shape verbatim, differing only
-/// in `name`/`coreName` — extracted here so adding the next example's
-/// executable target is one call instead of a fifth copy of the boilerplate.
-///
-/// - Parameters:
-///   - name: the executable target's name, and the `Examples/` subdirectory
-///     it lives in.
-///   - coreName: the name of the `*Core` library target this executable is a
-///     thin entry point over.
-/// - Returns: the configured executable target.
-func exampleExecutableTarget(name: String, coreName: String) -> Target {
-    .executableTarget(
-        name: name,
-        dependencies: exampleDependencies(on: coreName),
-        path: "Examples/\(name)",
-    )
-}
-
-/// Builds an `Examples/<name>` `*Core` library target: an example's entry
-/// logic as a plain library, depending on the main library target plus
-/// `ExamplesSupport` and nothing else, rooted at `Examples/<name>`.
-///
-/// Every core is GPU-free. A core that needs a vector uses
-/// `ExamplesSupport`'s `DeterministicEmbedder`, and a core that needs a
-/// session uses its scripted `DemoAgentSession`; no core resolves a real
-/// model. So no core links a model-loading product, and `swift build` needs
-/// no GPU, no network, and no weights on disk.
-///
-/// `CatalogSearchCore`, `SemanticSearchCore`, `LibrarianCore`,
-/// `BigCatalogCore`, and `HotReloadCore` each declared this identical shape
-/// verbatim, differing only in `name` — extracted here so adding the next
-/// example's `*Core` target is one call instead of a sixth copy of the
-/// boilerplate.
-///
-/// - Parameter name: the `*Core` target's name, and the `Examples/`
-///   subdirectory it lives in.
-/// - Returns: the configured library target.
-func exampleCoreTarget(name: String) -> Target {
-    .target(
-        name: name,
-        dependencies: exampleDependencies(on: packageName),
-        path: "Examples/\(name)",
-    )
-}
-
-/// The SwiftPM manifest for FoundationModelsMetadataRegistry (plan.md §10).
-///
-/// A single library target over the FoundationModelsRanker sibling, the
-/// core FoundationModelsExtras product (plan.md decision #16) and the
-/// `Tracing`, `Logging` and `Metrics` APIs (the OpenTelemetry design), a Swift
-/// Testing unit test target, and the `Examples/` executable targets (§13):
-/// `CatalogSearch` (keyword-only) and `SemanticSearch` (`ExamplesSupport`'s
-/// deterministic embedder joining the cosine signal, with a `--no-embedder`
-/// flag for the degraded path) — demos only, never a dependency of the
-/// library, and every one of them GPU-free. Each example's entry logic lives
-/// in its own `*Core` library target (`CatalogSearchCore`,
-/// `SemanticSearchCore`) rather than directly in
-/// `main.swift`, so the test target can `@testable import` and invoke it
-/// directly as a plain library dependency, without the special (and, on this
-/// toolchain, crash-prone) "testable executable" build path SwiftPM uses
-/// when a test target depends on an executable target directly.
+/// A single library target over FoundationModelsRanker, the core
+/// FoundationModelsExtras product and the `Tracing`, `Logging` and `Metrics`
+/// APIs, and a Swift Testing unit test target. The runnable examples are in
+/// the separate `Examples/` package, which this manifest does not name.
 let package = Package(
     name: packageName,
     // Commit to macOS 27 / FoundationModels v2, no pre-27 fallback (plan.md
@@ -232,19 +145,6 @@ let package = Package(
             name: "\(packageName)Tests",
             dependencies: [
                 .target(name: packageName),
-                .target(name: examplesSupportName),
-                .target(name: "CatalogSearchCore"),
-                .target(name: "SemanticSearchCore"),
-                // `BigCatalogCore`/`HotReloadCore`/`LibrarianCore`'s GPU-free
-                // paths (plan.md §13 M8) -- retrieval timing over a synthetic
-                // ~10^3-entry catalog, `update(items:)` burst/index-rebuild,
-                // and the `.selection` tier driven through a scripted
-                // `DemoAgentSession` -- all exercised directly by
-                // `ExamplesSmokeTests`/`OverBudgetTests`, exactly like
-                // `CatalogSearchCore`/`SemanticSearchCore` above.
-                .target(name: "BigCatalogCore"),
-                .target(name: "HotReloadCore"),
-                .target(name: "LibrarianCore"),
                 // `RegistryTelemetryTests` binds an in-memory tracer to a
                 // task and reads which tracer the library resolves.
                 .product(name: "Tracing", package: swiftDistributedTracingPackage),
@@ -264,70 +164,5 @@ let package = Package(
             ],
             path: "Tests/\(packageName)Tests",
         ),
-        // Fixture type (`GitCommand`), the common fixture prefix
-        // (`baseGitCommands`), and the match formatter (`formattedMatches`)
-        // shared by both example cores (plan.md §13) — extracted here rather
-        // than duplicated so the type and its fixture data/formatting have a
-        // single source of truth. Each core still owns its own
-        // divergent/additional fixture items locally.
-        .target(
-            name: examplesSupportName,
-            dependencies: [.target(name: packageName)],
-            path: "Examples/\(examplesSupportName)",
-        ),
-        // `CatalogSearch`'s entry logic (plan.md §13 M1): fixture items
-        // conformed to `SearchableMetadata`, a keyword-only
-        // `MetadataSearcher(mode: .retrieval)` — no embedder, no model — one
-        // query, `Match`es with their per-signal `Signals`. A plain library
-        // (not the executable itself) so `ExamplesSmokeTests` can invoke it
-        // directly.
-        exampleCoreTarget(name: "CatalogSearchCore"),
-        // The ~30-line hello world (plan.md §13 M1): a thin runnable entry
-        // point over `CatalogSearchCore`. Runs anywhere, GPU-free; `swift
-        // build` keeps it compiling in CI.
-        exampleExecutableTarget(name: "CatalogSearch", coreName: "CatalogSearchCore"),
-        // `SemanticSearch`'s entry logic (plan.md §13 M2): `CatalogSearch`
-        // plus a third signal — `ExamplesSupport`'s `DeterministicEmbedder`
-        // embeds catalog and query, so cosine joins BM25 and trigram in RRF
-        // fusion and shows up in each match's per-signal breakdown; the
-        // `--no-embedder` path demonstrates the graceful keyword-only
-        // degradation and its diagnostic. That embedder hashes text rather
-        // than modelling meaning, which is what keeps the whole example free
-        // of network and GPU. A plain library (not the executable itself) so
-        // `ExamplesSmokeTests` can invoke both paths directly.
-        exampleCoreTarget(name: "SemanticSearchCore"),
-        // A thin runnable entry point over `SemanticSearchCore`.
-        exampleExecutableTarget(name: "SemanticSearch", coreName: "SemanticSearchCore"),
-        // `Librarian`'s entry logic (plan.md §13 M8): `.selection` mode
-        // end-to-end -- a cached root session seeded with the whole
-        // (under-budget) catalog, `fork()`ed per query, ids-only output,
-        // verbatim blocks out. The session is `ExamplesSupport`'s scripted
-        // `DemoAgentSession`, so the whole path is GPU-free and
-        // `ExamplesSmokeTests` invokes it directly.
-        exampleCoreTarget(name: "LibrarianCore"),
-        // A thin runnable entry point over `LibrarianCore`.
-        exampleExecutableTarget(name: "Librarian", coreName: "LibrarianCore"),
-        // `BigCatalog`'s entry logic (plan.md §13 M8): the headroom story --
-        // a synthetic ~10^3-entry catalog (ids = URIs), in-memory retrieval
-        // with printed timings, then a selection query that overflows the
-        // assembled-prefix budget -> one run of candidates for each prompt,
-        // each on a fresh one-off session. Both paths are GPU-free (each
-        // one-off session is `ExamplesSupport`'s scripted
-        // `DemoAgentSession`). A plain library (not the executable itself) so
-        // `ExamplesSmokeTests`/`OverBudgetTests` can invoke both directly.
-        exampleCoreTarget(name: "BigCatalogCore"),
-        // A thin runnable entry point over `BigCatalogCore`.
-        exampleExecutableTarget(name: "BigCatalog", coreName: "BigCatalogCore"),
-        // `HotReload`'s entry logic (plan.md §13 M8): `update(items:)` bursts
-        // (MCP-style add/remove) -- immediate keyword searchability, embed
-        // catch-up progress via `.embedCatchUp`, and the selection tier's
-        // cached root + grammar rebuild on a real catalog change, all
-        // GPU-free against `ExamplesSupport`'s deterministic embedder, which
-        // is the only embedder this example ever builds. A plain library (not
-        // the executable itself) so `ExamplesSmokeTests` can invoke the
-        // index-rebuild path directly.
-        exampleCoreTarget(name: "HotReloadCore"),
-        // A thin runnable entry point over `HotReloadCore`.
-        exampleExecutableTarget(name: "HotReload", coreName: "HotReloadCore"),
     ],
 )
