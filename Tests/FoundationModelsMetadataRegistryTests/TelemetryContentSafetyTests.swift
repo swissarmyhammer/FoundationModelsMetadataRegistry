@@ -107,12 +107,12 @@ struct TelemetryContentSafetyTests {
     /// result is cut.
     private static let searchLimit = 10
 
-    /// The width of each vector of the fixture.
-    private static let embeddingDimension = 2
+    /// The length of each vector of the fixture.
+    private static let vectorLength = 2
 
     /// The vector of the query and of each embedded text of both catalogs.
     private static let vectorsByText: [String: [Float]] = {
-        let vector = [Float](repeating: Marker.vectorComponent, count: embeddingDimension)
+        let vector = [Float](repeating: Marker.vectorComponent, count: vectorLength)
         let embeddedTexts = reloadedCatalog.map { $0.renderEmbeddedText(from: $0.renderBlock()) }
         return Dictionary(uniqueKeysWithValues: ([query] + embeddedTexts).map { ($0, vector) })
     }()
@@ -123,7 +123,7 @@ struct TelemetryContentSafetyTests {
 
     /// Makes an embedder that gives the fixture vector for each fixture text.
     private static func makeEmbedder() -> FakeEmbedder {
-        FakeEmbedder(dimension: embeddingDimension, vectorsByText: vectorsByText)
+        FakeEmbedder(vectorsByText: vectorsByText)
     }
 
     /// Makes a selection configuration whose scripted model picks

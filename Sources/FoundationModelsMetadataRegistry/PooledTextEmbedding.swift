@@ -60,11 +60,6 @@ public struct PooledTextEmbedding: TextEmbedding {
         return try PooledTextEmbedding(embedder: PooledEmbedder(hold: hold))
     }
 
-    /// The length of each vector that the pooled model gives.
-    public var dimension: Int {
-        embedder.dimension
-    }
-
     /// Embeds `texts` through the work queue of the pooled model.
     ///
     /// - Parameter texts: The texts to embed.

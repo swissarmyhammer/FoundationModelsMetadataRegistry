@@ -21,12 +21,6 @@ extension EmbeddingTests {
     /// The query the first-search catch-up tests search for.
     static let catchUpQuery = "alpha"
 
-    /// The width of every vector the first-search catch-up tests embed.
-    ///
-    /// Two components are enough to give one item a cosine of `1.0` against
-    /// `catchUpQuery` and the other a cosine of `0.0`.
-    static let catchUpEmbeddingDimension = 2
-
     /// The `limit` the first-search catch-up tests search with.
     ///
     /// Larger than any catalog those tests index, so the limit never
@@ -38,7 +32,6 @@ extension EmbeddingTests {
     /// cosine.
     static func catchUpEmbedder() -> FakeEmbedder {
         FakeEmbedder(
-            dimension: catchUpEmbeddingDimension,
             vectorsByText: [
                 unembeddedItems[0].block: [1, 0],
                 unembeddedItems[1].block: [0, 1],
@@ -112,7 +105,6 @@ extension EmbeddingTests {
         // Only the catalog block is gated, so each search's own query embed
         // resolves immediately once the catch-up lets it through.
         let embedder = GatedEmbedder(
-            dimension: Self.catchUpEmbeddingDimension,
             vectorsByText: [item.block: [1, 0], query: [1, 0]],
             gate: gate,
             gatedTexts: [item.block],

@@ -47,7 +47,6 @@ struct HotReloadTests {
         let itemB = FixtureItem(id: "b", block: "bravo block")
         let itemC = FixtureItem(id: "c", block: "charlie block")
         let embedder = FakeEmbedder(
-            dimension: 2,
             vectorsByText: [
                 "alpha block": [1, 0],
                 "bravo block": [0, 1],
@@ -72,7 +71,7 @@ struct HotReloadTests {
     func updateWithBrandNewItemsEmbedsOnlyTheNewOnes() async {
         let itemA = FixtureItem(id: "a", block: "alpha block")
         let itemB = FixtureItem(id: "b", block: "bravo block")
-        let embedder = FakeEmbedder(dimension: 2, vectorsByText: ["alpha block": [1, 0], "bravo block": [0, 1]])
+        let embedder = FakeEmbedder(vectorsByText: ["alpha block": [1, 0], "bravo block": [0, 1]])
         let searcher = await MetadataSearcher(items: [itemA], embedder: embedder)
         #expect(embedder.embeddedTextCount == 1)
 
@@ -86,7 +85,7 @@ struct HotReloadTests {
     @Test
     func redundantUpdateWithIdenticalItemsPerformsNoReEmbedAndRetainsTheRootSession() async throws {
         let items = [FixtureItem(id: "a", block: "alpha block")]
-        let embedder = FakeEmbedder(dimension: 2, vectorsByText: ["alpha block": [1, 0]])
+        let embedder = FakeEmbedder(vectorsByText: ["alpha block": [1, 0]])
         let root = RootSessionRespondCalledDirectlySession(forkResponses: [
             #"{"ids":["a"]}"#,
             #"{"ids":["a"]}"#,
@@ -124,7 +123,7 @@ struct HotReloadTests {
     func redundantUpdateNeverEmitsAnyDiagnostic() async {
         let recorder = DiagnosticRecorder()
         let items = [FixtureItem(id: "a", block: "alpha block")]
-        let embedder = FakeEmbedder(dimension: 2, vectorsByText: ["alpha block": [1, 0]])
+        let embedder = FakeEmbedder(vectorsByText: ["alpha block": [1, 0]])
         let searcher = await MetadataSearcher(
             items: items,
             embedder: embedder,
@@ -183,7 +182,7 @@ struct HotReloadTests {
         let recorder = DiagnosticRecorder()
         let itemA = FixtureItem(id: "a", block: "alpha block")
         let itemB = FixtureItem(id: "b", block: "bravo block")
-        let embedder = FakeEmbedder(dimension: 2, vectorsByText: ["alpha block": [1, 0], "bravo block": [0, 1]])
+        let embedder = FakeEmbedder(vectorsByText: ["alpha block": [1, 0], "bravo block": [0, 1]])
         let searcher = await MetadataSearcher(
             items: [itemA],
             embedder: embedder,
@@ -227,7 +226,7 @@ struct HotReloadTests {
         // freshly stored embedding instead of falling back to an all-zero
         // vector that would trivially score `0.0` regardless of catch-up.
         let embedder = GatedEmbedder(
-            dimension: 2, vectorsByText: [commit.block: [1, 0], "snapshot": [1, 0]], gate: gate,
+            vectorsByText: [commit.block: [1, 0], "snapshot": [1, 0]], gate: gate,
         )
         // Construct with an empty catalog so init itself never touches the
         // gate -- there's nothing to embed yet.
@@ -264,12 +263,12 @@ struct HotReloadTests {
         // its real content but carries no stored embedding.
         let itemA = FixtureItem(id: "a", block: "alpha block")
         let indexWithoutEmbedding = await MetadataIndex.build(
-            items: [itemA], embedder: FakeEmbedder(dimension: 2, failure: AlwaysFails()),
+            items: [itemA], embedder: FakeEmbedder(failure: AlwaysFails()),
         )
         #expect(indexWithoutEmbedding.embedding(forID: "a") == nil)
 
         let recorder = DiagnosticRecorder()
-        let workingEmbedder = FakeEmbedder(dimension: 2, vectorsByText: ["alpha block": [1, 0], "alpha": [1, 0]])
+        let workingEmbedder = FakeEmbedder(vectorsByText: ["alpha block": [1, 0], "alpha": [1, 0]])
         let searcher = MetadataSearcher(
             index: indexWithoutEmbedding,
             embedder: workingEmbedder,
@@ -295,9 +294,9 @@ struct HotReloadTests {
         let itemA = FixtureItem(id: "a", block: "alpha block")
         let indexWithoutEmbedding = await MetadataIndex.build(
             items: [itemA],
-            embedder: FakeEmbedder(dimension: 2, failure: AlwaysFails()),
+            embedder: FakeEmbedder(failure: AlwaysFails()),
         )
-        let workingEmbedder = FakeEmbedder(dimension: 2, vectorsByText: ["alpha block": [1, 0]])
+        let workingEmbedder = FakeEmbedder(vectorsByText: ["alpha block": [1, 0]])
         let root = RootSessionRespondCalledDirectlySession(forkResponses: [
             #"{"ids":["a"]}"#,
             #"{"ids":["a"]}"#,

@@ -5,8 +5,7 @@ import Foundation
 /// and `HotReloadTests`.
 ///
 /// Returns a caller-supplied vector for each registered text, falling back
-/// to an all-zero vector (which naturally contributes nothing to cosine —
-/// see `MetadataSearcher`'s cosine-similarity zero-norm guard) for any text
+/// to an all-zero vector of the same length (see `VectorTable`) for any text
 /// not explicitly registered. `embeddedTextCount` tracks the total number of
 /// texts passed to `embed(_:)` across every call so far — not the number of
 /// `embed(_:)` invocations — which is what "embed count proportional to
@@ -16,11 +15,9 @@ import Foundation
 /// catalog blocks of a catch-up batch against the one query text of a
 /// search.
 struct FakeEmbedder: TextEmbedding {
-    let dimension: Int
-
     /// Exact-text -> vector lookup table. A text absent from this table
     /// embeds to an all-zero vector.
-    private let vectorsByText: [String: [Float]]
+    private let table: VectorTable
 
     /// When set, every call to `embed(_:)` throws this error instead of
     /// producing vectors -- lets a test simulate a transient embed failure
@@ -34,22 +31,19 @@ struct FakeEmbedder: TextEmbedding {
     /// vectors verbatim.
     ///
     /// - Parameters:
-    ///   - dimension: the length of every embedding vector this embedder
-    ///     produces.
     ///   - vectorsByText: exact-text -> vector lookup table; a text absent
-    ///     from this table embeds to an all-zero vector. Defaults to empty.
+    ///     from this table embeds to an all-zero vector of the same length.
+    ///     Defaults to empty.
     ///   - failure: when non-nil, `embed(_:)` throws this error instead of
     ///     computing vectors. Defaults to `nil`.
     ///   - counter: the call counter to record every `embed(_:)` call's texts
     ///     into. Defaults to a fresh, unshared counter.
     init(
-        dimension: Int,
         vectorsByText: [String: [Float]] = [:],
         failure: (any Error)? = nil,
         counter: EmbedCallCounter = EmbedCallCounter(),
     ) {
-        self.dimension = dimension
-        self.vectorsByText = vectorsByText
+        table = VectorTable(vectorsByText: vectorsByText)
         self.failure = failure
         self.counter = counter
     }
@@ -70,7 +64,7 @@ struct FakeEmbedder: TextEmbedding {
         if let failure {
             throw failure
         }
-        return texts.map { vectorsByText[$0] ?? [Float](repeating: 0, count: dimension) }
+        return table.vectors(for: texts)
     }
 }
 

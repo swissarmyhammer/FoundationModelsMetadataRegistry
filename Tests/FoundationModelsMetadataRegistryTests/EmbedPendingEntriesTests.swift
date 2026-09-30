@@ -17,9 +17,6 @@ struct EmbedPendingEntriesTests {
         FixtureItem(id: "push", block: "uploads local commits to a remote"),
     ]
 
-    /// The width of every vector in `vectorsByText`.
-    static let embeddingDimension = 2
-
     /// The vector of each catalog block.
     static let vectorsByText: [String: [Float]] = [
         catalog[0].block: [1, 0],
@@ -31,7 +28,7 @@ struct EmbedPendingEntriesTests {
 
     /// A counting `FakeEmbedder` that maps each block in `catalog`.
     static func countingEmbedder() -> FakeEmbedder {
-        FakeEmbedder(dimension: embeddingDimension, vectorsByText: vectorsByText)
+        FakeEmbedder(vectorsByText: vectorsByText)
     }
 
     // MARK: - Embed
@@ -70,7 +67,7 @@ struct EmbedPendingEntriesTests {
     @Test
     func returnsNilAfterTheCatchUpReportWhenTheEmbedFails() async {
         let index = MetadataIndex(items: Self.catalog)
-        let embedder = FakeEmbedder(dimension: Self.embeddingDimension, failure: EmbedFailure())
+        let embedder = FakeEmbedder(failure: EmbedFailure())
         let recorder = DiagnosticRecorder()
 
         let batch = await index.embedPendingEntries(with: embedder, source: .reload) { recorder.record($0) }

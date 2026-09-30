@@ -21,7 +21,6 @@ extension HotReloadTests {
         // Only the first update's text is gated -- the embed of the second
         // update's text resolves at once when the reload loop reaches it.
         let embedder = GatedEmbedder(
-            dimension: 2,
             vectorsByText: ["version one text": [1, 0], "version two text": [0, 1]],
             gate: gate,
             gatedTexts: ["version one text"],
@@ -63,7 +62,6 @@ extension HotReloadTests {
         let toolB = FixtureItem(id: "toolB", block: "writes a file to disk")
         let toolC = FixtureItem(id: "toolC", block: "deletes a file from disk")
         let embedder = FakeEmbedder(
-            dimension: 2,
             vectorsByText: [
                 toolA.block: [1, 0],
                 toolB.block: [0, 1],

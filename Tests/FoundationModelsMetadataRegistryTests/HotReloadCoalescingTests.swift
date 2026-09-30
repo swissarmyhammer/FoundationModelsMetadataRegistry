@@ -11,9 +11,6 @@ extension HotReloadTests {
     /// The number of `update(items:)` calls the burst sends while the first embed is blocked.
     static let burstUpdateCount = 5
 
-    /// The length of each embedding vector the burst embedder produces.
-    static let burstEmbeddingDimension = 2
-
     /// The item of the first catalog. Only the embed of its text blocks on the gate.
     static let firstBurstItem = FixtureItem(id: "first", block: "first catalog block")
 
@@ -62,9 +59,7 @@ extension HotReloadTests {
     /// - Returns: the blocked burst. The caller must call `finish()`.
     static func startBlockedBurst(recorder: DiagnosticRecorder) async -> BlockedBurst {
         let gate = EmbedGate()
-        let embedder = GatedEmbedder(
-            dimension: burstEmbeddingDimension, gate: gate, gatedTexts: [firstBurstItem.block],
-        )
+        let embedder = GatedEmbedder(gate: gate, gatedTexts: [firstBurstItem.block])
         let searcher = await MetadataSearcher(
             items: [FixtureItem](),
             mode: .retrieval,

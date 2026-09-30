@@ -101,11 +101,9 @@ actor EmbedGate {
 /// racing a real suspension point against a concurrent `search()`/`update()`
 /// call.
 struct GatedEmbedder: TextEmbedding {
-    let dimension: Int
-
     /// Exact-text -> vector lookup table, same contract as `FakeEmbedder`'s:
     /// a text absent from this table embeds to an all-zero vector.
-    let vectorsByText: [String: [Float]]
+    private let table: VectorTable
 
     /// The gate this embedder signals and blocks on.
     let gate: EmbedGate
@@ -129,24 +127,21 @@ struct GatedEmbedder: TextEmbedding {
     /// vectors verbatim once `gate` lets a call through.
     ///
     /// - Parameters:
-    ///   - dimension: the length of every embedding vector this embedder
-    ///     produces.
     ///   - vectorsByText: exact-text -> vector lookup table; a text absent
-    ///     from this table embeds to an all-zero vector. Defaults to empty.
+    ///     from this table embeds to an all-zero vector of the same length.
+    ///     Defaults to empty.
     ///   - gate: the gate this embedder signals and blocks on.
     ///   - gatedTexts: the texts whose calls block on `gate`; `nil` (the
     ///     default) gates every call.
     ///   - counter: the call counter to record every `embed(_:)` call's texts
     ///     into. Defaults to a fresh, unshared counter.
     init(
-        dimension: Int,
         vectorsByText: [String: [Float]] = [:],
         gate: EmbedGate,
         gatedTexts: Set<String>? = nil,
         counter: EmbedCallCounter = EmbedCallCounter(),
     ) {
-        self.dimension = dimension
-        self.vectorsByText = vectorsByText
+        table = VectorTable(vectorsByText: vectorsByText)
         self.gate = gate
         self.gatedTexts = gatedTexts
         self.counter = counter
@@ -164,6 +159,6 @@ struct GatedEmbedder: TextEmbedding {
             await gate.signalStarted()
             await gate.waitForRelease()
         }
-        return texts.map { vectorsByText[$0] ?? [Float](repeating: 0, count: dimension) }
+        return table.vectors(for: texts)
     }
 }

@@ -28,9 +28,6 @@ struct SharedCatalogEmbeddingTests {
     /// cosine contributes to each ranking.
     static let queries = ["save my work", "send to the server", "working tree"]
 
-    /// The width of every vector in `vectorsByText`.
-    static let embeddingDimension = 3
-
     /// The `limit` of every search in this suite. It is larger than the
     /// catalog, so no result is cut and each test reads the full ranking.
     static let searchLimit = 10
@@ -51,7 +48,7 @@ struct SharedCatalogEmbeddingTests {
 
     /// A counting `FakeEmbedder` that maps each text in `vectorsByText`.
     static func countingEmbedder() -> FakeEmbedder {
-        FakeEmbedder(dimension: embeddingDimension, vectorsByText: vectorsByText)
+        FakeEmbedder(vectorsByText: vectorsByText)
     }
 
     /// The error that the failing embedder throws.
@@ -105,7 +102,6 @@ struct SharedCatalogEmbeddingTests {
         // Only the catalog batch is gated, so the query embed of each search
         // resolves at once after the catalog embed lets it through.
         let embedder = GatedEmbedder(
-            dimension: Self.embeddingDimension,
             vectorsByText: Self.vectorsByText,
             gate: gate,
             gatedTexts: Set(Self.catalogBlocks),
@@ -153,7 +149,7 @@ struct SharedCatalogEmbeddingTests {
 
     @Test
     func failedCatalogEmbedLeavesBothSearchersKeywordOnlyWithNoSecondCatalogEmbed() async throws {
-        let embedder = FakeEmbedder(dimension: Self.embeddingDimension, failure: EmbedFailure())
+        let embedder = FakeEmbedder(failure: EmbedFailure())
         let shared = SharedCatalogEmbedding(index: MetadataIndex(items: Self.catalog), embedder: embedder)
         let first = MetadataSearcher(sharing: shared)
         let second = MetadataSearcher(sharing: shared)

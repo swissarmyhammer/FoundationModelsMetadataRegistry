@@ -47,12 +47,12 @@ struct RegistryTracingTests {
     /// result is cut.
     static let searchLimit = 10
 
-    /// The width of each vector of the fixture.
-    static let embeddingDimension = 2
+    /// The length of each vector of the fixture.
+    static let vectorLength = 2
 
     /// The vector of the query and of each block.
     static let vectorsByText: [String: [Float]] = Dictionary(
-        uniqueKeysWithValues: forbidden.map { ($0, [Float](repeating: 1, count: embeddingDimension)) },
+        uniqueKeysWithValues: forbidden.map { ($0, [Float](repeating: 1, count: vectorLength)) },
     )
 
     /// The id that the scripted selection model picks.
@@ -63,12 +63,12 @@ struct RegistryTracingTests {
 
     /// Makes an embedder that gives a vector for each fixture text.
     static func makeEmbedder() -> FakeEmbedder {
-        FakeEmbedder(dimension: embeddingDimension, vectorsByText: vectorsByText)
+        FakeEmbedder(vectorsByText: vectorsByText)
     }
 
     /// Makes an embedder whose each call throws `EmbedFailure`.
     static func makeFailingEmbedder() -> FakeEmbedder {
-        FakeEmbedder(dimension: embeddingDimension, failure: EmbedFailure())
+        FakeEmbedder(failure: EmbedFailure())
     }
 
     /// Makes a selection configuration whose scripted model picks

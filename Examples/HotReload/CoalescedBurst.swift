@@ -129,11 +129,6 @@ private struct HeldFirstEmbedder: TextEmbedding {
     /// The hold that records and holds the calls.
     let hold: FirstEmbedHold
 
-    /// The length of each vector, the same as `base`.
-    var dimension: Int {
-        base.dimension
-    }
-
     func embed(_ texts: [String]) async throws -> [[Float]] {
         await hold.enter(with: texts)
         return try await base.embed(texts)

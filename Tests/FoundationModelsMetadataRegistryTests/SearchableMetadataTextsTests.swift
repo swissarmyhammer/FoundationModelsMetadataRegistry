@@ -98,7 +98,7 @@ struct SearchableMetadataTextsTests {
 
     @Test
     func theEmbedderReceivesTheBlockWhenOnlyTheIndexedTextIsOverridden() async {
-        let embedder = FakeEmbedder(dimension: 2)
+        let embedder = FakeEmbedder()
 
         _ = await MetadataIndex.build(items: [Self.indexedOverrideItem], embedder: embedder)
 
@@ -109,7 +109,7 @@ struct SearchableMetadataTextsTests {
 
     @Test
     func theEmbedderReceivesTheOverriddenEmbeddedText() async {
-        let embedder = FakeEmbedder(dimension: 2)
+        let embedder = FakeEmbedder()
 
         _ = await MetadataIndex.build(items: [Self.embeddedOverrideItem], embedder: embedder)
 
@@ -142,7 +142,6 @@ struct SearchableMetadataTextsTests {
         let first = EmbeddedTextMetadata(id: "deploy", block: sharedBlock, embeddedText: "alpha embedding text")
         let second = EmbeddedTextMetadata(id: "deploy", block: sharedBlock, embeddedText: "bravo embedding text")
         let embedder = FakeEmbedder(
-            dimension: 2,
             vectorsByText: ["alpha embedding text": [1, 0], "bravo embedding text": [0, 1]],
         )
 
@@ -159,7 +158,7 @@ struct SearchableMetadataTextsTests {
         let sharedEmbeddedText = "saves your work"
         let first = EmbeddedTextMetadata(id: "commit", block: "first block", embeddedText: sharedEmbeddedText)
         let second = EmbeddedTextMetadata(id: "commit", block: "second block", embeddedText: sharedEmbeddedText)
-        let embedder = FakeEmbedder(dimension: 2, vectorsByText: [sharedEmbeddedText: [1, 0]])
+        let embedder = FakeEmbedder(vectorsByText: [sharedEmbeddedText: [1, 0]])
 
         let firstIndex = await MetadataIndex.build(items: [first], embedder: embedder)
         let secondIndex = await MetadataIndex.build(items: [second], embedder: embedder, previous: firstIndex)
@@ -177,7 +176,7 @@ struct SearchableMetadataTextsTests {
         let sharedEmbeddedText = "saves your work"
         let first = EmbeddedTextMetadata(id: "commit", block: "first block", embeddedText: sharedEmbeddedText)
         let second = EmbeddedTextMetadata(id: "commit", block: "second block", embeddedText: sharedEmbeddedText)
-        let embedder = FakeEmbedder(dimension: 2, vectorsByText: [sharedEmbeddedText: [1, 0]])
+        let embedder = FakeEmbedder(vectorsByText: [sharedEmbeddedText: [1, 0]])
         let searcher = await MetadataSearcher(items: [first], embedder: embedder)
 
         await searcher.update(items: [second])

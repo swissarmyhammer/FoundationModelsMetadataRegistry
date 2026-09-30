@@ -32,7 +32,6 @@ struct EmbeddingTests {
         let query = "save my work"
 
         let embedder = FakeEmbedder(
-            dimension: 2,
             vectorsByText: [
                 query: [1, 0],
                 commit.block: [1, 0],
@@ -77,7 +76,6 @@ struct EmbeddingTests {
     /// `FakeEmbedder`-throwing path `searchWithNoEmbedderConfigured...`
     /// and friends already cover.
     private struct EmptyResultEmbedder: TextEmbedding {
-        let dimension = 2
         func embed(_: [String]) async throws -> [[Float]] {
             []
         }
@@ -101,7 +99,7 @@ struct EmbeddingTests {
     func searchWithAnEmbedderConfiguredNeverEmitsEmbeddingUnavailable() async throws {
         let recorder = DiagnosticRecorder()
         let item = FixtureItem(id: "commit", block: "records a snapshot")
-        let embedder = FakeEmbedder(dimension: 2, vectorsByText: ["commit": [1, 0], item.block: [1, 0]])
+        let embedder = FakeEmbedder(vectorsByText: ["commit": [1, 0], item.block: [1, 0]])
         let searcher = await MetadataSearcher(
             items: [item],
             embedder: embedder,
@@ -123,7 +121,7 @@ struct EmbeddingTests {
 
         // First build: only `embeddedItem` exists, and its embed call
         // succeeds -- it now carries a real, reusable embedding.
-        let workingEmbedder = FakeEmbedder(dimension: 2, vectorsByText: [query: [1, 0], embeddedItem.block: [1, 0]])
+        let workingEmbedder = FakeEmbedder(vectorsByText: [query: [1, 0], embeddedItem.block: [1, 0]])
         let priorIndex = await MetadataIndex.build(items: [embeddedItem], embedder: workingEmbedder)
         #expect(priorIndex.embedding(forID: "commit") != nil)
 
@@ -133,7 +131,7 @@ struct EmbeddingTests {
         // embedding) is reused with no new embed call at all, exactly the
         // hash-keyed incremental-reuse contract.
         struct SampleEmbedFailure: Error {}
-        let failingEmbedder = FakeEmbedder(dimension: 2, failure: SampleEmbedFailure())
+        let failingEmbedder = FakeEmbedder(failure: SampleEmbedFailure())
         let index = await MetadataIndex.build(
             items: [embeddedItem, unembeddedItem],
             embedder: failingEmbedder,
@@ -168,7 +166,6 @@ struct EmbeddingTests {
             FixtureItem(id: "c", block: "charlie block"),
         ]
         let embedder = FakeEmbedder(
-            dimension: 2,
             vectorsByText: [
                 "alpha block": [1, 0],
                 "bravo block": [0, 1],
@@ -202,7 +199,7 @@ struct EmbeddingTests {
             FixtureItem(id: "a", block: "alpha block"),
             FixtureItem(id: "b", block: "bravo block"),
         ]
-        let embedder = FakeEmbedder(dimension: 2, vectorsByText: ["alpha block": [1, 0], "bravo block": [0, 1]])
+        let embedder = FakeEmbedder(vectorsByText: ["alpha block": [1, 0], "bravo block": [0, 1]])
 
         let index = await MetadataIndex.build(items: items, embedder: embedder)
 
@@ -232,7 +229,7 @@ struct EmbeddingTests {
         // `nil` be reused as if it were a valid cached embedding, or the
         // item would stay cosine-blind forever even after an embedder
         // becomes available (plan.md §8 "embed catch-up").
-        let embedder = FakeEmbedder(dimension: 2, vectorsByText: ["alpha block": [1, 0]])
+        let embedder = FakeEmbedder(vectorsByText: ["alpha block": [1, 0]])
         let indexWithEmbedder = await MetadataIndex.build(
             items: [item], embedder: embedder, previous: indexWithoutEmbedder,
         )

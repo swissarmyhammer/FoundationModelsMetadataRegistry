@@ -1,10 +1,6 @@
 import Foundation
 import FoundationModelsExtras
 import FoundationModelsRouter
-import HuggingFace
-import MLXHuggingFace
-import MLXLMCommon
-import Tokenizers
 
 /// The embedding model that the examples use: Qwen3 Embedding 0.6B, 4-bit,
 /// from the Hugging Face hub. The weights are about 0.3 GB. The first run
@@ -25,5 +21,5 @@ public let exampleEmbeddingFootprintBytes: Int64 = 1 << 30
 ///
 /// - Returns: the loader.
 public func exampleModelLoader() -> LiveModelLoader {
-    LiveModelLoader(downloader: #hubDownloader(), tokenizerLoader: #huggingFaceTokenizerLoader())
+    LiveModelLoader()
 }
