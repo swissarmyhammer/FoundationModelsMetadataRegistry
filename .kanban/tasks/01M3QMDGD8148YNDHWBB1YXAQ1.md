@@ -31,6 +31,30 @@ comments:
     - implement evidence: 19 files (PooledTextEmbedding.dimension removed; FakeEmbedder/GatedEmbedder share new TestSupport/VectorTable.swift; new EmbeddingTestDoubleTests; dimension arguments removed from the test files; build fix outside the task in Examples/ExamplesSupport/ExampleEmbedding.swift for the Router `LiveModelLoader()` API). Root `swift test`: 181 tests in 22 suites passed. Pins: Ranker 39e3717, Extras c5ca65a.
     - next: test
   timestamp: 2026-09-30T15:05:55.685393+00:00
+- actor: claude-code
+  id: 01m3se5rg72akfqje67gv8w15p
+  text: |-
+    ### review — stuck
+    - evidence: `review sha HEAD~1..HEAD` (2ae7dff): 1 finding (1 confirmed, 0 refuted) — Tests/FoundationModelsMetadataRegistryTests/HotReloadCoalescingTests.swift:62 `completeness/invariant-propagation`. The finding requires code that cannot type-check: `gatedTexts: Set<String>?` and `vectorsByText: [String: [Float]]` are different parameters of `GatedEmbedder.init`.
+    - next: A person must correct the rule or refute the finding, then run `/review 01M3QMDGD8148YNDHWBB1YXAQ1 HEAD~1..HEAD` again. The task stays in `review`.
+  timestamp: 2026-09-30T15:15:50.407610+00:00
+- actor: claude-code
+  id: 01m3se6q5vhqy2gxej406qg6am
+  text: |-
+    ### finish iteration 1 — review: stuck → resolved, not a true conflict
+    - test: green — swift test 181 tests / 22 suites, 0 failures; IntegrationTests build complete
+    - commit: 2ae7dff refactor(embedding): remove dimension from the registry test doubles
+    - review: 1 finding — Tests/FoundationModelsMetadataRegistryTests/HotReloadCoalescingTests.swift:62 completeness/invariant-propagation. The reviewer marked it a true conflict, because the literal label change `gatedTexts:` → `vectorsByText:` does not type-check.
+    - resolution (orchestrator): the cause of the finding is that this one call leaves out `vectorsByText:`, while every other `GatedEmbedder(...)` call gives `vectorsByText:` first. A fix that type-checks removes that cause: `GatedEmbedder(vectorsByText: [:], gate: gate, gatedTexts: [firstBurstItem.block])`. Same gate behavior. The finding is in scope; the blocker note is obsolete.
+    - next: implement (iteration 2) with that fix, then test, commit, review
+  timestamp: 2026-09-30T15:16:21.819229+00:00
+- actor: claude-code
+  id: 01m3se9vpm2a7hv1bv69fx1gew
+  text: |-
+    ### implement — changed
+    - evidence: 1 source file: Tests/FoundationModelsMetadataRegistryTests/HotReloadCoalescingTests.swift. `startBlockedBurst` now calls `GatedEmbedder(vectorsByText: [:], gate: gate, gatedTexts: [firstBurstItem.block])`, with one argument on each line, the same as the other calls. `[:]` is the default of `vectorsByText`, so the gate behavior does not change. A search of Tests/ for `GatedEmbedder(` found 6 calls. The other 5 calls (EmbeddingCatchUpTests, EmbeddingTestDoubleTests, HotReloadBurstTests, SharedCatalogEmbeddingTests, HotReloadTests) already give `vectorsByText:` first. I removed the obsolete blocker section from the description and set the finding to `- [x]`. Root `swift test`: exit 0, 181 tests in 22 suites passed. The one build warning is "missing creator for mutated node" on the mlx-swift_Cmlx.bundle, which is dependency build output, not project code.
+    - next: test, commit, review
+  timestamp: 2026-09-30T15:18:04.756319+00:00
 position_column: doing
 position_ordinal: '80'
 title: Remove dimension from the registry test doubles
@@ -51,3 +75,12 @@ title: Remove dimension from the registry test doubles
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #model-pool
+
+## Review Findings (2026-09-30 09:08)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 17 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Tests/FoundationModelsMetadataRegistryTests/HotReloadCoalescingTests.swift:62` `completeness/invariant-propagation` — Parameter name mismatch in GatedEmbedder instantiation—uses `gatedTexts:` while other calls in the same commit use `vectorsByText:`. All calls to the same API should use consistent parameter names to avoid confusion and potential API mismatches. Change `gatedTexts:` to `vectorsByText:` on line 62 to match the parameter naming convention established elsewhere in the same commit.

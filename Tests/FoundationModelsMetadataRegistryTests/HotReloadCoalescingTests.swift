@@ -59,7 +59,11 @@ extension HotReloadTests {
     /// - Returns: the blocked burst. The caller must call `finish()`.
     static func startBlockedBurst(recorder: DiagnosticRecorder) async -> BlockedBurst {
         let gate = EmbedGate()
-        let embedder = GatedEmbedder(gate: gate, gatedTexts: [firstBurstItem.block])
+        let embedder = GatedEmbedder(
+            vectorsByText: [:],
+            gate: gate,
+            gatedTexts: [firstBurstItem.block],
+        )
         let searcher = await MetadataSearcher(
             items: [FixtureItem](),
             mode: .retrieval,
