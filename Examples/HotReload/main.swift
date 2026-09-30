@@ -41,6 +41,11 @@ let toolC = Tool(id: "toolC", block: "deletes a file from disk")
 /// The query of each search. Each tool description contains "file".
 let query = "file"
 
+/// The maximum number of matches of each search. This value is larger than
+/// the number of tools in the largest catalog, so each search can find all
+/// the tools.
+let searchLimit = 5
+
 /// The embedding model of parts 1 and 2. It loads nothing until its first embed.
 let embedder = PooledEmbedder(ref: "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ")
 
@@ -80,7 +85,7 @@ let burstSearcher = MetadataSearcher(
 for (index, items) in burst.enumerated() {
     let before = burstLog.count
     await burstSearcher.update(items: items)
-    let found = try await burstSearcher.search(intent: query, limit: 5).map(\.id)
+    let found = try await burstSearcher.search(intent: query, limit: searchLimit).map(\.id)
     Report.write("step \(index + 1): update(items: \(items.map(\.id))) -> search(\"\(query)\") = \(found)")
     for diagnostic in burstLog.diagnostics(since: before) {
         Report.write("  [diagnostic] \(diagnostic)")
@@ -100,7 +105,7 @@ let rapidBurst: [[Tool]] = [
     [toolB, toolC],
 ]
 
-let coalesced = try await runCoalescedBurst(rapidBurst, embeddingWith: embedder, query: query, limit: 5)
+let coalesced = try await runCoalescedBurst(rapidBurst, embeddingWith: embedder, query: query, limit: searchLimit)
 Report.write("  \(rapidBurst.count) update(items:) calls -> \(coalesced.embedBatches.count) embed calls")
 for (index, batch) in coalesced.embedBatches.enumerated() {
     Report.write("  embed call \(index + 1): \(batch)")
@@ -124,11 +129,11 @@ let selectionConfig = SelectionConfig(model: { instructions in
 })
 let selector = MetadataSearcher(items: [toolA], mode: .selection, selection: selectionConfig)
 
-_ = try await selector.search(intent: "read a file", limit: 5)
+_ = try await selector.search(intent: "read a file", limit: searchLimit)
 Report.write("  root session built \(sessionCount.count) time(s) for candidates [\"toolA\"]")
 
 await selector.update(items: [toolA, toolB])
-_ = try await selector.search(intent: "read a file", limit: 5)
+_ = try await selector.search(intent: "read a file", limit: searchLimit)
 Report.write(
     "  after a real catalog change, root session built \(sessionCount.count) time(s) total "
         + "for candidates [\"toolA\", \"toolB\"]",
