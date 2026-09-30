@@ -65,8 +65,12 @@ Add the package to `Package.swift`:
 
 Five runnable examples show each tier — keyword-only, semantic (cosine),
 LLM-driven selection, a 1,000-item catalog, and hot reload — in the separate
-[`Examples/`](Examples/) package. The semantic and hot-reload examples embed
-with a small MLX embedding model, which the first run downloads. Run one with:
+[`Examples/`](Examples/) package. The examples use two MLX models from the
+Hugging Face hub. The semantic and hot-reload examples embed with
+`mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ` (about 0.3 GB). The librarian,
+1,000-item and hot-reload examples select with `mlx-community/Qwen3-4B-4bit`
+(about 2.3 GB). The first run of an example downloads its models into the
+Hugging Face cache; a later run loads them from the cache. Run one with:
 
 ```sh
 swift run --package-path Examples SemanticSearch

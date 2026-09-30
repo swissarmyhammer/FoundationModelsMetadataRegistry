@@ -64,10 +64,27 @@ comments:
     - evidence: 1 file — Examples/HotReload/main.swift (named constant `searchLimit` replaces five `limit: 5` literals); CoalescedBurst.swift has no magic number. swift build --package-path Examples: exit 0, no warning from Examples/. swift run --package-path Examples HotReload: exit 0, output as before. Finding flipped to [x].
     - next: /review
   timestamp: 2026-09-30T16:41:33.058580+00:00
+- actor: claude-code
+  id: 01m3skjz71rqqzc458r0m4skmc
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (51253c6), 0 findings, 7 validator runs attempted, 0 failed. All prior finding items are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-09-30T16:50:26.145935+00:00
+- actor: claude-code
+  id: 01m3skkam1s618an4pw4t9tw92
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — Examples/HotReload/main.swift: named constant `searchLimit` replaces five `limit: 5` literals; HotReload run exit 0, same output
+    - test: green — root 180 tests / 22 suites; Examples build clean (forced recompile)
+    - commit: 51253c6 refactor(examples): name the search limit in HotReload
+    - review: clean — 0 findings; task moved to done
+    - next: push; next task ^fq09vqq
+  timestamp: 2026-09-30T16:50:37.825300+00:00
 depends_on:
 - 01M3QMDGR3PSYQ5PMM41Y9GJ7B
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: b580
 title: 'Examples: embed with a real Qwen PooledEmbedder, no Router'
 ---
 ## What

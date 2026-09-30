@@ -9,7 +9,8 @@ import PackageDescription
 // examples depend on the library and on FoundationModelsExtras only. The
 // examples that embed use the `PooledEmbedder` of FoundationModelsExtras,
 // which loads an MLX embedding model from the Hugging Face hub through
-// `ModelPool.shared`.
+// `ModelPool.shared`. The examples that select use the `PooledModel` of
+// FoundationModelsExtras, which loads an MLX language model in the same way.
 //
 //     swift run --package-path Examples CatalogSearch
 //     swift run --package-path Examples SemanticSearch
@@ -34,14 +35,14 @@ let package = Package(
     ],
     dependencies: [
         .package(path: ".."),
-        // The model pool (`ModelPool`, `ModelRef`, `PooledEmbedder`). The same
-        // URL as in the root manifest, so the two resolve as one package.
+        // The model pool (`ModelPool`, `ModelRef`, `PooledEmbedder`,
+        // `PooledModel`). The same URL as in the root manifest, so the two
+        // resolve as one package.
         .package(url: "git@github.com:swissarmyhammer/\(extrasPackage).git", branch: "main"),
     ],
     targets: [
-        // The catalog item type, the git-command catalog, the match
-        // formatter, and the selection configuration on the on-device model
-        // that the examples share.
+        // The catalog item type, the git-command catalog, and the match
+        // formatter that the examples share.
         .target(
             name: examplesSupportName,
             dependencies: [

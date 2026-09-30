@@ -1,6 +1,5 @@
 import ExamplesSupport
 import Foundation
-import FoundationModels
 import FoundationModelsExtras
 import FoundationModelsMetadataRegistry
 import os
@@ -26,8 +25,10 @@ import os
 // Parts 1 and 2 embed with one `PooledEmbedder` of FoundationModelsExtras for
 // Qwen3 Embedding 0.6B, 4-bit, from the Hugging Face hub. The first embed
 // loads the model through `ModelPool.shared`, and the first run downloads
-// the weights. The two searchers share that one loaded model. Part 3 uses
-// the on-device Apple Intelligence model.
+// the weights. The two searchers share that one loaded model. Part 3 selects
+// with one `PooledModel` of FoundationModelsExtras for Qwen3 4B, 4-bit, from
+// the Hugging Face hub. The first root session loads that model through
+// `ModelPool.shared`, and the first run downloads the weights.
 //
 // Run with `swift run --package-path Examples HotReload`.
 
@@ -117,45 +118,46 @@ Report.write("  search(\"\(query)\") after the burst = \(coalesced.searchResultI
 
 // MARK: - 3. Selection after a change
 
-Report.write("\nSelection root session after a catalog change (on-device model):")
-requireSystemLanguageModel()
+Report.write("\nSelection root session after a catalog change (Qwen3 4B):")
 
-/// Counts each root session that the searcher makes. Each one is a real
-/// session of the on-device Apple Intelligence model.
+/// The selection model of part 3. It loads nothing until the first session.
+let qwen = PooledModel(ref: "mlx-community/Qwen3-4B-4bit")
+
+/// Counts each root session that the searcher asks the factory for. Each one
+/// is a real session of `qwen`.
 let sessionCount = CallCounter()
 let selectionConfig = SelectionConfig(model: { instructions in
-    sessionCount.increment()
-    return LanguageModelSession(model: .default, instructions: instructions)
+    await sessionCount.increment()
+    return try await qwen.session(instructions: instructions)
 })
 let selector = MetadataSearcher(items: [toolA], mode: .selection, selection: selectionConfig)
 
-_ = try await selector.search(intent: "read a file", limit: searchLimit)
-Report.write("  root session built \(sessionCount.count) time(s) for candidates [\"toolA\"]")
+/// The intent of each selection search of part 3.
+let selectionIntent = "read a file"
+
+let firstSelection = try await selector.search(intent: selectionIntent, limit: searchLimit).map(\.id)
+Report.write(
+    "  root session built \(await sessionCount.count) time(s) for candidates [\"toolA\"]; "
+        + "selected \(firstSelection)",
+)
 
 await selector.update(items: [toolA, toolB])
-_ = try await selector.search(intent: "read a file", limit: searchLimit)
+let secondSelection = try await selector.search(intent: selectionIntent, limit: searchLimit).map(\.id)
 Report.write(
-    "  after a real catalog change, root session built \(sessionCount.count) time(s) total "
-        + "for candidates [\"toolA\", \"toolB\"]",
+    "  after a real catalog change, root session built \(await sessionCount.count) time(s) total "
+        + "for candidates [\"toolA\", \"toolB\"]; selected \(secondSelection)",
 )
 
 // MARK: - Helpers
 
-/// A thread-safe call counter.
-///
-/// The session factory is synchronous, so an actor cannot count its calls.
-final class CallCounter: Sendable {
-    /// The lock that holds the count.
-    private let value = OSAllocatedUnfairLock<Int>(initialState: 0)
-
+/// A call counter that the async session factory can share.
+actor CallCounter {
     /// The number of calls counted so far.
-    var count: Int {
-        value.withLock { $0 }
-    }
+    private(set) var count = 0
 
     /// Counts one more call.
     func increment() {
-        value.withLock { $0 += 1 }
+        count += 1
     }
 }
 
