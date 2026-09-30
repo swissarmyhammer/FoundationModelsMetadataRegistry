@@ -17,8 +17,8 @@ import FoundationModelsMetadataRegistry
 // Run with `swift run --package-path Examples CatalogSearch`.
 
 let query = "commit changes to git"
-print("Query: \"\(query)\"\n")
+Report.write("Query: \"\(query)\"\n")
 
 let searcher = MetadataSearcher(items: baseGitCommands, mode: .retrieval)
 let matches = try await searcher.search(intent: query, limit: 5)
-print(formattedMatches(matches: matches))
+Report.write(formattedMatches(matches: matches))

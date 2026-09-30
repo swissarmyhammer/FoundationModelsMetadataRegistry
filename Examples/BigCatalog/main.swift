@@ -12,11 +12,12 @@ import FoundationModelsMetadataRegistry
 //    indexes the catalog in memory and searches it. The example prints how
 //    long the index and the search took together.
 // 2. Selection over budget. A `MetadataSearcher` in `.selection` mode uses
-//    a `PooledModel` of FoundationModelsExtras for Qwen3 4B, 4-bit, from
-//    the Hugging Face hub. The prefix of 1,000 entries is larger than the
-//    capacity limit, so the searcher divides the catalog into runs that
-//    each fit the limit, and prompts one new session for each run. Each id
-//    goes to exactly one prompt, and no entry is cut.
+//    `exampleSelectionModel` of ExamplesSupport: a `PooledModel` of
+//    FoundationModelsExtras for Qwen3 4B, 4-bit, from the Hugging Face hub.
+//    The prefix of 1,000 entries is larger than the capacity limit, so the
+//    searcher divides the catalog into runs that each fit the limit, and
+//    prompts one new session for each run. Each id goes to exactly one
+//    prompt, and no entry is cut.
 //
 // One entry, the "needle", has words that no other entry has, so the query
 // has exactly one correct result. The example prints what the model selects
@@ -62,16 +63,16 @@ let catalog: [BigCatalogItem] =
         ),
     ]
 
-print("Synthetic catalog size: \(catalog.count) entries")
-print("Query: \"\(query)\"\n")
+Report.write("Synthetic catalog size: \(catalog.count) entries")
+Report.write("Query: \"\(query)\"\n")
 
 // Retrieval: time the index and the search together.
 let start = Date()
 let retrieval = MetadataSearcher(items: catalog, mode: .retrieval)
 let retrievalMatches = try await retrieval.search(intent: query, limit: 10)
 let elapsed = Date().timeIntervalSince(start)
-print(String(format: "Retrieval over %d entries took %.4fs (in memory, no GPU)\n", catalog.count, elapsed))
-print(formattedMatches(matches: retrievalMatches))
+Report.write(String(format: "Retrieval over %d entries took %.4fs (in memory, no GPU)\n", catalog.count, elapsed))
+Report.write(formattedMatches(matches: retrievalMatches))
 
 /// The character limit of the prefix of one selection run.
 ///
@@ -85,17 +86,14 @@ print(formattedMatches(matches: retrievalMatches))
 /// into three runs.
 let selectionCapacityCharacterLimit = 48_000
 
-/// The selection model. It loads nothing until the first session.
-let qwen = PooledModel(ref: "mlx-community/Qwen3-4B-4bit")
-
-print("\nRunning the over-budget selection query (Qwen3 4B, one prompt for each run)...\n")
+Report.write("\nRunning the over-budget selection query (Qwen3 4B, one prompt for each run)...\n")
 let selection = MetadataSearcher(
     items: catalog,
     mode: .selection,
     selection: SelectionConfig(
-        model: { try await qwen.session(instructions: $0) },
+        model: { try await exampleSelectionModel.session(instructions: $0) },
         capacityCharacterLimit: selectionCapacityCharacterLimit,
     ),
 )
 let selectedMatches = try await selection.search(intent: query, limit: 10)
-print(formattedMatches(matches: selectedMatches))
+Report.write(formattedMatches(matches: selectedMatches))

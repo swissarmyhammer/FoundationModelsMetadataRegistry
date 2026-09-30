@@ -1,5 +1,4 @@
 import ExamplesSupport
-import Foundation
 import FoundationModelsExtras
 import FoundationModelsMetadataRegistry
 import os
@@ -22,13 +21,15 @@ import os
 //    root session for the catalog. A real change to the catalog discards
 //    that session, and the next search makes a new one for the new catalog.
 //
-// Parts 1 and 2 embed with one `PooledEmbedder` of FoundationModelsExtras for
-// Qwen3 Embedding 0.6B, 4-bit, from the Hugging Face hub. The first embed
-// loads the model through `ModelPool.shared`, and the first run downloads
-// the weights. The two searchers share that one loaded model. Part 3 selects
-// with one `PooledModel` of FoundationModelsExtras for Qwen3 4B, 4-bit, from
-// the Hugging Face hub. The first root session loads that model through
-// `ModelPool.shared`, and the first run downloads the weights.
+// Parts 1 and 2 embed with `exampleEmbedder` of ExamplesSupport: a
+// `PooledEmbedder` of FoundationModelsExtras for Qwen3 Embedding 0.6B, 4-bit,
+// from the Hugging Face hub. The first embed loads the model through
+// `ModelPool.shared`, and the first run downloads the weights. The two
+// searchers share that one loaded model. Part 3 selects with
+// `exampleSelectionModel` of ExamplesSupport: a `PooledModel` of
+// FoundationModelsExtras for Qwen3 4B, 4-bit, from the Hugging Face hub. The
+// first root session loads that model through `ModelPool.shared`, and the
+// first run downloads the weights.
 //
 // Run with `swift run --package-path Examples HotReload`.
 
@@ -47,22 +48,6 @@ let query = "file"
 /// the tools.
 let searchLimit = 5
 
-/// The embedding model of parts 1 and 2. It loads nothing until its first embed.
-let embedder = PooledEmbedder(ref: "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ")
-
-/// The report that this command writes: its whole output, one line at a time.
-///
-/// The report is the product of this command, not a debug log, so it goes to
-/// standard output through one explicit writer.
-enum Report {
-    /// Writes `line` and a line break to standard output.
-    ///
-    /// - Parameter line: the text of the line.
-    static func write(_ line: String) {
-        FileHandle.standardOutput.write(Data((line + "\n").utf8))
-    }
-}
-
 // MARK: - 1. A burst of updates
 
 Report.write("Hot-reload burst:\n")
@@ -80,7 +65,7 @@ let burstLog = DiagnosticLog()
 let burstSearcher = MetadataSearcher(
     items: [Tool](),
     mode: .retrieval,
-    embedder: embedder,
+    embedder: exampleEmbedder,
     onDiagnostic: { burstLog.record($0) },
 )
 for (index, items) in burst.enumerated() {
@@ -106,7 +91,12 @@ let rapidBurst: [[Tool]] = [
     [toolB, toolC],
 ]
 
-let coalesced = try await runCoalescedBurst(rapidBurst, embeddingWith: embedder, query: query, limit: searchLimit)
+let coalesced = try await runCoalescedBurst(
+    rapidBurst,
+    embeddingWith: exampleEmbedder,
+    query: query,
+    limit: searchLimit,
+)
 Report.write("  \(rapidBurst.count) update(items:) calls -> \(coalesced.embedBatches.count) embed calls")
 for (index, batch) in coalesced.embedBatches.enumerated() {
     Report.write("  embed call \(index + 1): \(batch)")
@@ -120,15 +110,12 @@ Report.write("  search(\"\(query)\") after the burst = \(coalesced.searchResultI
 
 Report.write("\nSelection root session after a catalog change (Qwen3 4B):")
 
-/// The selection model of part 3. It loads nothing until the first session.
-let qwen = PooledModel(ref: "mlx-community/Qwen3-4B-4bit")
-
 /// Counts each root session that the searcher asks the factory for. Each one
-/// is a real session of `qwen`.
+/// is a real session of `exampleSelectionModel`.
 let sessionCount = CallCounter()
 let selectionConfig = SelectionConfig(model: { instructions in
     await sessionCount.increment()
-    return try await qwen.session(instructions: instructions)
+    return try await exampleSelectionModel.session(instructions: instructions)
 })
 let selector = MetadataSearcher(items: [toolA], mode: .selection, selection: selectionConfig)
 

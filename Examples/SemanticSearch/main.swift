@@ -14,12 +14,12 @@ import FoundationModelsMetadataRegistry
 // the cosine signal is the only signal that can. The example prints the
 // ranking of the model as it is.
 //
-// The embedder is a `PooledEmbedder` of FoundationModelsExtras for Qwen3
-// Embedding 0.6B, 4-bit, from the Hugging Face hub. The embedder loads
-// nothing when you make it. The first search embeds the catalog, and then
-// `ModelPool.shared` loads the model. The first run downloads the weights
-// (about 0.3 GB) into the Hugging Face cache; a later run loads them from
-// the cache.
+// The embedder is `exampleEmbedder` of ExamplesSupport: a `PooledEmbedder` of
+// FoundationModelsExtras for Qwen3 Embedding 0.6B, 4-bit, from the Hugging
+// Face hub. The embedder loads nothing when you make it. The first search
+// embeds the catalog, and then `ModelPool.shared` loads the model. The first
+// run downloads the weights (about 0.3 GB) into the Hugging Face cache; a
+// later run loads them from the cache.
 //
 // Run with `--no-embedder` to search without an embedding model. Then the
 // searcher uses the keyword signals only, and it reports
@@ -35,20 +35,19 @@ let catalog = baseGitCommands + [
 
 let query = "save my work"
 let noEmbedder = CommandLine.arguments.contains("--no-embedder")
-print("Query: \"\(query)\"\(noEmbedder ? " (--no-embedder)" : "")\n")
+Report.write("Query: \"\(query)\"\(noEmbedder ? " (--no-embedder)" : "")\n")
 
-/// Prints the one diagnostic that this example is about, and logs each other one.
+/// Writes the one diagnostic that this example is about to the report, and logs each other one.
 let printDiagnostic: @Sendable (MetadataDiagnostic) -> Void = { diagnostic in
     if case .embeddingUnavailable = diagnostic {
-        print("[diagnostic] embeddingUnavailable: no embedder configured; using keyword signals only.")
+        Report.write("[diagnostic] embeddingUnavailable: no embedder configured; using keyword signals only.")
     } else {
         MetadataDiagnostic.log(diagnostic)
     }
 }
 
-/// The embedding model, or `nil` for `--no-embedder`.
-let embedder: PooledEmbedder? =
-    noEmbedder ? nil : PooledEmbedder(ref: "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ")
+/// The shared embedding model of the examples, or `nil` for `--no-embedder`.
+let embedder: PooledEmbedder? = noEmbedder ? nil : exampleEmbedder
 
 let searcher = MetadataSearcher(
     items: catalog,
@@ -57,4 +56,4 @@ let searcher = MetadataSearcher(
     onDiagnostic: printDiagnostic,
 )
 let matches = try await searcher.search(intent: query, limit: 5)
-print(formattedMatches(matches: matches))
+Report.write(formattedMatches(matches: matches))

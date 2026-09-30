@@ -1,10 +1,40 @@
 import Foundation
+import FoundationModelsExtras
 import FoundationModelsMetadataRegistry
 
 // # Shared types and helpers for the examples.
 //
-// A simple catalog item type, a small catalog of git subcommands, and a
-// formatter that prints ranked matches with their signals.
+// A simple catalog item type, a small catalog of git subcommands, a
+// formatter for ranked matches with their signals, the writer of the report
+// of each example, and the two models that the examples use.
+
+/// The embedding model of the examples that embed: Qwen3 Embedding 0.6B,
+/// 4-bit, from the Hugging Face hub.
+///
+/// The embedder loads nothing when you make it. The first embed loads the
+/// model through `ModelPool.shared`, and the first run downloads the weights.
+/// All the searchers that use this value share the one loaded model.
+public let exampleEmbedder = PooledEmbedder(ref: "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ")
+
+/// The language model of the examples that select: Qwen3 4B, 4-bit, from the
+/// Hugging Face hub.
+///
+/// The model loads nothing when you make it. The first session loads the
+/// model through `ModelPool.shared`, and the first run downloads the weights.
+public let exampleSelectionModel = PooledModel(ref: "mlx-community/Qwen3-4B-4bit")
+
+/// The report that an example writes: its whole output, one line at a time.
+///
+/// The report is the product of the example, not a debug log. Thus it goes to
+/// standard output through this one explicit writer.
+public enum Report {
+    /// Writes `line` and a line break to standard output.
+    ///
+    /// - Parameter line: the text of the line.
+    public static func write(_ line: String) {
+        FileHandle.standardOutput.write(Data((line + "\n").utf8))
+    }
+}
 
 /// A simple `SearchableMetadata` item: a stable id and a `block` of text. The
 /// block is both the description of the item and the text that the searcher

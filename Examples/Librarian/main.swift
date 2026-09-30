@@ -18,13 +18,13 @@ import FoundationModelsMetadataRegistry
 // and keyword ranking alone cannot find that pair. The model must reason
 // about the task.
 //
-// The model is a `PooledModel` of FoundationModelsExtras for Qwen3 4B,
-// 4-bit, from the Hugging Face hub. The model loads nothing when you make
-// it. The first search asks the factory for a session, and then
-// `ModelPool.shared` loads the model. The first run downloads the weights
-// (about 2.3 GB) into the Hugging Face cache; a later run loads them from
-// the cache. The example prints what the model selects, and the selection
-// can change from one run to the next.
+// The model is `exampleSelectionModel` of ExamplesSupport: a `PooledModel` of
+// FoundationModelsExtras for Qwen3 4B, 4-bit, from the Hugging Face hub. The
+// model loads nothing when you make it. The first search asks the factory
+// for a session, and then `ModelPool.shared` loads the model. The first run
+// downloads the weights (about 2.3 GB) into the Hugging Face cache; a later
+// run loads them from the cache. The example prints what the model selects,
+// and the selection can change from one run to the next.
 //
 // Run with `swift run --package-path Examples Librarian`.
 
@@ -45,21 +45,18 @@ let catalog: [TripPlanningTool] = [
     TripPlanningTool(id: "flightStatus", block: "Checks the status of a booked flight by its confirmation number."),
 ]
 
-print("Trip-planning catalog (\(catalog.count) tools):")
+Report.write("Trip-planning catalog (\(catalog.count) tools):")
 for tool in catalog {
-    print("- \(tool.id): \(tool.block)")
+    Report.write("- \(tool.id): \(tool.block)")
 }
 
 let query = "the warmest city on my trip"
-print("\nQuery: \"\(query)\"\n")
-
-/// The selection model. It loads nothing until the first session.
-let qwen = PooledModel(ref: "mlx-community/Qwen3-4B-4bit")
+Report.write("\nQuery: \"\(query)\"\n")
 
 let searcher = MetadataSearcher(
     items: catalog,
     mode: .selection,
-    selection: SelectionConfig(model: { try await qwen.session(instructions: $0) }),
+    selection: SelectionConfig(model: { try await exampleSelectionModel.session(instructions: $0) }),
 )
 let matches = try await searcher.search(intent: query, limit: 5)
-print(formattedMatches(matches: matches))
+Report.write(formattedMatches(matches: matches))
