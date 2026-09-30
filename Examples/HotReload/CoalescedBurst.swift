@@ -1,10 +1,11 @@
 import ExamplesSupport
+import FoundationModelsExtras
 import FoundationModelsMetadataRegistry
 
 // The machinery for part 2 of this example: a burst of updates that arrives
 // while the first embed call is held.
 
-/// What `runCoalescedBurst(_:query:limit:)` observed.
+/// What `runCoalescedBurst(_:embeddingWith:query:limit:)` observed.
 struct CoalescedBurstResult {
     /// The texts of each embed call that the searcher made, in call order.
     let embedBatches: [[String]]
@@ -27,25 +28,26 @@ struct CoalescedBurstResult {
 /// - Parameters:
 ///   - burst: the catalogs to send, one `update(items:)` call for each. Two
 ///     catalogs in a row must not hold the same ids.
+///   - embedder: the embedding model that computes the vectors. The
+///     searcher holds the first call of this embedder.
 ///   - query: a query that each item of `burst` matches.
 ///   - limit: the maximum number of matches of each search. Must be at
 ///     least the size of the largest catalog.
 /// - Returns: the embed calls, the catch-up diagnostics, and the final
 ///   search result.
-/// - Throws: the error of the model load or of `search(intent:limit:)`.
-func runCoalescedBurst(_ burst: [[Tool]], query: String, limit: Int) async throws -> CoalescedBurstResult {
-    let base = try await PooledTextEmbedding.acquire(
-        exampleEmbeddingModel,
-        footprintBytes: exampleEmbeddingFootprintBytes,
-        loader: exampleModelLoader(),
-        from: .shared,
-    )
+/// - Throws: the error of `search(intent:limit:)`.
+func runCoalescedBurst(
+    _ burst: [[Tool]],
+    embeddingWith embedder: PooledEmbedder,
+    query: String,
+    limit: Int,
+) async throws -> CoalescedBurstResult {
     let hold = FirstEmbedHold()
     let log = DiagnosticLog()
-    let searcher = await MetadataSearcher(
+    let searcher = MetadataSearcher(
         items: [Tool](),
         mode: .retrieval,
-        embedder: HeldFirstEmbedder(base: base, hold: hold),
+        embedder: HeldFirstEmbedder(base: embedder, hold: hold),
         onDiagnostic: { log.record($0) },
     )
 
@@ -124,7 +126,7 @@ private actor FirstEmbedHold {
 /// An embedder whose first embed call `hold` holds.
 private struct HeldFirstEmbedder: TextEmbedding {
     /// The embedder that computes the vectors.
-    let base: PooledTextEmbedding
+    let base: PooledEmbedder
 
     /// The hold that records and holds the calls.
     let hold: FirstEmbedHold

@@ -67,10 +67,27 @@ comments:
     - evidence: iteration 2 changed 14 files: Sources/FoundationModelsMetadataRegistry/MetadataSearcher.swift, Sources/FoundationModelsMetadataRegistry/MetadataSearcher+FirstSearchCatchUp.swift, Tests/FoundationModelsMetadataRegistryTests/{PooledEmbedderSearchTests,EmbeddingTests,HotReloadTests,HotReloadBurstTests,HotReloadCoalescingTests,RegistryMetricsTests,RegistryTracingTests,SearchableMetadataTextsTests,TelemetryContentSafetyTests}.swift, IntegrationTests/Tests/FoundationModelsMetadataRegistryIntegrationTests/PooledEmbedderRealModelTests.swift, README.md, plan.md. `swift test`: 180 tests in 22 suites passed, 0 issues. `swift test --package-path IntegrationTests`: 6 tests in 5 suites passed. The one build warning ("missing creator for mutated node ... mlx-swift_Cmlx.bundle") comes from the mlx-swift dependency. `grep -rn "await MetadataSearcher(" Sources Tests IntegrationTests README.md plan.md`: no match (exit 1).
     - next: /review. After commit and push, check that CI (unit and integration jobs) is green; that acceptance item is still open.
   timestamp: 2026-09-30T15:54:55.981215+00:00
+- actor: claude-code
+  id: 01m3sh3ybqnx951xh7k2bfy76a
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (commit 0b55573). 0 findings, 0 confirmed, 3 refuted. 21 files reviewed. The .kanban/ files, README.md and plan.md were not reviewed (ignore rule or no validator matched).
+    - next: The task is in done. Push the commit and make sure that CI is green.
+  timestamp: 2026-09-30T16:07:16.599985+00:00
+- actor: claude-code
+  id: 01m3sh49gqp1ja6epjpsd1hrk9
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — one synchronous `MetadataSearcher` initializer with `embedder:`; async initializer deleted; callers drop `await`; tests that need an embedded catalog use `init(index:embedder:)`
+    - test: green — root 180 tests / 22 suites; IntegrationTests 6 tests / 5 suites incl. the real Qwen3 embedding test; 0 repo warnings
+    - commit: 0b55573 feat(searcher)!: take PooledEmbedder directly
+    - review: clean — 0 findings; task moved to done
+    - next: push to origin main, check CI, report the sha to foundationmodelsskills-03
+  timestamp: 2026-09-30T16:07:28.023402+00:00
 depends_on:
 - 01M3QMDGD8148YNDHWBB1YXAQ1
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: b480
 title: Take PooledEmbedder directly; delete PooledTextEmbedding and the embeddingModel initializer
 ---
 **Wait for:** FoundationModelsRanker task 01M3QMDA82DXPZNEASMVXTP31M ("Depend on Extras; PooledSession is an AgentSession and PooledEmbedder is a TextEmbedding") on the Ranker board: done and pushed.

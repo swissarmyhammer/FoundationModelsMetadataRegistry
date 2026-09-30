@@ -1,6 +1,7 @@
 import ExamplesSupport
 import Foundation
 import FoundationModels
+import FoundationModelsExtras
 import FoundationModelsMetadataRegistry
 import os
 
@@ -22,10 +23,11 @@ import os
 //    root session for the catalog. A real change to the catalog discards
 //    that session, and the next search makes a new one for the new catalog.
 //
-// Parts 1 and 2 embed with a small MLX embedding model from the Hugging Face
-// hub, which the searchers get from `ModelPool.shared` through the
-// `LiveModelLoader` of FoundationModelsRouter. The two searchers share one
-// loaded model. Part 3 uses the on-device Apple Intelligence model.
+// Parts 1 and 2 embed with one `PooledEmbedder` of FoundationModelsExtras for
+// Qwen3 Embedding 0.6B, 4-bit, from the Hugging Face hub. The first embed
+// loads the model through `ModelPool.shared`, and the first run downloads
+// the weights. The two searchers share that one loaded model. Part 3 uses
+// the on-device Apple Intelligence model.
 //
 // Run with `swift run --package-path Examples HotReload`.
 
@@ -38,6 +40,9 @@ let toolC = Tool(id: "toolC", block: "deletes a file from disk")
 
 /// The query of each search. Each tool description contains "file".
 let query = "file"
+
+/// The embedding model of parts 1 and 2. It loads nothing until its first embed.
+let embedder = PooledEmbedder(ref: "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ")
 
 /// The report that this command writes: its whole output, one line at a time.
 ///
@@ -66,12 +71,10 @@ let burst: [[Tool]] = [
 ]
 
 let burstLog = DiagnosticLog()
-let burstSearcher = try await MetadataSearcher(
+let burstSearcher = MetadataSearcher(
     items: [Tool](),
     mode: .retrieval,
-    embeddingModel: exampleEmbeddingModel,
-    footprintBytes: exampleEmbeddingFootprintBytes,
-    loader: exampleModelLoader(),
+    embedder: embedder,
     onDiagnostic: { burstLog.record($0) },
 )
 for (index, items) in burst.enumerated() {
@@ -97,7 +100,7 @@ let rapidBurst: [[Tool]] = [
     [toolB, toolC],
 ]
 
-let coalesced = try await runCoalescedBurst(rapidBurst, query: query, limit: 5)
+let coalesced = try await runCoalescedBurst(rapidBurst, embeddingWith: embedder, query: query, limit: 5)
 Report.write("  \(rapidBurst.count) update(items:) calls -> \(coalesced.embedBatches.count) embed calls")
 for (index, batch) in coalesced.embedBatches.enumerated() {
     Report.write("  embed call \(index + 1): \(batch)")

@@ -1,4 +1,5 @@
 import ExamplesSupport
+import FoundationModelsExtras
 import FoundationModelsMetadataRegistry
 
 // # SemanticSearch: add an embedding model to keyword search.
@@ -9,17 +10,20 @@ import FoundationModelsMetadataRegistry
 // Each printed match shows the value of the cosine signal.
 //
 // The query "save my work" has no keyword in common with the `commit`
-// entry. Only the cosine signal can find `commit` for it.
+// entry. Thus the keyword signals cannot rank `commit` for this query, and
+// the cosine signal is the only signal that can. The example prints the
+// ranking of the model as it is.
 //
-// The searcher gets the embedding model from `ModelPool.shared` through the
-// `LiveModelLoader` of FoundationModelsRouter. The model is a small MLX
-// embedding model from the Hugging Face hub; the first run downloads it.
+// The embedder is a `PooledEmbedder` of FoundationModelsExtras for Qwen3
+// Embedding 0.6B, 4-bit, from the Hugging Face hub. The embedder loads
+// nothing when you make it. The first search embeds the catalog, and then
+// `ModelPool.shared` loads the model. The first run downloads the weights
+// (about 0.3 GB) into the Hugging Face cache; a later run loads them from
+// the cache.
 //
 // Run with `--no-embedder` to search without an embedding model. Then the
 // searcher uses the keyword signals only, and it reports
-// `.embeddingUnavailable` through its diagnostic callback. The query shares
-// the "work" trigrams with the `status` entry ("working tree"), so the
-// keyword-only search still returns a result, but not `commit`.
+// `.embeddingUnavailable` through its diagnostic callback.
 //
 // Run with `swift run --package-path Examples SemanticSearch` or
 // `swift run --package-path Examples SemanticSearch --no-embedder`.
@@ -42,18 +46,15 @@ let printDiagnostic: @Sendable (MetadataDiagnostic) -> Void = { diagnostic in
     }
 }
 
-let searcher =
-    if noEmbedder {
-        await MetadataSearcher(items: catalog, mode: .retrieval, embedder: nil, onDiagnostic: printDiagnostic)
-    } else {
-        try await MetadataSearcher(
-            items: catalog,
-            mode: .retrieval,
-            embeddingModel: exampleEmbeddingModel,
-            footprintBytes: exampleEmbeddingFootprintBytes,
-            loader: exampleModelLoader(),
-            onDiagnostic: printDiagnostic,
-        )
-    }
+/// The embedding model, or `nil` for `--no-embedder`.
+let embedder: PooledEmbedder? =
+    noEmbedder ? nil : PooledEmbedder(ref: "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ")
+
+let searcher = MetadataSearcher(
+    items: catalog,
+    mode: .retrieval,
+    embedder: embedder,
+    onDiagnostic: printDiagnostic,
+)
 let matches = try await searcher.search(intent: query, limit: 5)
 print(formattedMatches(matches: matches))
