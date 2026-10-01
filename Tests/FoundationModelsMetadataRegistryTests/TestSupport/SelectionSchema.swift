@@ -1,4 +1,5 @@
 import Foundation
+
 @testable import FoundationModelsMetadataRegistry
 
 // MARK: - `SelectionTier.idEnumSchema(ids:)` assertions (plan.md §6, M3)
@@ -29,36 +30,36 @@ struct SelectionSchemaShapeUnexpected: Error, Equatable {}
 /// a valid one — the xgrammar pipeline enforces `maxItems` and silently
 /// ignores `uniqueItems`.
 struct SelectionIDConstraints: Equatable {
-    /// The id set `properties.ids.items.enum` limits a selection to.
-    let allowedIDs: Set<String>
+  /// The id set `properties.ids.items.enum` limits a selection to.
+  let allowedIDs: Set<String>
 
-    /// `properties.ids.uniqueItems` — whether the schema forbids a repeat.
-    let uniqueItems: Bool
+  /// `properties.ids.uniqueItems` — whether the schema forbids a repeat.
+  let uniqueItems: Bool
 
-    /// `properties.ids.maxItems` — the hard cap on a selection's length.
-    let maxItems: Int
+  /// `properties.ids.maxItems` — the hard cap on a selection's length.
+  let maxItems: Int
 
-    /// Decodes the constraints out of a schema's JSON source text.
-    ///
-    /// - Parameter schemaSource: the text `SelectionTier.idEnumSchema(ids:)`
-    ///   returns.
-    /// - Throws: `SelectionSchemaShapeUnexpected` if the text is not JSON
-    ///   carrying `properties.ids` with an `items.enum`, a `uniqueItems` and
-    ///   a `maxItems`.
-    init(schemaSource: String) throws {
-        guard let data = schemaSource.data(using: .utf8),
-              let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let properties = root["properties"] as? [String: Any],
-              let idsSchema = properties["ids"] as? [String: Any],
-              let itemsSchema = idsSchema["items"] as? [String: Any],
-              let enumValues = itemsSchema["enum"] as? [String],
-              let uniqueItems = idsSchema["uniqueItems"] as? Bool,
-              let maxItems = idsSchema["maxItems"] as? Int
-        else {
-            throw SelectionSchemaShapeUnexpected()
-        }
-        allowedIDs = Set(enumValues)
-        self.uniqueItems = uniqueItems
-        self.maxItems = maxItems
+  /// Decodes the constraints out of a schema's JSON source text.
+  ///
+  /// - Parameter schemaSource: the text `SelectionTier.idEnumSchema(ids:)`
+  ///   returns.
+  /// - Throws: `SelectionSchemaShapeUnexpected` if the text is not JSON
+  ///   carrying `properties.ids` with an `items.enum`, a `uniqueItems` and
+  ///   a `maxItems`.
+  init(schemaSource: String) throws {
+    guard let data = schemaSource.data(using: .utf8),
+      let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let properties = root["properties"] as? [String: Any],
+      let idsSchema = properties["ids"] as? [String: Any],
+      let itemsSchema = idsSchema["items"] as? [String: Any],
+      let enumValues = itemsSchema["enum"] as? [String],
+      let uniqueItems = idsSchema["uniqueItems"] as? Bool,
+      let maxItems = idsSchema["maxItems"] as? Int
+    else {
+      throw SelectionSchemaShapeUnexpected()
     }
+    allowedIDs = Set(enumValues)
+    self.uniqueItems = uniqueItems
+    self.maxItems = maxItems
+  }
 }

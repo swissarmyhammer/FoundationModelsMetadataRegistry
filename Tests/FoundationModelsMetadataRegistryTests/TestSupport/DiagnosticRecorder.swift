@@ -1,4 +1,5 @@
 import Foundation
+
 @testable import FoundationModelsMetadataRegistry
 
 /// A thread-safe recorder for `onDiagnostic` callbacks, shared by
@@ -11,18 +12,18 @@ import Foundation
 /// `@unchecked Sendable` conformance safe — every access to the shared,
 /// non-Sendable-checked array is serialized through the lock.
 final class DiagnosticRecorder: @unchecked Sendable {
-    private let lock = NSLock()
-    private var recorded: [MetadataDiagnostic] = []
+  private let lock = NSLock()
+  private var recorded: [MetadataDiagnostic] = []
 
-    var diagnostics: [MetadataDiagnostic] {
-        lock.lock()
-        defer { lock.unlock() }
-        return recorded
-    }
+  var diagnostics: [MetadataDiagnostic] {
+    lock.lock()
+    defer { lock.unlock() }
+    return recorded
+  }
 
-    func record(_ diagnostic: MetadataDiagnostic) {
-        lock.lock()
-        defer { lock.unlock() }
-        recorded.append(diagnostic)
-    }
+  func record(_ diagnostic: MetadataDiagnostic) {
+    lock.lock()
+    defer { lock.unlock() }
+    recorded.append(diagnostic)
+  }
 }

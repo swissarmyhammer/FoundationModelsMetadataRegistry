@@ -50,301 +50,301 @@ public typealias Weights = SignalWeights
 /// when a selection tier is configured, `.retrieval` otherwise (plan.md §7
 /// "selection when a model is configured, else retrieval").
 public actor MetadataSearcher<Item: SearchableMetadata> {
-    /// The in-memory index built from the catalog's items at `init`.
-    ///
-    /// Replaced wholesale by `update(items:)` (plan.md §8, hot reload) on
-    /// every real change.
-    var index: MetadataIndex<Item>
+  /// The in-memory index built from the catalog's items at `init`.
+  ///
+  /// Replaced wholesale by `update(items:)` (plan.md §8, hot reload) on
+  /// every real change.
+  var index: MetadataIndex<Item>
 
-    /// The per-signal fusion weights this searcher's retrieval tier uses.
-    let weights: Weights
+  /// The per-signal fusion weights this searcher's retrieval tier uses.
+  let weights: Weights
 
-    /// Which tier `search(intent:limit:)` uses.
-    let mode: SearchMode
+  /// Which tier `search(intent:limit:)` uses.
+  let mode: SearchMode
 
-    /// The embedder used to embed the *query* text at search time, or `nil` for keyword-only searches.
-    ///
-    /// Only the query itself is embedded per search (plan.md §5); without an
-    /// embedder, cosine ranking is skipped and every search
-    /// degrades to keyword-only. Catalog items are embedded in batches, not
-    /// per search: at index-build time via `MetadataIndex.build(items:
-    /// embedder:previous:onDiagnostic:)`, and by the two catch-ups that
-    /// share `catchUpEmbeddings(with:source:)` — the
-    /// single-flight reload loop of `update(items:)` for the blocks a reload
-    /// changed (see `ReloadEmbedLoop`), and the first search for a
-    /// synchronously built index (see `FirstSearchCatchUp`).
-    /// The same embedder instance is reused for both roles across every
-    /// `update`.
-    let embedder: (any TextEmbedding)?
+  /// The embedder used to embed the *query* text at search time, or `nil` for keyword-only searches.
+  ///
+  /// Only the query itself is embedded per search (plan.md §5); without an
+  /// embedder, cosine ranking is skipped and every search
+  /// degrades to keyword-only. Catalog items are embedded in batches, not
+  /// per search: at index-build time via `MetadataIndex.build(items:
+  /// embedder:previous:onDiagnostic:)`, and by the two catch-ups that
+  /// share `catchUpEmbeddings(with:source:)` — the
+  /// single-flight reload loop of `update(items:)` for the blocks a reload
+  /// changed (see `ReloadEmbedLoop`), and the first search for a
+  /// synchronously built index (see `FirstSearchCatchUp`).
+  /// The same embedder instance is reused for both roles across every
+  /// `update`.
+  let embedder: (any TextEmbedding)?
 
-    /// Called for every diagnostic emitted while building the index and while searching.
-    ///
-    /// Currently `.duplicateId`, `.embeddingUnavailable`,
-    /// `.unknownSelectedId`, and `.embedCatchUp`.
-    let onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
+  /// Called for every diagnostic emitted while building the index and while searching.
+  ///
+  /// Currently `.duplicateId`, `.embeddingUnavailable`,
+  /// `.unknownSelectedId`, and `.embedCatchUp`.
+  let onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
 
-    /// This searcher's selection tier configuration (plan.md §6), or `nil` when none was supplied at `init`.
-    ///
-    /// Kept around (rather than only
-    /// building `selectionTier` once) so `update(items:)` can rebuild the
-    /// tier from the same configuration whenever the index changes.
-    let selectionConfig: SelectionConfig?
+  /// This searcher's selection tier configuration (plan.md §6), or `nil` when none was supplied at `init`.
+  ///
+  /// Kept around (rather than only
+  /// building `selectionTier` once) so `update(items:)` can rebuild the
+  /// tier from the same configuration whenever the index changes.
+  let selectionConfig: SelectionConfig?
 
-    /// A selection tier paired with the index snapshot it answers over.
-    ///
-    /// `selectionSearch(_:intent:limit:)` re-attaches each returned id's
-    /// typed `item` from `snapshot`. A plain value, not a box: the pair is
-    /// immutable for the tier's whole lifetime, because every real content
-    /// change replaces the pair outright.
-    ///
-    /// Invariant: a pair's snapshot always has content (ids, blocks)
-    /// identical to its tier's own catalog, so an `item` lookup can never
-    /// disagree with the catalog generation the tier answered over.
-    typealias ConfiguredSelectionTier = (tier: SelectionTier, snapshot: MetadataIndex<Item>)
+  /// A selection tier paired with the index snapshot it answers over.
+  ///
+  /// `selectionSearch(_:intent:limit:)` re-attaches each returned id's
+  /// typed `item` from `snapshot`. A plain value, not a box: the pair is
+  /// immutable for the tier's whole lifetime, because every real content
+  /// change replaces the pair outright.
+  ///
+  /// Invariant: a pair's snapshot always has content (ids, blocks)
+  /// identical to its tier's own catalog, so an `item` lookup can never
+  /// disagree with the catalog generation the tier answered over.
+  typealias ConfiguredSelectionTier = (tier: SelectionTier, snapshot: MetadataIndex<Item>)
 
-    /// This searcher's selection tier (plan.md §6), or `nil` when no `SelectionConfig` was supplied at `init`.
-    ///
-    /// FoundationModelsRanker's
-    /// `SelectionTier` over this searcher's index (its `SelectionCatalog`
-    /// conformance), paired with the index snapshot it answers over (see
-    /// `ConfiguredSelectionTier`). Without one, `.selection` throws
-    /// `SelectionTierUnavailable`, exactly as it did before a
-    /// selection tier existed at all. The snapshot keeps
-    /// `Match.item`/`Match.block` consistent even if a concurrent
-    /// `update(items:)` swaps `index` while a search is suspended in the
-    /// tier. Rebuilt by `update(items:)` on every real catalog change
-    /// (plan.md §8): a fresh `SelectionTier` starts with no cached root
-    /// session, a prefix assembled from the new index, and an id-enum
-    /// grammar derived from the new id set.
-    var selectionTier: ConfiguredSelectionTier?
+  /// This searcher's selection tier (plan.md §6), or `nil` when no `SelectionConfig` was supplied at `init`.
+  ///
+  /// FoundationModelsRanker's
+  /// `SelectionTier` over this searcher's index (its `SelectionCatalog`
+  /// conformance), paired with the index snapshot it answers over (see
+  /// `ConfiguredSelectionTier`). Without one, `.selection` throws
+  /// `SelectionTierUnavailable`, exactly as it did before a
+  /// selection tier existed at all. The snapshot keeps
+  /// `Match.item`/`Match.block` consistent even if a concurrent
+  /// `update(items:)` swaps `index` while a search is suspended in the
+  /// tier. Rebuilt by `update(items:)` on every real catalog change
+  /// (plan.md §8): a fresh `SelectionTier` starts with no cached root
+  /// session, a prefix assembled from the new index, and an id-enum
+  /// grammar derived from the new id set.
+  var selectionTier: ConfiguredSelectionTier?
 
-    /// This searcher's first-search catch-up state (see `FirstSearchCatchUp`).
-    ///
-    /// Starts `.done` when no embedder is configured — a keyword-only
-    /// searcher has nothing to catch up, and its behavior is unchanged —
-    /// and `.pending` otherwise.
-    var firstSearchCatchUp: FirstSearchCatchUp
+  /// This searcher's first-search catch-up state (see `FirstSearchCatchUp`).
+  ///
+  /// Starts `.done` when no embedder is configured — a keyword-only
+  /// searcher has nothing to catch up, and its behavior is unchanged —
+  /// and `.pending` otherwise.
+  var firstSearchCatchUp: FirstSearchCatchUp
 
-    /// The catalog embed that the first search awaits in place of an embed of
-    /// its own (see `runFirstSearchCatchUp()`), or `nil`. Set only by
-    /// `init(sharing:mode:weights:selection:onDiagnostic:)`.
-    let sharedEmbedding: SharedCatalogEmbedding<Item>?
+  /// The catalog embed that the first search awaits in place of an embed of
+  /// its own (see `runFirstSearchCatchUp()`), or `nil`. Set only by
+  /// `init(sharing:mode:weights:selection:onDiagnostic:)`.
+  let sharedEmbedding: SharedCatalogEmbedding<Item>?
 
-    /// This searcher's reload embed loop state (see `ReloadEmbedLoop` in
-    /// `MetadataSearcher+ReloadEmbedLoop.swift`).
-    ///
-    /// Starts `.idle`: no `update(items:)` has run yet.
-    var reloadEmbedLoop: ReloadEmbedLoop
+  /// This searcher's reload embed loop state (see `ReloadEmbedLoop` in
+  /// `MetadataSearcher+ReloadEmbedLoop.swift`).
+  ///
+  /// Starts `.idle`: no `update(items:)` has run yet.
+  var reloadEmbedLoop: ReloadEmbedLoop
 
-    /// Builds a searcher over `items`, indexing them once at `init` with no embedder.
-    ///
-    /// Cosine never ranks anything and every search degrades to
-    /// keyword-only, reported via `.embeddingUnavailable` (plan.md §5). Use
-    /// `init(items:mode:weights:embedder:selection:onDiagnostic:)` to wire up
-    /// cosine.
-    ///
-    /// - Parameters:
-    ///   - items: the catalog's items, in first-seen-wins duplicate-id order
-    ///     (forwarded to `MetadataIndex.init(items:onDiagnostic:)`).
-    ///   - mode: which tier `search(intent:limit:)` uses. Defaults to
-    ///     `.auto`, which falls back to `.retrieval` until a selection tier
-    ///     is configured.
-    ///   - weights: the per-signal fusion weights for the retrieval tier.
-    ///     Defaults to `1.0` for every signal.
-    ///   - selection: this searcher's selection tier configuration (plan.md
-    ///     §6), or `nil` (the default) to leave `.selection` unavailable.
-    ///   - onDiagnostic: called for every diagnostic emitted while building
-    ///     the index (currently only `.duplicateId`), and by later tiers as
-    ///     they land. Defaults to logging via `MetadataDiagnostic.log(_:)`.
-    public init(
-        items: [Item],
-        mode: SearchMode = .auto,
-        weights: Weights = Weights(),
-        selection: SelectionConfig? = nil,
-        onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
-    ) {
-        self.init(
-            items: items,
-            mode: mode,
-            weights: weights,
-            embedder: nil,
-            selection: selection,
-            onDiagnostic: onDiagnostic,
-        )
-    }
+  /// Builds a searcher over `items`, indexing them once at `init` with no embedder.
+  ///
+  /// Cosine never ranks anything and every search degrades to
+  /// keyword-only, reported via `.embeddingUnavailable` (plan.md §5). Use
+  /// `init(items:mode:weights:embedder:selection:onDiagnostic:)` to wire up
+  /// cosine.
+  ///
+  /// - Parameters:
+  ///   - items: the catalog's items, in first-seen-wins duplicate-id order
+  ///     (forwarded to `MetadataIndex.init(items:onDiagnostic:)`).
+  ///   - mode: which tier `search(intent:limit:)` uses. Defaults to
+  ///     `.auto`, which falls back to `.retrieval` until a selection tier
+  ///     is configured.
+  ///   - weights: the per-signal fusion weights for the retrieval tier.
+  ///     Defaults to `1.0` for every signal.
+  ///   - selection: this searcher's selection tier configuration (plan.md
+  ///     §6), or `nil` (the default) to leave `.selection` unavailable.
+  ///   - onDiagnostic: called for every diagnostic emitted while building
+  ///     the index (currently only `.duplicateId`), and by later tiers as
+  ///     they land. Defaults to logging via `MetadataDiagnostic.log(_:)`.
+  public init(
+    items: [Item],
+    mode: SearchMode = .auto,
+    weights: Weights = Weights(),
+    selection: SelectionConfig? = nil,
+    onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
+  ) {
+    self.init(
+      items: items,
+      mode: mode,
+      weights: weights,
+      embedder: nil,
+      selection: selection,
+      onDiagnostic: onDiagnostic,
+    )
+  }
 
-    /// Builds a searcher over `items` synchronously, and embeds nothing here
-    /// (plan.md §5, §8).
-    ///
-    /// This is the one initializer that takes `items` and an `embedder`. The
-    /// index is built with no embedding. The first `search(intent:limit:)`
-    /// embeds every item's block through `embedder`, one time, before that
-    /// search ranks (see `FirstSearchCatchUp`). Thus a caller makes the
-    /// searcher with no `await`, also from an asynchronous context, for
-    /// example over a FoundationModelsExtras `PooledEmbedder`, which loads
-    /// nothing until its first embed:
-    ///
-    ///     let searcher = MetadataSearcher(
-    ///         items: catalog,
-    ///         embedder: PooledEmbedder(ref: "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ"),
-    ///     )
-    ///
-    /// Two searchers whose `PooledEmbedder`s name one model in one
-    /// `ModelPool` share one loaded model: the pool loads each model one time.
-    ///
-    /// - Parameters:
-    ///   - items: the catalog's items, in first-seen-wins duplicate-id order
-    ///     (forwarded to `MetadataIndex.init(items:onDiagnostic:)`).
-    ///   - mode: which tier `search(intent:limit:)` uses. Defaults to
-    ///     `.auto`.
-    ///   - weights: the per-signal fusion weights for the retrieval tier.
-    ///     Defaults to `1.0` for every signal.
-    ///   - embedder: the embedder to embed every item's block with at the
-    ///     first search, and the query with at each search. `nil` behaves
-    ///     like `init(items:mode:weights:selection:onDiagnostic:)`.
-    ///   - selection: this searcher's selection tier configuration (plan.md
-    ///     §6), or `nil` (the default) to leave `.selection` unavailable.
-    ///   - onDiagnostic: called for every diagnostic emitted while building
-    ///     the index and while searching. Defaults to logging via
-    ///     `MetadataDiagnostic.log(_:)`.
-    public init(
-        items: [Item],
-        mode: SearchMode = .auto,
-        weights: Weights = Weights(),
-        embedder: (any TextEmbedding)?,
-        selection: SelectionConfig? = nil,
-        onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
-    ) {
-        self.init(
-            index: MetadataIndex(items: items, onDiagnostic: onDiagnostic),
-            mode: mode,
-            weights: weights,
-            embedder: embedder,
-            selection: selection,
-            onDiagnostic: onDiagnostic,
-        )
-    }
+  /// Builds a searcher over `items` synchronously, and embeds nothing here
+  /// (plan.md §5, §8).
+  ///
+  /// This is the one initializer that takes `items` and an `embedder`. The
+  /// index is built with no embedding. The first `search(intent:limit:)`
+  /// embeds every item's block through `embedder`, one time, before that
+  /// search ranks (see `FirstSearchCatchUp`). Thus a caller makes the
+  /// searcher with no `await`, also from an asynchronous context, for
+  /// example over a FoundationModelsExtras `PooledEmbedder`, which loads
+  /// nothing until its first embed:
+  ///
+  ///     let searcher = MetadataSearcher(
+  ///         items: catalog,
+  ///         embedder: PooledEmbedder(ref: "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ"),
+  ///     )
+  ///
+  /// Two searchers whose `PooledEmbedder`s name one model in one
+  /// `ModelPool` share one loaded model: the pool loads each model one time.
+  ///
+  /// - Parameters:
+  ///   - items: the catalog's items, in first-seen-wins duplicate-id order
+  ///     (forwarded to `MetadataIndex.init(items:onDiagnostic:)`).
+  ///   - mode: which tier `search(intent:limit:)` uses. Defaults to
+  ///     `.auto`.
+  ///   - weights: the per-signal fusion weights for the retrieval tier.
+  ///     Defaults to `1.0` for every signal.
+  ///   - embedder: the embedder to embed every item's block with at the
+  ///     first search, and the query with at each search. `nil` behaves
+  ///     like `init(items:mode:weights:selection:onDiagnostic:)`.
+  ///   - selection: this searcher's selection tier configuration (plan.md
+  ///     §6), or `nil` (the default) to leave `.selection` unavailable.
+  ///   - onDiagnostic: called for every diagnostic emitted while building
+  ///     the index and while searching. Defaults to logging via
+  ///     `MetadataDiagnostic.log(_:)`.
+  public init(
+    items: [Item],
+    mode: SearchMode = .auto,
+    weights: Weights = Weights(),
+    embedder: (any TextEmbedding)?,
+    selection: SelectionConfig? = nil,
+    onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
+  ) {
+    self.init(
+      index: MetadataIndex(items: items, onDiagnostic: onDiagnostic),
+      mode: mode,
+      weights: weights,
+      embedder: embedder,
+      selection: selection,
+      onDiagnostic: onDiagnostic,
+    )
+  }
 
-    /// Builds a searcher directly over an already-built `index`, synchronously.
-    ///
-    /// This is the seam
-    /// `update(items:)` (plan.md §8), a consumer that must build its searcher
-    /// with no `await` (a synchronous registry initializer that may start no
-    /// task), and tests needing precise control over an index's embeddings
-    /// (e.g. a mix of embedded and not-yet-embedded items) use instead of
-    /// re-deriving the index from `items` on every call.
-    ///
-    /// Nothing is embedded here. With an `embedder`, every entry of `index`
-    /// that carries no embedding is embedded at the first
-    /// `search(intent:limit:)` instead, one time, before that search ranks
-    /// (see `FirstSearchCatchUp`) — reported through `.embedCatchUp`, never
-    /// through `.embeddingUnavailable`.
-    ///
-    /// - Parameters:
-    ///   - index: the prebuilt index to search over.
-    ///   - mode: which tier `search(intent:limit:)` uses. Defaults to
-    ///     `.auto`.
-    ///   - weights: the per-signal fusion weights for the retrieval tier.
-    ///     Defaults to `1.0` for every signal.
-    ///   - embedder: the embedder to embed the query with at search time, and
-    ///     `index`'s not-yet-embedded entries with at the first search.
-    ///     Defaults to `nil` (keyword-only).
-    ///   - selection: this searcher's selection tier configuration (plan.md
-    ///     §6), or `nil` (the default) to leave `.selection` unavailable.
-    ///   - onDiagnostic: called for every diagnostic emitted while searching.
-    ///     Defaults to logging via `MetadataDiagnostic.log(_:)`.
-    public init(
-        index: MetadataIndex<Item>,
-        mode: SearchMode = .auto,
-        weights: Weights = Weights(),
-        embedder: (any TextEmbedding)? = nil,
-        selection: SelectionConfig? = nil,
-        onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
-    ) {
-        self.init(
-            index: index,
-            mode: mode,
-            weights: weights,
-            embedder: embedder,
-            sharedEmbedding: nil,
-            selection: selection,
-            onDiagnostic: onDiagnostic,
-        )
-    }
+  /// Builds a searcher directly over an already-built `index`, synchronously.
+  ///
+  /// This is the seam
+  /// `update(items:)` (plan.md §8), a consumer that must build its searcher
+  /// with no `await` (a synchronous registry initializer that may start no
+  /// task), and tests needing precise control over an index's embeddings
+  /// (e.g. a mix of embedded and not-yet-embedded items) use instead of
+  /// re-deriving the index from `items` on every call.
+  ///
+  /// Nothing is embedded here. With an `embedder`, every entry of `index`
+  /// that carries no embedding is embedded at the first
+  /// `search(intent:limit:)` instead, one time, before that search ranks
+  /// (see `FirstSearchCatchUp`) — reported through `.embedCatchUp`, never
+  /// through `.embeddingUnavailable`.
+  ///
+  /// - Parameters:
+  ///   - index: the prebuilt index to search over.
+  ///   - mode: which tier `search(intent:limit:)` uses. Defaults to
+  ///     `.auto`.
+  ///   - weights: the per-signal fusion weights for the retrieval tier.
+  ///     Defaults to `1.0` for every signal.
+  ///   - embedder: the embedder to embed the query with at search time, and
+  ///     `index`'s not-yet-embedded entries with at the first search.
+  ///     Defaults to `nil` (keyword-only).
+  ///   - selection: this searcher's selection tier configuration (plan.md
+  ///     §6), or `nil` (the default) to leave `.selection` unavailable.
+  ///   - onDiagnostic: called for every diagnostic emitted while searching.
+  ///     Defaults to logging via `MetadataDiagnostic.log(_:)`.
+  public init(
+    index: MetadataIndex<Item>,
+    mode: SearchMode = .auto,
+    weights: Weights = Weights(),
+    embedder: (any TextEmbedding)? = nil,
+    selection: SelectionConfig? = nil,
+    onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
+  ) {
+    self.init(
+      index: index,
+      mode: mode,
+      weights: weights,
+      embedder: embedder,
+      sharedEmbedding: nil,
+      selection: selection,
+      onDiagnostic: onDiagnostic,
+    )
+  }
 
-    /// The designated initializer that every other initializer calls. Each
-    /// parameter is the same as in `init(index:mode:weights:embedder:
-    /// selection:onDiagnostic:)`, and `sharedEmbedding` is the shared catalog
-    /// embed that the first search awaits, or `nil`. It records the size of
-    /// `index` in the `RegistryTelemetry.MetricName.catalogSize` gauge.
-    init(
-        index: MetadataIndex<Item>,
-        mode: SearchMode,
-        weights: Weights,
-        embedder: (any TextEmbedding)?,
-        sharedEmbedding: SharedCatalogEmbedding<Item>?,
-        selection: SelectionConfig?,
-        onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void,
-    ) {
-        self.index = index
-        self.mode = mode
-        self.weights = weights
-        self.embedder = embedder
-        self.sharedEmbedding = sharedEmbedding
-        self.onDiagnostic = onDiagnostic
-        selectionConfig = selection
-        firstSearchCatchUp = embedder == nil ? .done : .pending
-        reloadEmbedLoop = .idle
-        selectionTier = Self.buildSelectionTierIfConfigured(
-            config: selection, index: index, onDiagnostic: onDiagnostic,
-        )
-        RegistryTelemetry.recordCatalogSize(index.count)
-    }
+  /// The designated initializer that every other initializer calls. Each
+  /// parameter is the same as in `init(index:mode:weights:embedder:
+  /// selection:onDiagnostic:)`, and `sharedEmbedding` is the shared catalog
+  /// embed that the first search awaits, or `nil`. It records the size of
+  /// `index` in the `RegistryTelemetry.MetricName.catalogSize` gauge.
+  init(
+    index: MetadataIndex<Item>,
+    mode: SearchMode,
+    weights: Weights,
+    embedder: (any TextEmbedding)?,
+    sharedEmbedding: SharedCatalogEmbedding<Item>?,
+    selection: SelectionConfig?,
+    onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void,
+  ) {
+    self.index = index
+    self.mode = mode
+    self.weights = weights
+    self.embedder = embedder
+    self.sharedEmbedding = sharedEmbedding
+    self.onDiagnostic = onDiagnostic
+    selectionConfig = selection
+    firstSearchCatchUp = embedder == nil ? .done : .pending
+    reloadEmbedLoop = .idle
+    selectionTier = Self.buildSelectionTierIfConfigured(
+      config: selection, index: index, onDiagnostic: onDiagnostic,
+    )
+    RegistryTelemetry.recordCatalogSize(index.count)
+  }
 
-    /// Builds FoundationModelsRanker's `SelectionTier` over `index` when
-    /// `config` is non-`nil`, or returns `nil` otherwise.
-    ///
-    /// The tier is built over `index`'s `SelectionCatalog` conformance, paired
-    /// with `index` itself as the snapshot
-    /// `selectionSearch(_:intent:limit:)` re-attaches typed items from
-    /// (see `ConfiguredSelectionTier`) — the one piece of tier construction
-    /// both the designated initializer and `update(items:)` (plan.md §8,
-    /// hot reload) need whenever the underlying index changes: a fresh tier
-    /// starts with no cached root session and a prefix assembled from
-    /// `index`. The tier's `RankDiagnostic`s are mapped into the same-named
-    /// `MetadataDiagnostic` cases.
-    ///
-    /// The tier itself ranks nothing: it makes one prompt that picks, so it
-    /// needs neither the fusion weights nor the embedder this searcher's
-    /// retrieval tier uses.
-    ///
-    /// `static`, not an instance method: the synchronous designated
-    /// initializer builds the pair from its own parameters, and SE-0327's
-    /// flow-sensitive actor-init isolation forbids writing `selectionTier`
-    /// after any method call on `self` — so an instance-method form could
-    /// never be shared with `init` at all.
-    ///
-    /// - Parameters:
-    ///   - config: the selection tier configuration to build against, or
-    ///     `nil` when this searcher has no selection tier.
-    ///   - index: the catalog index the new tier answers `search(intent:
-    ///     limit:)` calls over, and the paired snapshot.
-    ///   - onDiagnostic: called for every diagnostic the new tier emits.
-    /// - Returns: a freshly constructed selection tier over `index`, paired
-    ///   with its snapshot — or `nil` when `config` is `nil`.
-    static func buildSelectionTierIfConfigured(
-        config: SelectionConfig?,
-        index: MetadataIndex<Item>,
-        onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void,
-    ) -> ConfiguredSelectionTier? {
-        guard let config else { return nil }
-        return (
-            tier: SelectionTier(
-                catalog: index,
-                config: config,
-                onDiagnostic: { onDiagnostic(MetadataDiagnostic($0)) },
-            ),
-            snapshot: index,
-        )
-    }
+  /// Builds FoundationModelsRanker's `SelectionTier` over `index` when
+  /// `config` is non-`nil`, or returns `nil` otherwise.
+  ///
+  /// The tier is built over `index`'s `SelectionCatalog` conformance, paired
+  /// with `index` itself as the snapshot
+  /// `selectionSearch(_:intent:limit:)` re-attaches typed items from
+  /// (see `ConfiguredSelectionTier`) — the one piece of tier construction
+  /// both the designated initializer and `update(items:)` (plan.md §8,
+  /// hot reload) need whenever the underlying index changes: a fresh tier
+  /// starts with no cached root session and a prefix assembled from
+  /// `index`. The tier's `RankDiagnostic`s are mapped into the same-named
+  /// `MetadataDiagnostic` cases.
+  ///
+  /// The tier itself ranks nothing: it makes one prompt that picks, so it
+  /// needs neither the fusion weights nor the embedder this searcher's
+  /// retrieval tier uses.
+  ///
+  /// `static`, not an instance method: the synchronous designated
+  /// initializer builds the pair from its own parameters, and SE-0327's
+  /// flow-sensitive actor-init isolation forbids writing `selectionTier`
+  /// after any method call on `self` — so an instance-method form could
+  /// never be shared with `init` at all.
+  ///
+  /// - Parameters:
+  ///   - config: the selection tier configuration to build against, or
+  ///     `nil` when this searcher has no selection tier.
+  ///   - index: the catalog index the new tier answers `search(intent:
+  ///     limit:)` calls over, and the paired snapshot.
+  ///   - onDiagnostic: called for every diagnostic the new tier emits.
+  /// - Returns: a freshly constructed selection tier over `index`, paired
+  ///   with its snapshot — or `nil` when `config` is `nil`.
+  static func buildSelectionTierIfConfigured(
+    config: SelectionConfig?,
+    index: MetadataIndex<Item>,
+    onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void,
+  ) -> ConfiguredSelectionTier? {
+    guard let config else { return nil }
+    return (
+      tier: SelectionTier(
+        catalog: index,
+        config: config,
+        onDiagnostic: { onDiagnostic(MetadataDiagnostic($0)) },
+      ),
+      snapshot: index,
+    )
+  }
 }

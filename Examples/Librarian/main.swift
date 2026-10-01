@@ -35,28 +35,33 @@ typealias TripPlanningTool = SearchableFixtureItem
 /// capacity of `SelectionConfig`, and the searcher uses one cached root
 /// session.
 let catalog: [TripPlanningTool] = [
-    TripPlanningTool(id: "tripCities", block: "Lists every city on the user's trip itinerary, in visit order."),
-    TripPlanningTool(
-        id: "weather",
-        block: "Looks up current weather conditions, including temperature, for a named city.",
-    ),
-    TripPlanningTool(id: "currency", block: "Converts an amount between two currencies for trip budgeting."),
-    TripPlanningTool(id: "packingList", block: "Suggests a packing list based on the trip's destinations and weather."),
-    TripPlanningTool(id: "flightStatus", block: "Checks the status of a booked flight by its confirmation number."),
+  TripPlanningTool(
+    id: "tripCities", block: "Lists every city on the user's trip itinerary, in visit order."),
+  TripPlanningTool(
+    id: "weather",
+    block: "Looks up current weather conditions, including temperature, for a named city.",
+  ),
+  TripPlanningTool(
+    id: "currency", block: "Converts an amount between two currencies for trip budgeting."),
+  TripPlanningTool(
+    id: "packingList",
+    block: "Suggests a packing list based on the trip's destinations and weather."),
+  TripPlanningTool(
+    id: "flightStatus", block: "Checks the status of a booked flight by its confirmation number."),
 ]
 
 Report.write("Trip-planning catalog (\(catalog.count) tools):")
 for tool in catalog {
-    Report.write("- \(tool.id): \(tool.block)")
+  Report.write("- \(tool.id): \(tool.block)")
 }
 
 let query = "the warmest city on my trip"
 Report.write("\nQuery: \"\(query)\"\n")
 
 let searcher = MetadataSearcher(
-    items: catalog,
-    mode: .selection,
-    selection: SelectionConfig(model: { try await exampleSelectionModel.session(instructions: $0) }),
+  items: catalog,
+  mode: .selection,
+  selection: SelectionConfig(model: { try await exampleSelectionModel.session(instructions: $0) }),
 )
 let matches = try await searcher.search(intent: query, limit: 5)
 Report.write(formattedMatches(matches: matches))

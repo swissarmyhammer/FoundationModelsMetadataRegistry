@@ -55,27 +55,28 @@ Report.write("Hot-reload burst:\n")
 /// Add a tool, add a second tool, send the same catalog again, then remove
 /// one tool and add another.
 let burst: [[Tool]] = [
-    [toolA],
-    [toolA, toolB],
-    [toolA, toolB],
-    [toolB, toolC],
+  [toolA],
+  [toolA, toolB],
+  [toolA, toolB],
+  [toolB, toolC],
 ]
 
 let burstLog = DiagnosticLog()
 let burstSearcher = MetadataSearcher(
-    items: [Tool](),
-    mode: .retrieval,
-    embedder: exampleEmbedder,
-    onDiagnostic: { burstLog.record($0) },
+  items: [Tool](),
+  mode: .retrieval,
+  embedder: exampleEmbedder,
+  onDiagnostic: { burstLog.record($0) },
 )
 for (index, items) in burst.enumerated() {
-    let before = burstLog.count
-    await burstSearcher.update(items: items)
-    let found = try await burstSearcher.search(intent: query, limit: searchLimit).map(\.id)
-    Report.write("step \(index + 1): update(items: \(items.map(\.id))) -> search(\"\(query)\") = \(found)")
-    for diagnostic in burstLog.diagnostics(since: before) {
-        Report.write("  [diagnostic] \(diagnostic)")
-    }
+  let before = burstLog.count
+  await burstSearcher.update(items: items)
+  let found = try await burstSearcher.search(intent: query, limit: searchLimit).map(\.id)
+  Report.write(
+    "step \(index + 1): update(items: \(items.map(\.id))) -> search(\"\(query)\") = \(found)")
+  for diagnostic in burstLog.diagnostics(since: before) {
+    Report.write("  [diagnostic] \(diagnostic)")
+  }
 }
 
 // MARK: - 2. A burst while an embed is in flight
@@ -85,24 +86,25 @@ Report.write("\nCoalesced burst (the first embed is held while the rest of the b
 /// Each catalog differs from the one before it, so a keyword search shows
 /// when each update has arrived.
 let rapidBurst: [[Tool]] = [
-    [toolA],
-    [toolA, toolB],
-    [toolB],
-    [toolB, toolC],
+  [toolA],
+  [toolA, toolB],
+  [toolB],
+  [toolB, toolC],
 ]
 
 let coalesced = try await runCoalescedBurst(
-    rapidBurst,
-    embeddingWith: exampleEmbedder,
-    query: query,
-    limit: searchLimit,
+  rapidBurst,
+  embeddingWith: exampleEmbedder,
+  query: query,
+  limit: searchLimit,
 )
-Report.write("  \(rapidBurst.count) update(items:) calls -> \(coalesced.embedBatches.count) embed calls")
+Report.write(
+  "  \(rapidBurst.count) update(items:) calls -> \(coalesced.embedBatches.count) embed calls")
 for (index, batch) in coalesced.embedBatches.enumerated() {
-    Report.write("  embed call \(index + 1): \(batch)")
+  Report.write("  embed call \(index + 1): \(batch)")
 }
 for diagnostic in coalesced.embedCatchUps {
-    Report.write("  [diagnostic] \(diagnostic)")
+  Report.write("  [diagnostic] \(diagnostic)")
 }
 Report.write("  search(\"\(query)\") after the burst = \(coalesced.searchResultIds)")
 
@@ -114,67 +116,69 @@ Report.write("\nSelection root session after a catalog change (Qwen3 4B):")
 /// is a real session of `exampleSelectionModel`.
 let sessionCount = CallCounter()
 let selectionConfig = SelectionConfig(model: { instructions in
-    await sessionCount.increment()
-    return try await exampleSelectionModel.session(instructions: instructions)
+  await sessionCount.increment()
+  return try await exampleSelectionModel.session(instructions: instructions)
 })
 let selector = MetadataSearcher(items: [toolA], mode: .selection, selection: selectionConfig)
 
 /// The intent of each selection search of part 3.
 let selectionIntent = "read a file"
 
-let firstSelection = try await selector.search(intent: selectionIntent, limit: searchLimit).map(\.id)
+let firstSelection = try await selector.search(intent: selectionIntent, limit: searchLimit).map(
+  \.id)
 Report.write(
-    "  root session built \(await sessionCount.count) time(s) for candidates [\"toolA\"]; "
-        + "selected \(firstSelection)",
+  "  root session built \(await sessionCount.count) time(s) for candidates [\"toolA\"]; "
+    + "selected \(firstSelection)",
 )
 
 await selector.update(items: [toolA, toolB])
-let secondSelection = try await selector.search(intent: selectionIntent, limit: searchLimit).map(\.id)
+let secondSelection = try await selector.search(intent: selectionIntent, limit: searchLimit).map(
+  \.id)
 Report.write(
-    "  after a real catalog change, root session built \(await sessionCount.count) time(s) total "
-        + "for candidates [\"toolA\", \"toolB\"]; selected \(secondSelection)",
+  "  after a real catalog change, root session built \(await sessionCount.count) time(s) total "
+    + "for candidates [\"toolA\", \"toolB\"]; selected \(secondSelection)",
 )
 
 // MARK: - Helpers
 
 /// A call counter that the async session factory can share.
 actor CallCounter {
-    /// The number of calls counted so far.
-    private(set) var count = 0
+  /// The number of calls counted so far.
+  private(set) var count = 0
 
-    /// Counts one more call.
-    func increment() {
-        count += 1
-    }
+  /// Counts one more call.
+  func increment() {
+    count += 1
+  }
 }
 
 /// A thread-safe log of the diagnostics that a searcher reports.
 ///
 /// The `onDiagnostic` callback is synchronous, so an actor cannot receive it.
 final class DiagnosticLog: Sendable {
-    /// The diagnostics recorded so far, in the order they arrived.
-    private let recorded = OSAllocatedUnfairLock<[MetadataDiagnostic]>(initialState: [])
+  /// The diagnostics recorded so far, in the order they arrived.
+  private let recorded = OSAllocatedUnfairLock<[MetadataDiagnostic]>(initialState: [])
 
-    /// The number of diagnostics recorded so far.
-    var count: Int {
-        recorded.withLock { $0.count }
-    }
+  /// The number of diagnostics recorded so far.
+  var count: Int {
+    recorded.withLock { $0.count }
+  }
 
-    /// Records one diagnostic.
-    ///
-    /// - Parameter diagnostic: the diagnostic to record.
-    func record(_ diagnostic: MetadataDiagnostic) {
-        recorded.withLock { $0.append(diagnostic) }
-    }
+  /// Records one diagnostic.
+  ///
+  /// - Parameter diagnostic: the diagnostic to record.
+  func record(_ diagnostic: MetadataDiagnostic) {
+    recorded.withLock { $0.append(diagnostic) }
+  }
 
-    /// The diagnostics recorded at or after `index`.
-    ///
-    /// - Parameter index: a count read before, where the new diagnostics start.
-    /// - Returns: each diagnostic recorded at or after `index`.
-    func diagnostics(since index: Int) -> [MetadataDiagnostic] {
-        recorded.withLock { diagnostics in
-            guard index < diagnostics.count else { return [] }
-            return Array(diagnostics[index...])
-        }
+  /// The diagnostics recorded at or after `index`.
+  ///
+  /// - Parameter index: a count read before, where the new diagnostics start.
+  /// - Returns: each diagnostic recorded at or after `index`.
+  func diagnostics(since index: Int) -> [MetadataDiagnostic] {
+    recorded.withLock { diagnostics in
+      guard index < diagnostics.count else { return [] }
+      return Array(diagnostics[index...])
     }
+  }
 }

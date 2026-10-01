@@ -1,4 +1,5 @@
 import Foundation
+
 @testable import FoundationModelsMetadataRegistry
 
 /// A deterministic `TextEmbedding` test double, shared by `EmbeddingTests`
@@ -15,57 +16,57 @@ import Foundation
 /// catalog blocks of a catch-up batch against the one query text of a
 /// search.
 struct FakeEmbedder: TextEmbedding {
-    /// Exact-text -> vector lookup table. A text absent from this table
-    /// embeds to an all-zero vector.
-    private let table: VectorTable
+  /// Exact-text -> vector lookup table. A text absent from this table
+  /// embeds to an all-zero vector.
+  private let table: VectorTable
 
-    /// When set, every call to `embed(_:)` throws this error instead of
-    /// producing vectors -- lets a test simulate a transient embed failure
-    /// (e.g. to exercise `MetadataIndex.build`'s graceful-skip path, leaving
-    /// the affected items with whatever embedding they already had).
-    private let failure: (any Error)?
+  /// When set, every call to `embed(_:)` throws this error instead of
+  /// producing vectors -- lets a test simulate a transient embed failure
+  /// (e.g. to exercise `MetadataIndex.build`'s graceful-skip path, leaving
+  /// the affected items with whatever embedding they already had).
+  private let failure: (any Error)?
 
-    private let counter: EmbedCallCounter
+  private let counter: EmbedCallCounter
 
-    /// Creates a fake embedder returning `vectorsByText`'s registered
-    /// vectors verbatim.
-    ///
-    /// - Parameters:
-    ///   - vectorsByText: exact-text -> vector lookup table; a text absent
-    ///     from this table embeds to an all-zero vector of the same length.
-    ///     Defaults to empty.
-    ///   - failure: when non-nil, `embed(_:)` throws this error instead of
-    ///     computing vectors. Defaults to `nil`.
-    ///   - counter: the call counter to record every `embed(_:)` call's texts
-    ///     into. Defaults to a fresh, unshared counter.
-    init(
-        vectorsByText: [String: [Float]] = [:],
-        failure: (any Error)? = nil,
-        counter: EmbedCallCounter = EmbedCallCounter(),
-    ) {
-        table = VectorTable(vectorsByText: vectorsByText)
-        self.failure = failure
-        self.counter = counter
+  /// Creates a fake embedder returning `vectorsByText`'s registered
+  /// vectors verbatim.
+  ///
+  /// - Parameters:
+  ///   - vectorsByText: exact-text -> vector lookup table; a text absent
+  ///     from this table embeds to an all-zero vector of the same length.
+  ///     Defaults to empty.
+  ///   - failure: when non-nil, `embed(_:)` throws this error instead of
+  ///     computing vectors. Defaults to `nil`.
+  ///   - counter: the call counter to record every `embed(_:)` call's texts
+  ///     into. Defaults to a fresh, unshared counter.
+  init(
+    vectorsByText: [String: [Float]] = [:],
+    failure: (any Error)? = nil,
+    counter: EmbedCallCounter = EmbedCallCounter(),
+  ) {
+    table = VectorTable(vectorsByText: vectorsByText)
+    self.failure = failure
+    self.counter = counter
+  }
+
+  /// The total number of texts passed to `embed(_:)` across every call so
+  /// far.
+  var embeddedTextCount: Int {
+    counter.count
+  }
+
+  /// The texts of every `embed(_:)` call so far, in call order.
+  var embeddedBatches: [[String]] {
+    counter.batches
+  }
+
+  func embed(_ texts: [String]) async throws -> [[Float]] {
+    counter.record(texts)
+    if let failure {
+      throw failure
     }
-
-    /// The total number of texts passed to `embed(_:)` across every call so
-    /// far.
-    var embeddedTextCount: Int {
-        counter.count
-    }
-
-    /// The texts of every `embed(_:)` call so far, in call order.
-    var embeddedBatches: [[String]] {
-        counter.batches
-    }
-
-    func embed(_ texts: [String]) async throws -> [[Float]] {
-        counter.record(texts)
-        if let failure {
-            throw failure
-        }
-        return table.vectors(for: texts)
-    }
+    return table.vectors(for: texts)
+  }
 }
 
 /// A thread-safe record of every `embed(_:)` call, shared by `FakeEmbedder`
@@ -76,31 +77,31 @@ struct FakeEmbedder: TextEmbedding {
 /// `batches`) or mutated (via `record(_:)`) while holding `lock`, so every
 /// access to `recorded` holds `lock`.
 final class EmbedCallCounter: @unchecked Sendable {
-    private let lock = NSLock()
+  private let lock = NSLock()
 
-    /// The texts of every recorded `embed(_:)` call, in call order.
-    private var recorded: [[String]] = []
+  /// The texts of every recorded `embed(_:)` call, in call order.
+  private var recorded: [[String]] = []
 
-    /// The total number of texts across every recorded call.
-    var count: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return recorded.reduce(0) { $0 + $1.count }
-    }
+  /// The total number of texts across every recorded call.
+  var count: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return recorded.reduce(0) { $0 + $1.count }
+  }
 
-    /// The texts of every recorded call, in call order.
-    var batches: [[String]] {
-        lock.lock()
-        defer { lock.unlock() }
-        return recorded
-    }
+  /// The texts of every recorded call, in call order.
+  var batches: [[String]] {
+    lock.lock()
+    defer { lock.unlock() }
+    return recorded
+  }
 
-    /// Records the texts of one `embed(_:)` call.
-    ///
-    /// - Parameter texts: the texts that call was asked to embed.
-    func record(_ texts: [String]) {
-        lock.lock()
-        defer { lock.unlock() }
-        recorded.append(texts)
-    }
+  /// Records the texts of one `embed(_:)` call.
+  ///
+  /// - Parameter texts: the texts that call was asked to embed.
+  func record(_ texts: [String]) {
+    lock.lock()
+    defer { lock.unlock() }
+    recorded.append(texts)
+  }
 }

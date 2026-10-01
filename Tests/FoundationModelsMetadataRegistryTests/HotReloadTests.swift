@@ -1,5 +1,6 @@
-@testable import FoundationModelsMetadataRegistry
 import Testing
+
+@testable import FoundationModelsMetadataRegistry
 
 /// Tests for hot reload (plan.md §8, M4): `MetadataSearcher.update(items:)`
 /// re-renders and rebuilds the tokenized/trigram indexes synchronously,
@@ -12,322 +13,330 @@ import Testing
 /// `EmbeddingTests`/`SelectionTests`, plus this file's own gated embedder for
 /// deterministically observing the interim keyword-only window.
 struct HotReloadTests {
-    // MARK: - Fixtures
+  // MARK: - Fixtures
 
-    struct FixtureItem: SearchableMetadata {
-        let id: String
-        let block: String
-        let summary: String?
+  struct FixtureItem: SearchableMetadata {
+    let id: String
+    let block: String
+    let summary: String?
 
-        init(id: String, block: String, summary: String? = nil) {
-            self.id = id
-            self.block = block
-            self.summary = summary
+    init(id: String, block: String, summary: String? = nil) {
+      self.id = id
+      self.block = block
+      self.summary = summary
+    }
+
+    func renderBlock() -> String {
+      block
+    }
+
+    func renderSummaryBlock() -> String {
+      summary ?? block
+    }
+  }
+
+  /// The transient embed failure the catch-up tests hand `FakeEmbedder` to
+  /// build an index whose items carry real content but no stored
+  /// embeddings (plan.md §8 "embed catch-up").
+  struct AlwaysFails: Error {}
+
+  // MARK: - Incremental re-embed counts
+
+  @Test
+  func updateReEmbedsOnlyTheItemWhoseBlockActuallyChanged() async throws {
+    let itemA = FixtureItem(id: "a", block: "alpha block")
+    let itemB = FixtureItem(id: "b", block: "bravo block")
+    let itemC = FixtureItem(id: "c", block: "charlie block")
+    let embedder = FakeEmbedder(
+      vectorsByText: [
+        "alpha block": [1, 0],
+        "bravo block": [0, 1],
+        "charlie block": [1, 1],
+        "bravo block CHANGED": [0, -1],
+      ],
+    )
+    // The index is embedded before the update, so the count below shows
+    // the embed of the update alone.
+    let index = await MetadataIndex.build(items: [itemA, itemB, itemC], embedder: embedder)
+    let searcher = MetadataSearcher(index: index, embedder: embedder)
+    #expect(embedder.embeddedTextCount == 3)
+
+    await searcher.update(items: [itemA, FixtureItem(id: "b", block: "bravo block CHANGED"), itemC])
+
+    // Only "b" was re-embedded -- the count grows by exactly 1, not by a
+    // full re-embed of all three items.
+    #expect(embedder.embeddedTextCount == 4)
+
+    let matches = try await searcher.search(intent: "bravo", limit: 5)
+    #expect(matches.first?.id == "b")
+  }
+
+  @Test
+  func updateWithBrandNewItemsEmbedsOnlyTheNewOnes() async {
+    let itemA = FixtureItem(id: "a", block: "alpha block")
+    let itemB = FixtureItem(id: "b", block: "bravo block")
+    let embedder = FakeEmbedder(vectorsByText: ["alpha block": [1, 0], "bravo block": [0, 1]])
+    let index = await MetadataIndex.build(items: [itemA], embedder: embedder)
+    let searcher = MetadataSearcher(index: index, embedder: embedder)
+    #expect(embedder.embeddedTextCount == 1)
+
+    await searcher.update(items: [itemA, itemB])
+
+    #expect(embedder.embeddedTextCount == 2)
+  }
+
+  // MARK: - Redundant update is a no-op
+
+  @Test
+  func redundantUpdateWithIdenticalItemsPerformsNoReEmbedAndRetainsTheRootSession() async throws {
+    let items = [FixtureItem(id: "a", block: "alpha block")]
+    let embedder = FakeEmbedder(vectorsByText: ["alpha block": [1, 0]])
+    let root = RootSessionRespondCalledDirectlySession(forkResponses: [
+      #"{"ids":["a"]}"#,
+      #"{"ids":["a"]}"#,
+    ])
+    let factoryCallCount = CallCounter()
+    let config = SelectionConfig(model: { _ in
+      factoryCallCount.increment()
+      return root
+    })
+    let index = await MetadataIndex.build(items: items, embedder: embedder)
+    let searcher = MetadataSearcher(
+      index: index, mode: .selection, embedder: embedder, selection: config)
+    #expect(embedder.embeddedTextCount == 1)
+
+    _ = try await searcher.search(intent: "task", limit: 5)
+    #expect(factoryCallCount.count == 1)
+
+    // Captured after the search above rather than assumed, so this
+    // assertion isolates `update`'s own re-embed delta whatever else
+    // passes through the shared embedder.
+    let countBeforeUpdate = embedder.embeddedTextCount
+    await searcher.update(items: items)
+
+    // No new embed call from `update` itself -- unchanged content never
+    // drops the cached root or re-embeds the catalog.
+    #expect(embedder.embeddedTextCount == countBeforeUpdate)
+
+    _ = try await searcher.search(intent: "task", limit: 5)
+
+    // The same cached root forked again -- `update` with unchanged
+    // content never dropped it.
+    #expect(factoryCallCount.count == 1)
+    #expect(root.forkCount == 2)
+  }
+
+  @Test
+  func redundantUpdateNeverEmitsAnyDiagnostic() async {
+    let recorder = DiagnosticRecorder()
+    let items = [FixtureItem(id: "a", block: "alpha block")]
+    let embedder = FakeEmbedder(vectorsByText: ["alpha block": [1, 0]])
+    // An embedded catalog: no entry waits for an embed, so the update
+    // with the same content has nothing to catch up.
+    let index = await MetadataIndex.build(
+      items: items, embedder: embedder, onDiagnostic: { recorder.record($0) })
+    let searcher = MetadataSearcher(
+      index: index, embedder: embedder, onDiagnostic: { recorder.record($0) })
+
+    await searcher.update(items: items)
+
+    #expect(recorder.diagnostics.isEmpty)
+  }
+
+  // MARK: - Root/candidate-set invalidation on a real change
+
+  @Test
+  func updateWithARealChangeDropsTheCachedRootSoTheNextSearchRebuildsItAgainstTheNewCatalog()
+    async throws
+  {
+    let itemA = FixtureItem(id: "a", block: "alpha block", summary: "SUMMARY_a")
+    let itemB = FixtureItem(id: "b", block: "bravo block", summary: "SUMMARY_b")
+    let factory = RecordingSessionFactory(responses: [#"{"ids":["a"]}"#])
+    let config = SelectionConfig(model: factory.makeSession)
+    let searcher = MetadataSearcher(items: [itemA], mode: .selection, selection: config)
+
+    _ = try await searcher.search(intent: "task", limit: 5)
+    #expect(factory.receivedInstructions.count == 1)
+    #expect(!factory.receivedInstructions[0].contains("SUMMARY_b"))
+
+    await searcher.update(items: [itemA, itemB])
+
+    _ = try await searcher.search(intent: "task", limit: 5)
+
+    // The root was rebuilt (factory invoked again, not reused), and the
+    // rebuilt prefix's candidate id set -- what a caller's own id-enum
+    // schema would be derived from -- reflects the new catalog.
+    #expect(factory.receivedInstructions.count == 2)
+    #expect(factory.receivedInstructions[1].contains("SUMMARY_a"))
+    #expect(factory.receivedInstructions[1].contains("SUMMARY_b"))
+  }
+
+  @Test
+  func idEnumSchemaAfterAnUpdateReflectsExactlyTheNewCatalogsIds() throws {
+    // `SelectionTier.idEnumSchema(ids:)` is a pure function of the
+    // current id set; proving `update(items:)` changes that id set is
+    // `updateWithARealChangeDropsTheCachedRoot...`'s job. This test
+    // pins down the schema itself for the *post-update* id set, so a
+    // regression in either half is caught independently.
+    let updatedIds = ["a", "b", "c"]
+
+    let constraints = try SelectionIDConstraints(
+      schemaSource: SelectionTier.idEnumSchema(ids: updatedIds))
+
+    #expect(constraints.allowedIDs == Set(updatedIds))
+  }
+
+  // MARK: - Embed catch-up diagnostic
+
+  @Test
+  func updateReportsEmbedCatchUpWithAccuratePendingAndTotalCounts() async {
+    let recorder = DiagnosticRecorder()
+    let itemA = FixtureItem(id: "a", block: "alpha block")
+    let itemB = FixtureItem(id: "b", block: "bravo block")
+    let embedder = FakeEmbedder(vectorsByText: ["alpha block": [1, 0], "bravo block": [0, 1]])
+    // "a" is embedded before the update, so only "b" is pending.
+    let index = await MetadataIndex.build(
+      items: [itemA], embedder: embedder, onDiagnostic: { recorder.record($0) })
+    let searcher = MetadataSearcher(
+      index: index, embedder: embedder, onDiagnostic: { recorder.record($0) })
+
+    await searcher.update(items: [itemA, itemB])
+
+    #expect(recorder.diagnostics.contains(.embedCatchUp(pending: 1, total: 2)))
+  }
+
+  @Test
+  func updateWithNoEmbedderConfiguredNeverEmitsEmbedCatchUp() async throws {
+    let recorder = DiagnosticRecorder()
+    let itemA = FixtureItem(id: "a", block: "alpha block")
+    let searcher = MetadataSearcher(items: [FixtureItem](), onDiagnostic: { recorder.record($0) })
+
+    await searcher.update(items: [itemA])
+
+    let matches = try await searcher.search(intent: "alpha", limit: 5)
+    #expect(matches.map(\.id) == ["a"])
+    #expect(
+      !recorder.diagnostics.contains {
+        if case .embedCatchUp = $0 {
+          return true
         }
+        return false
+      },
+    )
+  }
 
-        func renderBlock() -> String {
-            block
-        }
+  // MARK: - Interim keyword-only service while re-embedding is in flight
 
-        func renderSummaryBlock() -> String {
-            summary ?? block
-        }
-    }
+  @Test
+  func concurrentSearchDuringUpdateServesKeywordOnlyForTheNotYetEmbeddedItem() async throws {
+    let commit = FixtureItem(id: "commit", block: "records a snapshot of staged changes")
+    let gate = EmbedGate()
+    // "snapshot" (the query text) also maps to `[1, 0]` so the
+    // post-catch-up search's own query embed call -- which reuses this
+    // same gated embedder, now released -- lines up with `commit`'s
+    // freshly stored embedding instead of falling back to an all-zero
+    // vector that would trivially score `0.0` regardless of catch-up.
+    let embedder = GatedEmbedder(
+      vectorsByText: [commit.block: [1, 0], "snapshot": [1, 0]], gate: gate,
+    )
+    // Construct with an empty catalog so init itself never touches the
+    // gate -- there's nothing to embed yet.
+    let searcher = MetadataSearcher(items: [FixtureItem](), embedder: embedder)
 
-    /// The transient embed failure the catch-up tests hand `FakeEmbedder` to
-    /// build an index whose items carry real content but no stored
-    /// embeddings (plan.md §8 "embed catch-up").
-    struct AlwaysFails: Error {}
+    let updateTask = Task { await searcher.update(items: [commit]) }
 
-    // MARK: - Incremental re-embed counts
+    // Wait until `update`'s embed call has actually started: the
+    // synchronous baseline reassignment (tokenized/trigram indexes)
+    // that precedes it has therefore already happened, and this call is
+    // now suspended on the gate -- the actor is free to interleave a
+    // concurrent `search()` while it waits.
+    await gate.waitForStart()
 
-    @Test
-    func updateReEmbedsOnlyTheItemWhoseBlockActuallyChanged() async throws {
-        let itemA = FixtureItem(id: "a", block: "alpha block")
-        let itemB = FixtureItem(id: "b", block: "bravo block")
-        let itemC = FixtureItem(id: "c", block: "charlie block")
-        let embedder = FakeEmbedder(
-            vectorsByText: [
-                "alpha block": [1, 0],
-                "bravo block": [0, 1],
-                "charlie block": [1, 1],
-                "bravo block CHANGED": [0, -1],
-            ],
-        )
-        // The index is embedded before the update, so the count below shows
-        // the embed of the update alone.
-        let index = await MetadataIndex.build(items: [itemA, itemB, itemC], embedder: embedder)
-        let searcher = MetadataSearcher(index: index, embedder: embedder)
-        #expect(embedder.embeddedTextCount == 3)
+    let interimMatches = try await searcher.search(intent: "snapshot", limit: 5)
+    let interimMatch = try #require(interimMatches.first)
+    #expect(interimMatch.id == "commit")
+    #expect(interimMatch.signals?.cosine == 0.0)
 
-        await searcher.update(items: [itemA, FixtureItem(id: "b", block: "bravo block CHANGED"), itemC])
+    await gate.release()
+    await updateTask.value
 
-        // Only "b" was re-embedded -- the count grows by exactly 1, not by a
-        // full re-embed of all three items.
-        #expect(embedder.embeddedTextCount == 4)
+    let caughtUpMatches = try await searcher.search(intent: "snapshot", limit: 5)
+    let caughtUpMatch = try #require(caughtUpMatches.first)
+    #expect(caughtUpMatch.signals?.cosine != 0.0)
+  }
 
-        let matches = try await searcher.search(intent: "bravo", limit: 5)
-        #expect(matches.first?.id == "b")
-    }
+  // MARK: - Catch-up survives a content-unchanged redundant forward
 
-    @Test
-    func updateWithBrandNewItemsEmbedsOnlyTheNewOnes() async {
-        let itemA = FixtureItem(id: "a", block: "alpha block")
-        let itemB = FixtureItem(id: "b", block: "bravo block")
-        let embedder = FakeEmbedder(vectorsByText: ["alpha block": [1, 0], "bravo block": [0, 1]])
-        let index = await MetadataIndex.build(items: [itemA], embedder: embedder)
-        let searcher = MetadataSearcher(index: index, embedder: embedder)
-        #expect(embedder.embeddedTextCount == 1)
+  @Test
+  func updateStillCatchesUpAnEmbeddingThatNeverSucceededEvenWhenContentIsUnchanged() async throws {
+    // Simulates a prior build/update whose embed call failed
+    // transiently (plan.md §8 "embed catch-up"): "a" is indexed with
+    // its real content but carries no stored embedding.
+    let itemA = FixtureItem(id: "a", block: "alpha block")
+    let indexWithoutEmbedding = await MetadataIndex.build(
+      items: [itemA], embedder: FakeEmbedder(failure: AlwaysFails()),
+    )
+    #expect(indexWithoutEmbedding.embedding(forID: "a") == nil)
 
-        await searcher.update(items: [itemA, itemB])
+    let recorder = DiagnosticRecorder()
+    let workingEmbedder = FakeEmbedder(vectorsByText: ["alpha block": [1, 0], "alpha": [1, 0]])
+    let searcher = MetadataSearcher(
+      index: indexWithoutEmbedding,
+      embedder: workingEmbedder,
+      onDiagnostic: { recorder.record($0) },
+    )
 
-        #expect(embedder.embeddedTextCount == 2)
-    }
+    // Same content as what's already indexed -- e.g. an upstream
+    // notification forwarded without coalescing, exactly the pattern
+    // the task's hash-guarding is meant to make cheap. It must NOT be
+    // treated as a full no-op: the embedding that never succeeded still
+    // needs to catch up.
+    await searcher.update(items: [itemA])
 
-    // MARK: - Redundant update is a no-op
+    #expect(recorder.diagnostics.contains(.embedCatchUp(pending: 1, total: 1)))
+    #expect(workingEmbedder.embeddedTextCount == 1)
 
-    @Test
-    func redundantUpdateWithIdenticalItemsPerformsNoReEmbedAndRetainsTheRootSession() async throws {
-        let items = [FixtureItem(id: "a", block: "alpha block")]
-        let embedder = FakeEmbedder(vectorsByText: ["alpha block": [1, 0]])
-        let root = RootSessionRespondCalledDirectlySession(forkResponses: [
-            #"{"ids":["a"]}"#,
-            #"{"ids":["a"]}"#,
-        ])
-        let factoryCallCount = CallCounter()
-        let config = SelectionConfig(model: { _ in
-            factoryCallCount.increment()
-            return root
-        })
-        let index = await MetadataIndex.build(items: items, embedder: embedder)
-        let searcher = MetadataSearcher(index: index, mode: .selection, embedder: embedder, selection: config)
-        #expect(embedder.embeddedTextCount == 1)
+    let matches = try await searcher.search(intent: "alpha", limit: 5)
+    #expect(matches.first?.signals?.cosine != 0.0)
+  }
 
-        _ = try await searcher.search(intent: "task", limit: 5)
-        #expect(factoryCallCount.count == 1)
+  @Test
+  func contentIdenticalEmbedCatchUpRetainsTheCachedRootSession() async throws {
+    let itemA = FixtureItem(id: "a", block: "alpha block")
+    let indexWithoutEmbedding = await MetadataIndex.build(
+      items: [itemA],
+      embedder: FakeEmbedder(failure: AlwaysFails()),
+    )
+    let workingEmbedder = FakeEmbedder(vectorsByText: ["alpha block": [1, 0]])
+    let root = RootSessionRespondCalledDirectlySession(forkResponses: [
+      #"{"ids":["a"]}"#,
+      #"{"ids":["a"]}"#,
+    ])
+    let factoryCallCount = CallCounter()
+    let config = SelectionConfig(model: { _ in
+      factoryCallCount.increment()
+      return root
+    })
+    let searcher = MetadataSearcher(
+      index: indexWithoutEmbedding,
+      mode: .selection,
+      embedder: workingEmbedder,
+      selection: config,
+    )
 
-        // Captured after the search above rather than assumed, so this
-        // assertion isolates `update`'s own re-embed delta whatever else
-        // passes through the shared embedder.
-        let countBeforeUpdate = embedder.embeddedTextCount
-        await searcher.update(items: items)
+    _ = try await searcher.search(intent: "task", limit: 5)
+    #expect(factoryCallCount.count == 1)
 
-        // No new embed call from `update` itself -- unchanged content never
-        // drops the cached root or re-embeds the catalog.
-        #expect(embedder.embeddedTextCount == countBeforeUpdate)
+    // Content-identical catch-up: the embedding that never succeeded
+    // merges in, but nothing keyword/prefix relevant changed -- the
+    // cached root must survive (no re-prefill), unlike a real content
+    // change. Guards the catch-up fix above against regressing into a
+    // wholesale tier rebuild.
+    await searcher.update(items: [itemA])
 
-        _ = try await searcher.search(intent: "task", limit: 5)
+    _ = try await searcher.search(intent: "task", limit: 5)
 
-        // The same cached root forked again -- `update` with unchanged
-        // content never dropped it.
-        #expect(factoryCallCount.count == 1)
-        #expect(root.forkCount == 2)
-    }
-
-    @Test
-    func redundantUpdateNeverEmitsAnyDiagnostic() async {
-        let recorder = DiagnosticRecorder()
-        let items = [FixtureItem(id: "a", block: "alpha block")]
-        let embedder = FakeEmbedder(vectorsByText: ["alpha block": [1, 0]])
-        // An embedded catalog: no entry waits for an embed, so the update
-        // with the same content has nothing to catch up.
-        let index = await MetadataIndex.build(items: items, embedder: embedder, onDiagnostic: { recorder.record($0) })
-        let searcher = MetadataSearcher(index: index, embedder: embedder, onDiagnostic: { recorder.record($0) })
-
-        await searcher.update(items: items)
-
-        #expect(recorder.diagnostics.isEmpty)
-    }
-
-    // MARK: - Root/candidate-set invalidation on a real change
-
-    @Test
-    func updateWithARealChangeDropsTheCachedRootSoTheNextSearchRebuildsItAgainstTheNewCatalog() async throws {
-        let itemA = FixtureItem(id: "a", block: "alpha block", summary: "SUMMARY_a")
-        let itemB = FixtureItem(id: "b", block: "bravo block", summary: "SUMMARY_b")
-        let factory = RecordingSessionFactory(responses: [#"{"ids":["a"]}"#])
-        let config = SelectionConfig(model: factory.makeSession)
-        let searcher = MetadataSearcher(items: [itemA], mode: .selection, selection: config)
-
-        _ = try await searcher.search(intent: "task", limit: 5)
-        #expect(factory.receivedInstructions.count == 1)
-        #expect(!factory.receivedInstructions[0].contains("SUMMARY_b"))
-
-        await searcher.update(items: [itemA, itemB])
-
-        _ = try await searcher.search(intent: "task", limit: 5)
-
-        // The root was rebuilt (factory invoked again, not reused), and the
-        // rebuilt prefix's candidate id set -- what a caller's own id-enum
-        // schema would be derived from -- reflects the new catalog.
-        #expect(factory.receivedInstructions.count == 2)
-        #expect(factory.receivedInstructions[1].contains("SUMMARY_a"))
-        #expect(factory.receivedInstructions[1].contains("SUMMARY_b"))
-    }
-
-    @Test
-    func idEnumSchemaAfterAnUpdateReflectsExactlyTheNewCatalogsIds() throws {
-        // `SelectionTier.idEnumSchema(ids:)` is a pure function of the
-        // current id set; proving `update(items:)` changes that id set is
-        // `updateWithARealChangeDropsTheCachedRoot...`'s job. This test
-        // pins down the schema itself for the *post-update* id set, so a
-        // regression in either half is caught independently.
-        let updatedIds = ["a", "b", "c"]
-
-        let constraints = try SelectionIDConstraints(schemaSource: SelectionTier.idEnumSchema(ids: updatedIds))
-
-        #expect(constraints.allowedIDs == Set(updatedIds))
-    }
-
-    // MARK: - Embed catch-up diagnostic
-
-    @Test
-    func updateReportsEmbedCatchUpWithAccuratePendingAndTotalCounts() async {
-        let recorder = DiagnosticRecorder()
-        let itemA = FixtureItem(id: "a", block: "alpha block")
-        let itemB = FixtureItem(id: "b", block: "bravo block")
-        let embedder = FakeEmbedder(vectorsByText: ["alpha block": [1, 0], "bravo block": [0, 1]])
-        // "a" is embedded before the update, so only "b" is pending.
-        let index = await MetadataIndex.build(items: [itemA], embedder: embedder, onDiagnostic: { recorder.record($0) })
-        let searcher = MetadataSearcher(index: index, embedder: embedder, onDiagnostic: { recorder.record($0) })
-
-        await searcher.update(items: [itemA, itemB])
-
-        #expect(recorder.diagnostics.contains(.embedCatchUp(pending: 1, total: 2)))
-    }
-
-    @Test
-    func updateWithNoEmbedderConfiguredNeverEmitsEmbedCatchUp() async throws {
-        let recorder = DiagnosticRecorder()
-        let itemA = FixtureItem(id: "a", block: "alpha block")
-        let searcher = MetadataSearcher(items: [FixtureItem](), onDiagnostic: { recorder.record($0) })
-
-        await searcher.update(items: [itemA])
-
-        let matches = try await searcher.search(intent: "alpha", limit: 5)
-        #expect(matches.map(\.id) == ["a"])
-        #expect(
-            !recorder.diagnostics.contains {
-                if case .embedCatchUp = $0 {
-                    return true
-                }
-                return false
-            },
-        )
-    }
-
-    // MARK: - Interim keyword-only service while re-embedding is in flight
-
-    @Test
-    func concurrentSearchDuringUpdateServesKeywordOnlyForTheNotYetEmbeddedItem() async throws {
-        let commit = FixtureItem(id: "commit", block: "records a snapshot of staged changes")
-        let gate = EmbedGate()
-        // "snapshot" (the query text) also maps to `[1, 0]` so the
-        // post-catch-up search's own query embed call -- which reuses this
-        // same gated embedder, now released -- lines up with `commit`'s
-        // freshly stored embedding instead of falling back to an all-zero
-        // vector that would trivially score `0.0` regardless of catch-up.
-        let embedder = GatedEmbedder(
-            vectorsByText: [commit.block: [1, 0], "snapshot": [1, 0]], gate: gate,
-        )
-        // Construct with an empty catalog so init itself never touches the
-        // gate -- there's nothing to embed yet.
-        let searcher = MetadataSearcher(items: [FixtureItem](), embedder: embedder)
-
-        let updateTask = Task { await searcher.update(items: [commit]) }
-
-        // Wait until `update`'s embed call has actually started: the
-        // synchronous baseline reassignment (tokenized/trigram indexes)
-        // that precedes it has therefore already happened, and this call is
-        // now suspended on the gate -- the actor is free to interleave a
-        // concurrent `search()` while it waits.
-        await gate.waitForStart()
-
-        let interimMatches = try await searcher.search(intent: "snapshot", limit: 5)
-        let interimMatch = try #require(interimMatches.first)
-        #expect(interimMatch.id == "commit")
-        #expect(interimMatch.signals?.cosine == 0.0)
-
-        await gate.release()
-        await updateTask.value
-
-        let caughtUpMatches = try await searcher.search(intent: "snapshot", limit: 5)
-        let caughtUpMatch = try #require(caughtUpMatches.first)
-        #expect(caughtUpMatch.signals?.cosine != 0.0)
-    }
-
-    // MARK: - Catch-up survives a content-unchanged redundant forward
-
-    @Test
-    func updateStillCatchesUpAnEmbeddingThatNeverSucceededEvenWhenContentIsUnchanged() async throws {
-        // Simulates a prior build/update whose embed call failed
-        // transiently (plan.md §8 "embed catch-up"): "a" is indexed with
-        // its real content but carries no stored embedding.
-        let itemA = FixtureItem(id: "a", block: "alpha block")
-        let indexWithoutEmbedding = await MetadataIndex.build(
-            items: [itemA], embedder: FakeEmbedder(failure: AlwaysFails()),
-        )
-        #expect(indexWithoutEmbedding.embedding(forID: "a") == nil)
-
-        let recorder = DiagnosticRecorder()
-        let workingEmbedder = FakeEmbedder(vectorsByText: ["alpha block": [1, 0], "alpha": [1, 0]])
-        let searcher = MetadataSearcher(
-            index: indexWithoutEmbedding,
-            embedder: workingEmbedder,
-            onDiagnostic: { recorder.record($0) },
-        )
-
-        // Same content as what's already indexed -- e.g. an upstream
-        // notification forwarded without coalescing, exactly the pattern
-        // the task's hash-guarding is meant to make cheap. It must NOT be
-        // treated as a full no-op: the embedding that never succeeded still
-        // needs to catch up.
-        await searcher.update(items: [itemA])
-
-        #expect(recorder.diagnostics.contains(.embedCatchUp(pending: 1, total: 1)))
-        #expect(workingEmbedder.embeddedTextCount == 1)
-
-        let matches = try await searcher.search(intent: "alpha", limit: 5)
-        #expect(matches.first?.signals?.cosine != 0.0)
-    }
-
-    @Test
-    func contentIdenticalEmbedCatchUpRetainsTheCachedRootSession() async throws {
-        let itemA = FixtureItem(id: "a", block: "alpha block")
-        let indexWithoutEmbedding = await MetadataIndex.build(
-            items: [itemA],
-            embedder: FakeEmbedder(failure: AlwaysFails()),
-        )
-        let workingEmbedder = FakeEmbedder(vectorsByText: ["alpha block": [1, 0]])
-        let root = RootSessionRespondCalledDirectlySession(forkResponses: [
-            #"{"ids":["a"]}"#,
-            #"{"ids":["a"]}"#,
-        ])
-        let factoryCallCount = CallCounter()
-        let config = SelectionConfig(model: { _ in
-            factoryCallCount.increment()
-            return root
-        })
-        let searcher = MetadataSearcher(
-            index: indexWithoutEmbedding,
-            mode: .selection,
-            embedder: workingEmbedder,
-            selection: config,
-        )
-
-        _ = try await searcher.search(intent: "task", limit: 5)
-        #expect(factoryCallCount.count == 1)
-
-        // Content-identical catch-up: the embedding that never succeeded
-        // merges in, but nothing keyword/prefix relevant changed -- the
-        // cached root must survive (no re-prefill), unlike a real content
-        // change. Guards the catch-up fix above against regressing into a
-        // wholesale tier rebuild.
-        await searcher.update(items: [itemA])
-
-        _ = try await searcher.search(intent: "task", limit: 5)
-
-        #expect(factoryCallCount.count == 1)
-        #expect(root.forkCount == 2)
-    }
+    #expect(factoryCallCount.count == 1)
+    #expect(root.forkCount == 2)
+  }
 }

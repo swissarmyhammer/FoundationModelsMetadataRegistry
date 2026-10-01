@@ -1,5 +1,6 @@
-@testable import FoundationModelsMetadataRegistry
 import os
+
+@testable import FoundationModelsMetadataRegistry
 
 // MARK: - Selection-tier `AgentSession` fixtures (plan.md §6, M3)
 
@@ -26,43 +27,43 @@ struct RootSessionRespondCalledDirectlyError: Error, Equatable {}
 /// `fork()` needs to record a call count visible after the `async` call
 /// returns, backed by an `OSAllocatedUnfairLock`.
 final class RootSessionRespondCalledDirectlySession: AgentSession, Sendable {
-    /// One scripted response per `fork()` call, in fork order — the raw
-    /// guided-generation JSON text the resulting fork's `respond(to:)`
-    /// returns.
-    private let forkResponses: [String]
+  /// One scripted response per `fork()` call, in fork order — the raw
+  /// guided-generation JSON text the resulting fork's `respond(to:)`
+  /// returns.
+  private let forkResponses: [String]
 
-    /// How many `fork()` calls this root has handled so far.
-    private let forkCountBox = OSAllocatedUnfairLock<Int>(initialState: 0)
+  /// How many `fork()` calls this root has handled so far.
+  private let forkCountBox = OSAllocatedUnfairLock<Int>(initialState: 0)
 
-    /// Creates a root double that hands back one freshly-scripted fork per
-    /// `fork()` call, in order.
-    ///
-    /// - Parameter forkResponses: one canned raw response per expected
-    ///   `fork()` call, in call order.
-    init(forkResponses: [String]) {
-        self.forkResponses = forkResponses
+  /// Creates a root double that hands back one freshly-scripted fork per
+  /// `fork()` call, in order.
+  ///
+  /// - Parameter forkResponses: one canned raw response per expected
+  ///   `fork()` call, in call order.
+  init(forkResponses: [String]) {
+    self.forkResponses = forkResponses
+  }
+
+  /// How many `fork()` calls this root has handled so far.
+  var forkCount: Int {
+    forkCountBox.withLock { $0 }
+  }
+
+  func respond(to _: String) async throws -> String {
+    throw RootSessionRespondCalledDirectlyError()
+  }
+
+  func fork() async throws -> any AgentSession {
+    let index = forkCountBox.withLock { count -> Int in
+      let index = count
+      count += 1
+      return index
     }
-
-    /// How many `fork()` calls this root has handled so far.
-    var forkCount: Int {
-        forkCountBox.withLock { $0 }
+    guard index < forkResponses.count else {
+      throw ScriptedAgentSessionError(scriptedResponseCount: forkResponses.count)
     }
-
-    func respond(to _: String) async throws -> String {
-        throw RootSessionRespondCalledDirectlyError()
-    }
-
-    func fork() async throws -> any AgentSession {
-        let index = forkCountBox.withLock { count -> Int in
-            let index = count
-            count += 1
-            return index
-        }
-        guard index < forkResponses.count else {
-            throw ScriptedAgentSessionError(scriptedResponseCount: forkResponses.count)
-        }
-        return ScriptedAgentSession([forkResponses[index]])
-    }
+    return ScriptedAgentSession([forkResponses[index]])
+  }
 }
 
 /// Records every `instructions` string a `SelectionConfig.model` factory
@@ -79,61 +80,61 @@ final class RootSessionRespondCalledDirectlySession: AgentSession, Sendable {
 /// constraining the decoder, the only thing standing between the model and
 /// an invented id.
 final class RecordingSessionFactory: Sendable {
-    /// The canned responses every created session is scripted with.
-    private let responses: [String]
+  /// The canned responses every created session is scripted with.
+  private let responses: [String]
 
-    /// Every `instructions` string `makeSession(instructions:)` has been
-    /// called with, in call order.
-    private let receivedInstructionsBox = OSAllocatedUnfairLock<[String]>(initialState: [])
+  /// Every `instructions` string `makeSession(instructions:)` has been
+  /// called with, in call order.
+  private let receivedInstructionsBox = OSAllocatedUnfairLock<[String]>(initialState: [])
 
-    /// Creates a factory whose every vended session is scripted with
-    /// `responses`.
-    ///
-    /// - Parameter responses: the canned responses every created session
-    ///   returns, in call order.
-    init(responses: [String]) {
-        self.responses = responses
-    }
+  /// Creates a factory whose every vended session is scripted with
+  /// `responses`.
+  ///
+  /// - Parameter responses: the canned responses every created session
+  ///   returns, in call order.
+  init(responses: [String]) {
+    self.responses = responses
+  }
 
-    /// Every `instructions` string this factory has been called with, in
-    /// call order.
-    var receivedInstructions: [String] {
-        receivedInstructionsBox.withLock { $0 }
-    }
+  /// Every `instructions` string this factory has been called with, in
+  /// call order.
+  var receivedInstructions: [String] {
+    receivedInstructionsBox.withLock { $0 }
+  }
 
-    /// Creates and records a new scripted session — `SelectionConfig`'s
-    /// `model` factory parameter.
-    ///
-    /// - Parameter instructions: the assembled prefix text to record.
-    /// - Returns: a freshly-scripted `ScriptedAgentSession`.
-    func makeSession(instructions: String) -> any AgentSession {
-        receivedInstructionsBox.withLock { $0.append(instructions) }
-        return ScriptedAgentSession(responses)
-    }
+  /// Creates and records a new scripted session — `SelectionConfig`'s
+  /// `model` factory parameter.
+  ///
+  /// - Parameter instructions: the assembled prefix text to record.
+  /// - Returns: a freshly-scripted `ScriptedAgentSession`.
+  func makeSession(instructions: String) -> any AgentSession {
+    receivedInstructionsBox.withLock { $0.append(instructions) }
+    return ScriptedAgentSession(responses)
+  }
 }
 
 /// A thread-safe call counter — used to assert a closure ran an exact number
 /// of times without needing a bespoke lock-boxed fixture per test.
 final class CallCounter: Sendable {
-    /// This counter's current count.
-    private let countBox = OSAllocatedUnfairLock<Int>(initialState: 0)
+  /// This counter's current count.
+  private let countBox = OSAllocatedUnfairLock<Int>(initialState: 0)
 
-    /// Creates a counter starting at `0`.
-    init() {}
+  /// Creates a counter starting at `0`.
+  init() {}
 
-    /// Increments the count and returns its new value.
-    ///
-    /// - Returns: the count after incrementing.
-    @discardableResult
-    func increment() -> Int {
-        countBox.withLock { count -> Int in
-            count += 1
-            return count
-        }
+  /// Increments the count and returns its new value.
+  ///
+  /// - Returns: the count after incrementing.
+  @discardableResult
+  func increment() -> Int {
+    countBox.withLock { count -> Int in
+      count += 1
+      return count
     }
+  }
 
-    /// This counter's current count.
-    var count: Int {
-        countBox.withLock { $0 }
-    }
+  /// This counter's current count.
+  var count: Int {
+    countBox.withLock { $0 }
+  }
 }

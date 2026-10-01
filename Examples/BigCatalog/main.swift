@@ -44,24 +44,25 @@ let query = "quantum flux capacitor calibration"
 /// The topics that the filler entries use in turn, to give the catalog some
 /// variety of words.
 let topics = [
-    "parser", "renderer", "scheduler", "cache", "logger",
-    "validator", "compiler", "router", "indexer", "formatter",
+  "parser", "renderer", "scheduler", "cache", "logger",
+  "validator", "compiler", "router", "indexer", "formatter",
 ]
 
 /// The catalog: 999 filler entries, then the needle.
 let catalog: [BigCatalogItem] =
-    (0 ..< 999).map { index in
-        let topic = topics[index % topics.count]
-        return BigCatalogItem(
-            id: "https://example.com/modules/module-\(index)",
-            block: "Module #\(index): a \(topic) component for \(topic)-related subsystem \(index % 37) tasks.",
-        )
-    } + [
-        BigCatalogItem(
-            id: needleId,
-            block: "Provides quantum flux capacitor calibration routines for temporal synchronization.",
-        ),
-    ]
+  (0..<999).map { index in
+    let topic = topics[index % topics.count]
+    return BigCatalogItem(
+      id: "https://example.com/modules/module-\(index)",
+      block:
+        "Module #\(index): a \(topic) component for \(topic)-related subsystem \(index % 37) tasks.",
+    )
+  } + [
+    BigCatalogItem(
+      id: needleId,
+      block: "Provides quantum flux capacitor calibration routines for temporal synchronization.",
+    )
+  ]
 
 Report.write("Synthetic catalog size: \(catalog.count) entries")
 Report.write("Query: \"\(query)\"\n")
@@ -71,7 +72,9 @@ let start = Date()
 let retrieval = MetadataSearcher(items: catalog, mode: .retrieval)
 let retrievalMatches = try await retrieval.search(intent: query, limit: 10)
 let elapsed = Date().timeIntervalSince(start)
-Report.write(String(format: "Retrieval over %d entries took %.4fs (in memory, no GPU)\n", catalog.count, elapsed))
+Report.write(
+  String(
+    format: "Retrieval over %d entries took %.4fs (in memory, no GPU)\n", catalog.count, elapsed))
 Report.write(formattedMatches(matches: retrievalMatches))
 
 /// The character limit of the prefix of one selection run.
@@ -88,12 +91,12 @@ let selectionCapacityCharacterLimit = 48_000
 
 Report.write("\nRunning the over-budget selection query (Qwen3 4B, one prompt for each run)...\n")
 let selection = MetadataSearcher(
-    items: catalog,
-    mode: .selection,
-    selection: SelectionConfig(
-        model: { try await exampleSelectionModel.session(instructions: $0) },
-        capacityCharacterLimit: selectionCapacityCharacterLimit,
-    ),
+  items: catalog,
+  mode: .selection,
+  selection: SelectionConfig(
+    model: { try await exampleSelectionModel.session(instructions: $0) },
+    capacityCharacterLimit: selectionCapacityCharacterLimit,
+  ),
 )
 let selectedMatches = try await selection.search(intent: query, limit: 10)
 Report.write(formattedMatches(matches: selectedMatches))

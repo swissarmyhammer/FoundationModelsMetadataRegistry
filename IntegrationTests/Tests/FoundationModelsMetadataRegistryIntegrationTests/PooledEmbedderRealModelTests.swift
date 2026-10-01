@@ -20,63 +20,65 @@ private let pooledEmbedderTimeLimitMinutes = 10
 /// is the entry whose vector is nearest to the vector of the query.
 ///
 /// The first run downloads the model from Hugging Face.
-@Suite("PooledEmbedder against a real embedding model", .timeLimit(.minutes(pooledEmbedderTimeLimitMinutes)))
+@Suite(
+  "PooledEmbedder against a real embedding model",
+  .timeLimit(.minutes(pooledEmbedderTimeLimitMinutes)))
 struct PooledEmbedderRealModelTests {
-    /// The embedding model that the searcher loads.
-    static let embeddingModel: ModelRef = "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ"
+  /// The embedding model that the searcher loads.
+  static let embeddingModel: ModelRef = "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ"
 
-    /// One catalog entry: a tool name and the one-line description that the
-    /// model embeds.
-    struct Tool: SearchableMetadata {
-        /// The id of the tool.
-        let id: String
+  /// One catalog entry: a tool name and the one-line description that the
+  /// model embeds.
+  struct Tool: SearchableMetadata {
+    /// The id of the tool.
+    let id: String
 
-        /// The description of the tool.
-        let block: String
+    /// The description of the tool.
+    let block: String
 
-        /// Renders the description, verbatim.
-        ///
-        /// - Returns: the description.
-        func renderBlock() -> String {
-            block
-        }
+    /// Renders the description, verbatim.
+    ///
+    /// - Returns: the description.
+    func renderBlock() -> String {
+      block
     }
+  }
 
-    /// The id of the tool that `query` paraphrases.
-    static let paraphrasedID = "weather"
+  /// The id of the tool that `query` paraphrases.
+  static let paraphrasedID = "weather"
 
-    /// Four tools with unrelated meanings.
-    static let catalog = [
-        Tool(id: paraphrasedID, block: "Reports the forecast of rain and temperature for a city."),
-        Tool(id: "files", block: "Lists the files and folders in a directory."),
-        Tool(id: "email", block: "Sends an electronic mail message to a contact."),
-        Tool(id: "music", block: "Plays a song from the audio library."),
-    ]
+  /// Four tools with unrelated meanings.
+  static let catalog = [
+    Tool(id: paraphrasedID, block: "Reports the forecast of rain and temperature for a city."),
+    Tool(id: "files", block: "Lists the files and folders in a directory."),
+    Tool(id: "email", block: "Sends an electronic mail message to a contact."),
+    Tool(id: "music", block: "Plays a song from the audio library."),
+  ]
 
-    /// A paraphrase of the description of the weather tool that shares no
-    /// word with it.
-    static let query = "Will it be sunny tomorrow in Paris?"
+  /// A paraphrase of the description of the weather tool that shares no
+  /// word with it.
+  static let query = "Will it be sunny tomorrow in Paris?"
 
-    /// Weights that let the cosine signal alone rank the catalog.
-    static let cosineOnly = Weights(bm25: 0, trigram: 0, cosine: 1)
+  /// Weights that let the cosine signal alone rank the catalog.
+  static let cosineOnly = Weights(bm25: 0, trigram: 0, cosine: 1)
 
-    @Test("the cosine signal ranks the paraphrased tool first")
-    func cosineRanksTheParaphraseFirst() async throws {
-        let searcher = MetadataSearcher(
-            items: Self.catalog,
-            mode: .retrieval,
-            weights: Self.cosineOnly,
-            embedder: PooledEmbedder(ref: Self.embeddingModel),
-        )
+  @Test("the cosine signal ranks the paraphrased tool first")
+  func cosineRanksTheParaphraseFirst() async throws {
+    let searcher = MetadataSearcher(
+      items: Self.catalog,
+      mode: .retrieval,
+      weights: Self.cosineOnly,
+      embedder: PooledEmbedder(ref: Self.embeddingModel),
+    )
 
-        let matches = try await searcher.search(intent: Self.query, limit: Self.catalog.count)
+    let matches = try await searcher.search(intent: Self.query, limit: Self.catalog.count)
 
-        let first = try #require(matches.first)
-        #expect(
-            first.id == Self.paraphrasedID,
-            "the ranking was \(matches.map { "\($0.id)=\($0.signals?.cosine ?? 0)" })",
-        )
-        let cosine = try #require(first.signals?.cosine)
-        #expect(cosine > 0)
-    }
+    let first = try #require(matches.first)
+    #expect(
+      first.id == Self.paraphrasedID,
+      "the ranking was \(matches.map { "\($0.id)=\($0.signals?.cosine ?? 0)" })",
+    )
+    let cosine = try #require(first.signals?.cosine)
+    #expect(cosine > 0)
+  }
 }

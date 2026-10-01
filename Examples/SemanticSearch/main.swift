@@ -29,9 +29,10 @@ import FoundationModelsMetadataRegistry
 // `swift run --package-path Examples SemanticSearch --no-embedder`.
 
 /// The catalog: the shared git subcommands, plus `status`.
-let catalog = baseGitCommands + [
-    GitCommand(id: "status", block: "Report the current state of the working tree."),
-]
+let catalog =
+  baseGitCommands + [
+    GitCommand(id: "status", block: "Report the current state of the working tree.")
+  ]
 
 let query = "save my work"
 let noEmbedder = CommandLine.arguments.contains("--no-embedder")
@@ -39,21 +40,22 @@ Report.write("Query: \"\(query)\"\(noEmbedder ? " (--no-embedder)" : "")\n")
 
 /// Writes the one diagnostic that this example is about to the report, and logs each other one.
 let printDiagnostic: @Sendable (MetadataDiagnostic) -> Void = { diagnostic in
-    if case .embeddingUnavailable = diagnostic {
-        Report.write("[diagnostic] embeddingUnavailable: no embedder configured; using keyword signals only.")
-    } else {
-        MetadataDiagnostic.log(diagnostic)
-    }
+  if case .embeddingUnavailable = diagnostic {
+    Report.write(
+      "[diagnostic] embeddingUnavailable: no embedder configured; using keyword signals only.")
+  } else {
+    MetadataDiagnostic.log(diagnostic)
+  }
 }
 
 /// The shared embedding model of the examples, or `nil` for `--no-embedder`.
 let embedder: PooledEmbedder? = noEmbedder ? nil : exampleEmbedder
 
 let searcher = MetadataSearcher(
-    items: catalog,
-    mode: .retrieval,
-    embedder: embedder,
-    onDiagnostic: printDiagnostic,
+  items: catalog,
+  mode: .retrieval,
+  embedder: embedder,
+  onDiagnostic: printDiagnostic,
 )
 let matches = try await searcher.search(intent: query, limit: 5)
 Report.write(formattedMatches(matches: matches))

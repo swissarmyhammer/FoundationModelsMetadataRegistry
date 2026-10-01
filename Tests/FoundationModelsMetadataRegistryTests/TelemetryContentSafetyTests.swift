@@ -1,6 +1,7 @@
-@testable import FoundationModelsMetadataRegistry
 import TelemetryTestSupport
 import Testing
+
+@testable import FoundationModelsMetadataRegistry
 
 /// Holds the telemetry of this package to the rules of the OpenTelemetry
 /// design of 2026-09-28.
@@ -23,210 +24,218 @@ import Testing
 /// that one time for the process.
 @Suite("Telemetry content safety")
 struct TelemetryContentSafetyTests {
-    /// The prefix that each telemetry name of this package starts with: the
-    /// module name and a dot.
-    private static let modulePrefix = "FoundationModelsMetadataRegistry."
+  /// The prefix that each telemetry name of this package starts with: the
+  /// module name and a dot.
+  private static let modulePrefix = "FoundationModelsMetadataRegistry."
 
-    /// Each name of ``RegistryTelemetry``. A change that adds a name to
-    /// ``RegistryTelemetry`` adds it to this list too.
-    private static let registryNames = [
-        RegistryTelemetry.loggerLabel,
-        RegistryTelemetry.SpanName.search,
-        RegistryTelemetry.SpanName.rank,
-        RegistryTelemetry.SpanName.catalogUpdate,
-        RegistryTelemetry.SpanName.catalogEmbed,
+  /// Each name of ``RegistryTelemetry``. A change that adds a name to
+  /// ``RegistryTelemetry`` adds it to this list too.
+  private static let registryNames = [
+    RegistryTelemetry.loggerLabel,
+    RegistryTelemetry.SpanName.search,
+    RegistryTelemetry.SpanName.rank,
+    RegistryTelemetry.SpanName.catalogUpdate,
+    RegistryTelemetry.SpanName.catalogEmbed,
+  ]
+
+  @Test("Each RegistryTelemetry name starts with the module prefix", arguments: registryNames)
+  func eachNameStartsWithTheModulePrefix(name: String) {
+    #expect(name.hasPrefix(Self.modulePrefix))
+  }
+
+  // MARK: - Fixture
+
+  /// The unique strings that the fixture puts in the query text, in each
+  /// text of an item and in each vector. No telemetry place may hold one.
+  private enum Marker {
+    /// The marker in each query text.
+    static let query = "QueryMarker7f3c"
+
+    /// The marker in each rendered block.
+    static let block = "BlockMarker2a9d"
+
+    /// The marker in each text that the keyword signals index.
+    static let indexedText = "IndexedMarker5e1b"
+
+    /// The marker in each text that the embedder embeds.
+    static let embeddedText = "EmbeddedMarker8c4f"
+
+    /// The marker in each summary block that seeds the selection prefix.
+    static let summary = "SummaryMarker6d0e"
+
+    /// The component of each vector of the fixture. Its text is the
+    /// vector marker, because a vector reaches telemetry as the text of
+    /// its components.
+    static let vectorComponent: Float = 0.918273
+
+    /// Each marker, as the capture forbids it.
+    static let all = [
+      query, block, indexedText, embeddedText, summary, vectorComponent.description,
     ]
+  }
 
-    @Test("Each RegistryTelemetry name starts with the module prefix", arguments: registryNames)
-    func eachNameStartsWithTheModulePrefix(name: String) {
-        #expect(name.hasPrefix(Self.modulePrefix))
+  /// A catalog item that puts a marker in each of its texts. Its `id` holds
+  /// no marker, because an id is safe in telemetry.
+  private struct MarkedItem: SearchableMetadata {
+    let id: String
+
+    func renderBlock() -> String {
+      "\(Marker.block) \(id) block"
     }
 
-    // MARK: - Fixture
-
-    /// The unique strings that the fixture puts in the query text, in each
-    /// text of an item and in each vector. No telemetry place may hold one.
-    private enum Marker {
-        /// The marker in each query text.
-        static let query = "QueryMarker7f3c"
-
-        /// The marker in each rendered block.
-        static let block = "BlockMarker2a9d"
-
-        /// The marker in each text that the keyword signals index.
-        static let indexedText = "IndexedMarker5e1b"
-
-        /// The marker in each text that the embedder embeds.
-        static let embeddedText = "EmbeddedMarker8c4f"
-
-        /// The marker in each summary block that seeds the selection prefix.
-        static let summary = "SummaryMarker6d0e"
-
-        /// The component of each vector of the fixture. Its text is the
-        /// vector marker, because a vector reaches telemetry as the text of
-        /// its components.
-        static let vectorComponent: Float = 0.918273
-
-        /// Each marker, as the capture forbids it.
-        static let all = [query, block, indexedText, embeddedText, summary, vectorComponent.description]
+    func renderIndexedText(from block: String) -> String {
+      "\(Marker.indexedText) \(block)"
     }
 
-    /// A catalog item that puts a marker in each of its texts. Its `id` holds
-    /// no marker, because an id is safe in telemetry.
-    private struct MarkedItem: SearchableMetadata {
-        let id: String
-
-        func renderBlock() -> String {
-            "\(Marker.block) \(id) block"
-        }
-
-        func renderIndexedText(from block: String) -> String {
-            "\(Marker.indexedText) \(block)"
-        }
-
-        func renderEmbeddedText(from block: String) -> String {
-            "\(Marker.embeddedText) \(block)"
-        }
-
-        func renderSummaryBlock() -> String {
-            "\(Marker.summary) \(id) summary"
-        }
+    func renderEmbeddedText(from block: String) -> String {
+      "\(Marker.embeddedText) \(block)"
     }
 
-    /// The catalog that each searcher starts from.
-    private static let catalog = [MarkedItem(id: "deploy"), MarkedItem(id: "rollback")]
+    func renderSummaryBlock() -> String {
+      "\(Marker.summary) \(id) summary"
+    }
+  }
 
-    /// The catalog that `update(items:)` loads. It adds one item, so the
-    /// reload changes the content and embeds the new item.
-    private static let reloadedCatalog = catalog + [MarkedItem(id: "restart")]
+  /// The catalog that each searcher starts from.
+  private static let catalog = [MarkedItem(id: "deploy"), MarkedItem(id: "rollback")]
 
-    /// The query text of each search.
-    private static let query = "\(Marker.query) deploy block"
+  /// The catalog that `update(items:)` loads. It adds one item, so the
+  /// reload changes the content and embeds the new item.
+  private static let reloadedCatalog = catalog + [MarkedItem(id: "restart")]
 
-    /// The `limit` of each search. It is larger than each catalog, so no
-    /// result is cut.
-    private static let searchLimit = 10
+  /// The query text of each search.
+  private static let query = "\(Marker.query) deploy block"
 
-    /// The length of each vector of the fixture.
-    private static let vectorLength = 2
+  /// The `limit` of each search. It is larger than each catalog, so no
+  /// result is cut.
+  private static let searchLimit = 10
 
-    /// The vector of the query and of each embedded text of both catalogs.
-    private static let vectorsByText: [String: [Float]] = {
-        let vector = [Float](repeating: Marker.vectorComponent, count: vectorLength)
-        let embeddedTexts = reloadedCatalog.map { $0.renderEmbeddedText(from: $0.renderBlock()) }
-        return Dictionary(uniqueKeysWithValues: ([query] + embeddedTexts).map { ($0, vector) })
-    }()
+  /// The length of each vector of the fixture.
+  private static let vectorLength = 2
 
-    /// The id that the query text names, and that the scripted selection
-    /// model picks.
-    private static let selectedID = catalog[0].id
+  /// The vector of the query and of each embedded text of both catalogs.
+  private static let vectorsByText: [String: [Float]] = {
+    let vector = [Float](repeating: Marker.vectorComponent, count: vectorLength)
+    let embeddedTexts = reloadedCatalog.map { $0.renderEmbeddedText(from: $0.renderBlock()) }
+    return Dictionary(uniqueKeysWithValues: ([query] + embeddedTexts).map { ($0, vector) })
+  }()
 
-    /// Makes an embedder that gives the fixture vector for each fixture text.
-    private static func makeEmbedder() -> FakeEmbedder {
-        FakeEmbedder(vectorsByText: vectorsByText)
+  /// The id that the query text names, and that the scripted selection
+  /// model picks.
+  private static let selectedID = catalog[0].id
+
+  /// Makes an embedder that gives the fixture vector for each fixture text.
+  private static func makeEmbedder() -> FakeEmbedder {
+    FakeEmbedder(vectorsByText: vectorsByText)
+  }
+
+  /// Makes a selection configuration whose scripted model picks
+  /// `selectedID`.
+  private static func makeSelectionConfig() -> SelectionConfig {
+    let factory = RecordingSessionFactory(responses: [#"{"ids":["\#(selectedID)"]}"#])
+    return SelectionConfig(model: factory.makeSession)
+  }
+
+  /// One sample of each case of `MetadataDiagnostic`, with the fixture ids.
+  /// A change that adds a case adds a sample here too.
+  private static let diagnostics: [MetadataDiagnostic] = [
+    .duplicateId(id: catalog[0].id),
+    .embeddingUnavailable,
+    .unknownSelectedId(id: catalog[1].id),
+    .retrievalCut(considered: catalog.count, kept: 1),
+    .embedCatchUp(pending: 1, total: catalog.count),
+  ]
+
+  // MARK: - No content in the telemetry
+
+  @Test
+  func retrievalSearchWithAnEmbedderKeepsContentOutOfTheTelemetry() async throws {
+    let matches = try await TelemetryCapture.run(forbidding: Marker.all) { _ in
+      let searcher = MetadataSearcher(
+        items: Self.catalog, mode: .retrieval, embedder: Self.makeEmbedder())
+      return try await searcher.search(intent: Self.query, limit: Self.searchLimit)
     }
 
-    /// Makes a selection configuration whose scripted model picks
-    /// `selectedID`.
-    private static func makeSelectionConfig() -> SelectionConfig {
-        let factory = RecordingSessionFactory(responses: [#"{"ids":["\#(selectedID)"]}"#])
-        return SelectionConfig(model: factory.makeSession)
+    #expect(matches.first?.id == Self.selectedID)
+  }
+
+  @Test
+  func selectionSearchKeepsContentOutOfTheTelemetry() async throws {
+    let matches = try await TelemetryCapture.run(forbidding: Marker.all) { _ in
+      let searcher = MetadataSearcher(
+        items: Self.catalog,
+        mode: .selection,
+        selection: Self.makeSelectionConfig(),
+      )
+      return try await searcher.search(intent: Self.query, limit: Self.searchLimit)
     }
 
-    /// One sample of each case of `MetadataDiagnostic`, with the fixture ids.
-    /// A change that adds a case adds a sample here too.
-    private static let diagnostics: [MetadataDiagnostic] = [
-        .duplicateId(id: catalog[0].id),
-        .embeddingUnavailable,
-        .unknownSelectedId(id: catalog[1].id),
-        .retrievalCut(considered: catalog.count, kept: 1),
-        .embedCatchUp(pending: 1, total: catalog.count),
-    ]
+    #expect(matches.map(\.id) == [Self.selectedID])
+  }
 
-    // MARK: - No content in the telemetry
+  /// An error path can leak content too: the search span and the rank span
+  /// record the failure of the session, and the capture checks both.
+  @Test
+  func selectionSearchWhoseSessionThrowsKeepsContentOutOfTheTelemetry() async throws {
+    try await TelemetryCapture.run(forbidding: Marker.all) { context in
+      let factory = RecordingSessionFactory(responses: [])
+      let searcher = MetadataSearcher(
+        items: Self.catalog,
+        mode: .selection,
+        selection: SelectionConfig(model: factory.makeSession),
+      )
+      await #expect(throws: (any Error).self) {
+        try await searcher.search(intent: Self.query, limit: Self.searchLimit)
+      }
 
-    @Test
-    func retrievalSearchWithAnEmbedderKeepsContentOutOfTheTelemetry() async throws {
-        let matches = try await TelemetryCapture.run(forbidding: Marker.all) { _ in
-            let searcher = MetadataSearcher(items: Self.catalog, mode: .retrieval, embedder: Self.makeEmbedder())
-            return try await searcher.search(intent: Self.query, limit: Self.searchLimit)
-        }
+      #expect(context.spans.contains { $0.status?.code == .error })
+    }
+  }
 
-        #expect(matches.first?.id == Self.selectedID)
+  @Test
+  func updateItemsKeepsContentOutOfTheTelemetry() async throws {
+    let matches = try await TelemetryCapture.run(forbidding: Marker.all) { _ in
+      let searcher = MetadataSearcher(
+        items: Self.catalog, mode: .retrieval, embedder: Self.makeEmbedder())
+      await searcher.update(items: Self.reloadedCatalog)
+      return try await searcher.search(intent: Self.query, limit: Self.searchLimit)
     }
 
-    @Test
-    func selectionSearchKeepsContentOutOfTheTelemetry() async throws {
-        let matches = try await TelemetryCapture.run(forbidding: Marker.all) { _ in
-            let searcher = MetadataSearcher(
-                items: Self.catalog,
-                mode: .selection,
-                selection: Self.makeSelectionConfig(),
-            )
-            return try await searcher.search(intent: Self.query, limit: Self.searchLimit)
-        }
+    #expect(Set(matches.map(\.id)) == Set(Self.reloadedCatalog.map(\.id)))
+  }
 
-        #expect(matches.map(\.id) == [Self.selectedID])
+  @Test
+  func searchersThatShareOneCatalogEmbedKeepContentOutOfTheTelemetry() async throws {
+    let (retrievalMatches, selectionMatches) = try await TelemetryCapture.run(
+      forbidding: Marker.all
+    ) { _ in
+      let shared = SharedCatalogEmbedding(
+        index: MetadataIndex(items: Self.catalog),
+        embedder: Self.makeEmbedder(),
+      )
+      let retrieval = MetadataSearcher(sharing: shared, mode: .retrieval)
+      let selection = MetadataSearcher(
+        sharing: shared, mode: .selection, selection: Self.makeSelectionConfig())
+      let retrievalMatches = try await retrieval.search(intent: Self.query, limit: Self.searchLimit)
+      let selectionMatches = try await selection.search(intent: Self.query, limit: Self.searchLimit)
+      return (retrievalMatches, selectionMatches)
     }
 
-    /// An error path can leak content too: the search span and the rank span
-    /// record the failure of the session, and the capture checks both.
-    @Test
-    func selectionSearchWhoseSessionThrowsKeepsContentOutOfTheTelemetry() async throws {
-        try await TelemetryCapture.run(forbidding: Marker.all) { context in
-            let factory = RecordingSessionFactory(responses: [])
-            let searcher = MetadataSearcher(
-                items: Self.catalog,
-                mode: .selection,
-                selection: SelectionConfig(model: factory.makeSession),
-            )
-            await #expect(throws: (any Error).self) {
-                try await searcher.search(intent: Self.query, limit: Self.searchLimit)
-            }
+    #expect(retrievalMatches.first?.id == Self.selectedID)
+    #expect(selectionMatches.map(\.id) == [Self.selectedID])
+  }
 
-            #expect(context.spans.contains { $0.status?.code == .error })
-        }
+  /// The capture records an issue for each telemetry place of the log call
+  /// that holds a marker. The test also makes sure that the capture sees
+  /// the one log record of the call, so the check examines a real record.
+  @Test(arguments: diagnostics)
+  func loggingADiagnosticKeepsContentOutOfTheTelemetry(diagnostic: MetadataDiagnostic) async throws
+  {
+    let logRecordCount = try await TelemetryCapture.run(forbidding: Marker.all) { context in
+      MetadataDiagnostic.log(diagnostic)
+      return context.logRecords.count
     }
 
-    @Test
-    func updateItemsKeepsContentOutOfTheTelemetry() async throws {
-        let matches = try await TelemetryCapture.run(forbidding: Marker.all) { _ in
-            let searcher = MetadataSearcher(items: Self.catalog, mode: .retrieval, embedder: Self.makeEmbedder())
-            await searcher.update(items: Self.reloadedCatalog)
-            return try await searcher.search(intent: Self.query, limit: Self.searchLimit)
-        }
-
-        #expect(Set(matches.map(\.id)) == Set(Self.reloadedCatalog.map(\.id)))
-    }
-
-    @Test
-    func searchersThatShareOneCatalogEmbedKeepContentOutOfTheTelemetry() async throws {
-        let (retrievalMatches, selectionMatches) = try await TelemetryCapture.run(forbidding: Marker.all) { _ in
-            let shared = SharedCatalogEmbedding(
-                index: MetadataIndex(items: Self.catalog),
-                embedder: Self.makeEmbedder(),
-            )
-            let retrieval = MetadataSearcher(sharing: shared, mode: .retrieval)
-            let selection = MetadataSearcher(sharing: shared, mode: .selection, selection: Self.makeSelectionConfig())
-            let retrievalMatches = try await retrieval.search(intent: Self.query, limit: Self.searchLimit)
-            let selectionMatches = try await selection.search(intent: Self.query, limit: Self.searchLimit)
-            return (retrievalMatches, selectionMatches)
-        }
-
-        #expect(retrievalMatches.first?.id == Self.selectedID)
-        #expect(selectionMatches.map(\.id) == [Self.selectedID])
-    }
-
-    /// The capture records an issue for each telemetry place of the log call
-    /// that holds a marker. The test also makes sure that the capture sees
-    /// the one log record of the call, so the check examines a real record.
-    @Test(arguments: diagnostics)
-    func loggingADiagnosticKeepsContentOutOfTheTelemetry(diagnostic: MetadataDiagnostic) async throws {
-        let logRecordCount = try await TelemetryCapture.run(forbidding: Marker.all) { context in
-            MetadataDiagnostic.log(diagnostic)
-            return context.logRecords.count
-        }
-
-        #expect(logRecordCount == 1)
-    }
+    #expect(logRecordCount == 1)
+  }
 }

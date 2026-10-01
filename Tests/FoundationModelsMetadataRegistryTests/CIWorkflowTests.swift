@@ -28,145 +28,153 @@ import Testing
 /// repo-local test jobs, or reaches for a legacy input, fails this suite.
 @Suite("CI workflow")
 struct CIWorkflowTests {
-    /// The name of the shared workflow input that names the nested
-    /// integration package, with the colon that separates it from its value.
-    private static let integrationPackagePathKey = "integration-package-path:"
+  /// The name of the shared workflow input that names the nested
+  /// integration package, with the colon that separates it from its value.
+  private static let integrationPackagePathKey = "integration-package-path:"
 
-    /// The value that input carries: the nested integration package's
-    /// directory, relative to the repository root.
-    private static let integrationPackagePath = "IntegrationTests"
+  /// The value that input carries: the nested integration package's
+  /// directory, relative to the repository root.
+  private static let integrationPackagePath = "IntegrationTests"
 
-    /// The name of the shared workflow input that finds the mlx-swift
-    /// metallib, with the colon that separates it from its value.
-    private static let integrationMetallibGlobKey = "integration-metallib-glob:"
+  /// The name of the shared workflow input that finds the mlx-swift
+  /// metallib, with the colon that separates it from its value.
+  private static let integrationMetallibGlobKey = "integration-metallib-glob:"
 
-    /// The value that input carries: a find(1) `-path` glob for the
-    /// `default.metallib` that SwiftPM puts in the Cmlx bundle. It is the
-    /// same glob that FoundationModelsExtras gives the shared workflow.
-    private static let integrationMetallibGlob = #""*Cmlx*/default.metallib""#
+  /// The value that input carries: a find(1) `-path` glob for the
+  /// `default.metallib` that SwiftPM puts in the Cmlx bundle. It is the
+  /// same glob that FoundationModelsExtras gives the shared workflow.
+  private static let integrationMetallibGlob = #""*Cmlx*/default.metallib""#
 
-    /// The prefix every input that switches the shared workflow's integration
-    /// job on begins with.
-    private static let integrationInputPrefix = "integration-"
+  /// The prefix every input that switches the shared workflow's integration
+  /// job on begins with.
+  private static let integrationInputPrefix = "integration-"
 
-    @Test("ci.yml calls the shared swift-ci.yaml workflow")
-    func callsTheSharedWorkflow() throws {
-        let lines = try Self.workflowLines()
-        let callsShared = lines.contains { line in
-            line.trimmingCharacters(in: .whitespaces)
-                == "uses: swissarmyhammer/workflows/.github/workflows/swift-ci.yaml@main"
-        }
-        #expect(
-            callsShared,
-            "ci.yml must call swissarmyhammer/workflows/.github/workflows/swift-ci.yaml@main.",
-        )
+  @Test("ci.yml calls the shared swift-ci.yaml workflow")
+  func callsTheSharedWorkflow() throws {
+    let lines = try Self.workflowLines()
+    let callsShared = lines.contains { line in
+      line.trimmingCharacters(in: .whitespaces)
+        == "uses: swissarmyhammer/workflows/.github/workflows/swift-ci.yaml@main"
     }
+    #expect(
+      callsShared,
+      "ci.yml must call swissarmyhammer/workflows/.github/workflows/swift-ci.yaml@main.",
+    )
+  }
 
-    @Test("ci.yml points integration-package-path at the nested IntegrationTests package")
-    func namesTheNestedIntegrationPackage() throws {
-        let input = try Self.workflowInput(key: Self.integrationPackagePathKey, value: Self.integrationPackagePath)
-        #expect(
-            input.isPassed,
-            """
-            ci.yml must pass "\(input.line)" to the shared workflow, so its unit job builds the \
-            nested package on every run — the root build never compiles it — and its integration \
-            job runs the suite.
-            """,
-        )
-    }
+  @Test("ci.yml points integration-package-path at the nested IntegrationTests package")
+  func namesTheNestedIntegrationPackage() throws {
+    let input = try Self.workflowInput(
+      key: Self.integrationPackagePathKey, value: Self.integrationPackagePath)
+    #expect(
+      input.isPassed,
+      """
+      ci.yml must pass "\(input.line)" to the shared workflow, so its unit job builds the \
+      nested package on every run — the root build never compiles it — and its integration \
+      job runs the suite.
+      """,
+    )
+  }
 
-    @Test("ci.yml gives integration-metallib-glob the Cmlx default.metallib")
-    func namesTheMLXMetallib() throws {
-        let input = try Self.workflowInput(key: Self.integrationMetallibGlobKey, value: Self.integrationMetallibGlob)
-        #expect(
-            input.isPassed,
-            """
-            ci.yml must pass "\(input.line)" to the shared workflow: the integration suite loads a \
-            real MLX embedding model, and the shared workflow copies the metallib that this glob \
-            finds beside each .xctest bundle before the run.
-            """,
-        )
-    }
+  @Test("ci.yml gives integration-metallib-glob the Cmlx default.metallib")
+  func namesTheMLXMetallib() throws {
+    let input = try Self.workflowInput(
+      key: Self.integrationMetallibGlobKey, value: Self.integrationMetallibGlob)
+    #expect(
+      input.isPassed,
+      """
+      ci.yml must pass "\(input.line)" to the shared workflow: the integration suite loads a \
+      real MLX embedding model, and the shared workflow copies the metallib that this glob \
+      finds beside each .xctest bundle before the run.
+      """,
+    )
+  }
 
-    @Test("ci.yml passes the shared workflow no other integration-* input")
-    func passesNoOtherIntegrationInput() throws {
-        let lines = try Self.workflowLines()
-        let allowedKeys = [Self.integrationPackagePathKey, Self.integrationMetallibGlobKey]
-        // Matched case-insensitively: GitHub Actions resolves a `with:` key
-        // against the called workflow's `inputs:` without regard to case, so
-        // `Integration-Gate-Env:` would reach the shared workflow just as
-        // `integration-gate-env:` does. A case-sensitive read would let that
-        // spelling through.
-        let otherInputs = lines
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { line in
-                let key = line.lowercased()
-                return key.hasPrefix(Self.integrationInputPrefix)
-                    && !allowedKeys.contains { key.hasPrefix($0) }
-            }
-        #expect(
-            otherInputs.isEmpty,
-            """
-            ci.yml must pass \(allowedKeys) and no other integration-* input: \
-            integration-gate-env is LEGACY and the shared workflow stops the run when it is given \
-            beside the package path; found: \(otherInputs)
-            """,
-        )
-    }
+  @Test("ci.yml passes the shared workflow no other integration-* input")
+  func passesNoOtherIntegrationInput() throws {
+    let lines = try Self.workflowLines()
+    let allowedKeys = [Self.integrationPackagePathKey, Self.integrationMetallibGlobKey]
+    // Matched case-insensitively: GitHub Actions resolves a `with:` key
+    // against the called workflow's `inputs:` without regard to case, so
+    // `Integration-Gate-Env:` would reach the shared workflow just as
+    // `integration-gate-env:` does. A case-sensitive read would let that
+    // spelling through.
+    let otherInputs =
+      lines
+      .map { $0.trimmingCharacters(in: .whitespaces) }
+      .filter { line in
+        let key = line.lowercased()
+        return key.hasPrefix(Self.integrationInputPrefix)
+          && !allowedKeys.contains { key.hasPrefix($0) }
+      }
+    #expect(
+      otherInputs.isEmpty,
+      """
+      ci.yml must pass \(allowedKeys) and no other integration-* input: \
+      integration-gate-env is LEGACY and the shared workflow stops the run when it is given \
+      beside the package path; found: \(otherInputs)
+      """,
+    )
+  }
 
-    @Test("ci.yml declares no repo-local test-running jobs")
-    func declaresNoRepoLocalJobs() throws {
-        let lines = try Self.workflowLines()
-        guard let jobsIndex = lines.firstIndex(of: "jobs:") else {
-            Issue.record("ci.yml has no top-level \"jobs:\" key.")
-            return
-        }
-        // A job key is two-space-indented, e.g. "  ci:". Only lines after
-        // "jobs:" are job keys — "on:"'s own two-space-indented children
-        // (push:, pull_request:, ...) match the same shape and would
-        // otherwise be miscounted as jobs.
-        let jobKeyPattern = try Regex(#"^  [a-zA-Z0-9_-]+:$"#)
-        let jobKeys = lines[lines.index(after: jobsIndex)...].filter { $0.wholeMatch(of: jobKeyPattern) != nil }
-        #expect(
-            jobKeys.count == 1,
-            """
-            ci.yml must declare exactly one job that delegates to the shared workflow, not \
-            repo-local unit/integration jobs; found job keys: \(jobKeys)
-            """,
-        )
+  @Test("ci.yml declares no repo-local test-running jobs")
+  func declaresNoRepoLocalJobs() throws {
+    let lines = try Self.workflowLines()
+    guard let jobsIndex = lines.firstIndex(of: "jobs:") else {
+      Issue.record("ci.yml has no top-level \"jobs:\" key.")
+      return
     }
+    // A job key is two-space-indented, e.g. "  ci:". Only lines after
+    // "jobs:" are job keys — "on:"'s own two-space-indented children
+    // (push:, pull_request:, ...) match the same shape and would
+    // otherwise be miscounted as jobs.
+    let jobKeyPattern = try Regex(#"^  [a-zA-Z0-9_-]+:$"#)
+    let jobKeys = lines[lines.index(after: jobsIndex)...].filter {
+      $0.wholeMatch(of: jobKeyPattern) != nil
+    }
+    #expect(
+      jobKeys.count == 1,
+      """
+      ci.yml must declare exactly one job that delegates to the shared workflow, not \
+      repo-local unit/integration jobs; found job keys: \(jobKeys)
+      """,
+    )
+  }
 
-    /// Reads whether `ci.yml` has a line, with its indent removed, that is
-    /// `key` and `value` separated by one space.
-    ///
-    /// - Parameters:
-    ///   - key: the input name, with its colon.
-    ///   - value: the value of the input, as the workflow spells it.
-    /// - Returns: the expected line, and whether `ci.yml` holds it.
-    /// - Throws: an error when the file cannot be read.
-    private static func workflowInput(key: String, value: String) throws -> (line: String, isPassed: Bool) {
-        let expected = "\(key) \(value)"
-        let isPassed = try workflowLines().contains { line in
-            line.trimmingCharacters(in: .whitespaces) == expected
-        }
-        return (expected, isPassed)
+  /// Reads whether `ci.yml` has a line, with its indent removed, that is
+  /// `key` and `value` separated by one space.
+  ///
+  /// - Parameters:
+  ///   - key: the input name, with its colon.
+  ///   - value: the value of the input, as the workflow spells it.
+  /// - Returns: the expected line, and whether `ci.yml` holds it.
+  /// - Throws: an error when the file cannot be read.
+  private static func workflowInput(key: String, value: String) throws -> (
+    line: String, isPassed: Bool
+  ) {
+    let expected = "\(key) \(value)"
+    let isPassed = try workflowLines().contains { line in
+      line.trimmingCharacters(in: .whitespaces) == expected
     }
+    return (expected, isPassed)
+  }
 
-    /// Reads `.github/workflows/ci.yml` from the repository root, resolved
-    /// relative to this source file's own path (`#filePath` is
-    /// `Tests/FoundationModelsMetadataRegistryTests/CIWorkflowTests.swift`,
-    /// two directories below the root).
-    ///
-    /// - Returns: each line of the workflow file.
-    /// - Throws: an error when the file cannot be read.
-    private static func workflowLines() throws -> [Substring] {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent() // Tests/FoundationModelsMetadataRegistryTests/
-            .deletingLastPathComponent() // Tests/
-            .deletingLastPathComponent() // repository root
-        let workflow = repoRoot
-            .appendingPathComponent(".github/workflows/ci.yml")
-        let text = try String(contentsOf: workflow, encoding: .utf8)
-        return text.split(separator: "\n", omittingEmptySubsequences: false)
-    }
+  /// Reads `.github/workflows/ci.yml` from the repository root, resolved
+  /// relative to this source file's own path (`#filePath` is
+  /// `Tests/FoundationModelsMetadataRegistryTests/CIWorkflowTests.swift`,
+  /// two directories below the root).
+  ///
+  /// - Returns: each line of the workflow file.
+  /// - Throws: an error when the file cannot be read.
+  private static func workflowLines() throws -> [Substring] {
+    let repoRoot = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()  // Tests/FoundationModelsMetadataRegistryTests/
+      .deletingLastPathComponent()  // Tests/
+      .deletingLastPathComponent()  // repository root
+    let workflow =
+      repoRoot
+      .appendingPathComponent(".github/workflows/ci.yml")
+    let text = try String(contentsOf: workflow, encoding: .utf8)
+    return text.split(separator: "\n", omittingEmptySubsequences: false)
+  }
 }

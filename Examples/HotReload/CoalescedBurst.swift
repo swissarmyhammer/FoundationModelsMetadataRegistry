@@ -7,14 +7,14 @@ import FoundationModelsMetadataRegistry
 
 /// What `runCoalescedBurst(_:embeddingWith:query:limit:)` observed.
 struct CoalescedBurstResult {
-    /// The texts of each embed call that the searcher made, in call order.
-    let embedBatches: [[String]]
+  /// The texts of each embed call that the searcher made, in call order.
+  let embedBatches: [[String]]
 
-    /// The `.embedCatchUp` diagnostics of the burst: one for each real embed call.
-    let embedCatchUps: [MetadataDiagnostic]
+  /// The `.embedCatchUp` diagnostics of the burst: one for each real embed call.
+  let embedCatchUps: [MetadataDiagnostic]
 
-    /// The ids that a search for the query found after the burst.
-    let searchResultIds: [String]
+  /// The ids that a search for the query found after the burst.
+  let searchResultIds: [String]
 }
 
 /// Sends `burst` to a new `MetadataSearcher` while its first embed call is held.
@@ -37,102 +37,102 @@ struct CoalescedBurstResult {
 ///   search result.
 /// - Throws: the error of `search(intent:limit:)`.
 func runCoalescedBurst(
-    _ burst: [[Tool]],
-    embeddingWith embedder: PooledEmbedder,
-    query: String,
-    limit: Int,
+  _ burst: [[Tool]],
+  embeddingWith embedder: PooledEmbedder,
+  query: String,
+  limit: Int,
 ) async throws -> CoalescedBurstResult {
-    let hold = FirstEmbedHold()
-    let log = DiagnosticLog()
-    let searcher = MetadataSearcher(
-        items: [Tool](),
-        mode: .retrieval,
-        embedder: HeldFirstEmbedder(base: embedder, hold: hold),
-        onDiagnostic: { log.record($0) },
-    )
+  let hold = FirstEmbedHold()
+  let log = DiagnosticLog()
+  let searcher = MetadataSearcher(
+    items: [Tool](),
+    mode: .retrieval,
+    embedder: HeldFirstEmbedder(base: embedder, hold: hold),
+    onDiagnostic: { log.record($0) },
+  )
 
-    var updates: [Task<Void, Never>] = []
-    for (position, items) in burst.enumerated() {
-        updates.append(Task { await searcher.update(items: items) })
-        if position == 0 {
-            await hold.waitUntilHeld()
-        } else {
-            let ids = Set(items.map(\.id))
-            while try await Set(searcher.search(intent: query, limit: limit).map(\.id)) != ids {
-                await Task.yield()
-            }
-        }
+  var updates: [Task<Void, Never>] = []
+  for (position, items) in burst.enumerated() {
+    updates.append(Task { await searcher.update(items: items) })
+    if position == 0 {
+      await hold.waitUntilHeld()
+    } else {
+      let ids = Set(items.map(\.id))
+      while try await Set(searcher.search(intent: query, limit: limit).map(\.id)) != ids {
+        await Task.yield()
+      }
     }
-    await hold.release()
-    for update in updates {
-        await update.value
-    }
+  }
+  await hold.release()
+  for update in updates {
+    await update.value
+  }
 
-    return try await CoalescedBurstResult(
-        embedBatches: hold.batches,
-        embedCatchUps: log.diagnostics(since: 0).filter {
-            if case .embedCatchUp = $0 { return true }
-            return false
-        },
-        searchResultIds: searcher.search(intent: query, limit: limit).map(\.id),
-    )
+  return try await CoalescedBurstResult(
+    embedBatches: hold.batches,
+    embedCatchUps: log.diagnostics(since: 0).filter {
+      if case .embedCatchUp = $0 { return true }
+      return false
+    },
+    searchResultIds: searcher.search(intent: query, limit: limit).map(\.id),
+  )
 }
 
 /// Holds the first embed call until `release()`, and records the texts of each call.
 ///
 /// An actor, so each continuation is resumed from one place with no data race.
 private actor FirstEmbedHold {
-    /// Whether the first embed call has started.
-    private var isHeld = false
+  /// Whether the first embed call has started.
+  private var isHeld = false
 
-    /// Whether `release()` has run.
-    private var isReleased = false
+  /// Whether `release()` has run.
+  private var isReleased = false
 
-    /// The waiter of `waitUntilHeld()`, when the first call has not started yet.
-    private var heldWaiter: CheckedContinuation<Void, Never>?
+  /// The waiter of `waitUntilHeld()`, when the first call has not started yet.
+  private var heldWaiter: CheckedContinuation<Void, Never>?
 
-    /// The first embed call, while it is held.
-    private var heldCall: CheckedContinuation<Void, Never>?
+  /// The first embed call, while it is held.
+  private var heldCall: CheckedContinuation<Void, Never>?
 
-    /// The texts of each embed call, in call order.
-    private(set) var batches: [[String]] = []
+  /// The texts of each embed call, in call order.
+  private(set) var batches: [[String]] = []
 
-    /// Records the texts of one embed call, and holds that call when it is the first.
-    ///
-    /// - Parameter texts: the texts that the call embeds.
-    func enter(with texts: [String]) async {
-        batches.append(texts)
-        guard !isHeld, !isReleased else { return }
-        isHeld = true
-        heldWaiter?.resume()
-        heldWaiter = nil
-        await withCheckedContinuation { heldCall = $0 }
-    }
+  /// Records the texts of one embed call, and holds that call when it is the first.
+  ///
+  /// - Parameter texts: the texts that the call embeds.
+  func enter(with texts: [String]) async {
+    batches.append(texts)
+    guard !isHeld, !isReleased else { return }
+    isHeld = true
+    heldWaiter?.resume()
+    heldWaiter = nil
+    await withCheckedContinuation { heldCall = $0 }
+  }
 
-    /// Returns when the first embed call is held.
-    func waitUntilHeld() async {
-        guard !isHeld else { return }
-        await withCheckedContinuation { heldWaiter = $0 }
-    }
+  /// Returns when the first embed call is held.
+  func waitUntilHeld() async {
+    guard !isHeld else { return }
+    await withCheckedContinuation { heldWaiter = $0 }
+  }
 
-    /// Lets the held call, and each later call, run.
-    func release() {
-        isReleased = true
-        heldCall?.resume()
-        heldCall = nil
-    }
+  /// Lets the held call, and each later call, run.
+  func release() {
+    isReleased = true
+    heldCall?.resume()
+    heldCall = nil
+  }
 }
 
 /// An embedder whose first embed call `hold` holds.
 private struct HeldFirstEmbedder: TextEmbedding {
-    /// The embedder that computes the vectors.
-    let base: PooledEmbedder
+  /// The embedder that computes the vectors.
+  let base: PooledEmbedder
 
-    /// The hold that records and holds the calls.
-    let hold: FirstEmbedHold
+  /// The hold that records and holds the calls.
+  let hold: FirstEmbedHold
 
-    func embed(_ texts: [String]) async throws -> [[Float]] {
-        await hold.enter(with: texts)
-        return try await base.embed(texts)
-    }
+  func embed(_ texts: [String]) async throws -> [[Float]] {
+    await hold.enter(with: texts)
+    return try await base.embed(texts)
+  }
 }

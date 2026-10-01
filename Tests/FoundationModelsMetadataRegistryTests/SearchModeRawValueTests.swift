@@ -6,14 +6,14 @@ import Testing
 /// registry, so this suite keeps each name fixed.
 @Suite("SearchMode raw value")
 struct SearchModeRawValueTests {
-    /// Each mode of the searcher, in the order of the declaration.
-    static let modes: [SearchMode] = [.retrieval, .selection, .auto]
+  /// Each mode of the searcher, in the order of the declaration.
+  static let modes: [SearchMode] = [.retrieval, .selection, .auto]
 
-    /// The telemetry name of each mode of ``modes``, in the same order.
-    static let names = ["retrieval", "selection", "auto"]
+  /// The telemetry name of each mode of ``modes``, in the same order.
+  static let names = ["retrieval", "selection", "auto"]
 
-    @Test("The raw value of each mode is its telemetry name", arguments: zip(modes, names))
-    func rawValueIsTheTelemetryName(mode: SearchMode, name: String) {
-        #expect(mode.rawValue == name)
-    }
+  @Test("The raw value of each mode is its telemetry name", arguments: zip(modes, names))
+  func rawValueIsTheTelemetryName(mode: SearchMode, name: String) {
+    #expect(mode.rawValue == name)
+  }
 }

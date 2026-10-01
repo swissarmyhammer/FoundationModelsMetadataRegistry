@@ -11,42 +11,42 @@ import Testing
 /// text cannot quietly take it away.
 @Suite("Integration catalog fixture")
 struct IntegrationCatalogTests {
-    /// Tokenizes every group's blocks and asserts the three vocabularies do
-    /// not intersect.
-    ///
-    /// The non-empty check comes first on purpose: a group that tokenized to
-    /// nothing would be disjoint from everything, so without it a fixture
-    /// emptied by mistake would read as a pass.
-    @Test("the base, add-only and remove-only groups share no vocabulary")
-    func fixtureGroupVocabulariesAreDisjoint() {
-        let groups = IntegrationCatalog.groups
-        let vocabularies = groups.map { IntegrationCatalog.vocabulary(of: $0.items) }
+  /// Tokenizes every group's blocks and asserts the three vocabularies do
+  /// not intersect.
+  ///
+  /// The non-empty check comes first on purpose: a group that tokenized to
+  /// nothing would be disjoint from everything, so without it a fixture
+  /// emptied by mistake would read as a pass.
+  @Test("the base, add-only and remove-only groups share no vocabulary")
+  func fixtureGroupVocabulariesAreDisjoint() {
+    let groups = IntegrationCatalog.groups
+    let vocabularies = groups.map { IntegrationCatalog.vocabulary(of: $0.items) }
 
-        for index in groups.indices {
-            #expect(
-                !vocabularies[index].isEmpty,
-                """
-                the \(groups[index].name) fixture group tokenized to no terms at all, \
-                so the disjointness this suite measures would hold vacuously
-                """,
-            )
-        }
-
-        for firstIndex in groups.indices {
-            for secondIndex in groups.indices where secondIndex > firstIndex {
-                let shared = vocabularies[firstIndex]
-                    .intersection(vocabularies[secondIndex])
-                    .sorted()
-                    .joined(separator: ", ")
-                #expect(
-                    shared.isEmpty,
-                    """
-                    the \(groups[firstIndex].name) and \(groups[secondIndex].name) fixture groups \
-                    share \(shared) — an intent that lands on a shared term has more than one \
-                    defensible answer, so reword one group until the two vocabularies are disjoint
-                    """,
-                )
-            }
-        }
+    for index in groups.indices {
+      #expect(
+        !vocabularies[index].isEmpty,
+        """
+        the \(groups[index].name) fixture group tokenized to no terms at all, \
+        so the disjointness this suite measures would hold vacuously
+        """,
+      )
     }
+
+    for firstIndex in groups.indices {
+      for secondIndex in groups.indices where secondIndex > firstIndex {
+        let shared = vocabularies[firstIndex]
+          .intersection(vocabularies[secondIndex])
+          .sorted()
+          .joined(separator: ", ")
+        #expect(
+          shared.isEmpty,
+          """
+          the \(groups[firstIndex].name) and \(groups[secondIndex].name) fixture groups \
+          share \(shared) — an intent that lands on a shared term has more than one \
+          defensible answer, so reword one group until the two vocabularies are disjoint
+          """,
+        )
+      }
+    }
+  }
 }

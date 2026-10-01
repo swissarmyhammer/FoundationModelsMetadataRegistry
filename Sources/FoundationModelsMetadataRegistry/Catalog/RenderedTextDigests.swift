@@ -21,41 +21,41 @@ import Foundation
 /// `renderEmbeddedText(from:)` renders one text for all three jobs, and pays
 /// exactly the one hash it paid when an entry had a block hash alone.
 struct RenderedTextDigests: Sendable, Equatable {
-    /// The digest of the entry's verbatim `renderBlock()` text.
-    let block: Data
+  /// The digest of the entry's verbatim `renderBlock()` text.
+  let block: Data
 
-    /// The digest of the entry's `renderIndexedText(from:)` text.
-    let indexedText: Data
+  /// The digest of the entry's `renderIndexedText(from:)` text.
+  let indexedText: Data
 
-    /// The digest of the entry's `renderEmbeddedText(from:)` text.
-    let embeddedText: Data
+  /// The digest of the entry's `renderEmbeddedText(from:)` text.
+  let embeddedText: Data
 
-    /// Digests one entry's three rendered texts, hashing each distinct text
-    /// exactly once.
-    ///
-    /// - Parameters:
-    ///   - block: the entry's verbatim rendered block.
-    ///   - indexedText: the text the entry's keyword signals tokenize.
-    ///   - embeddedText: the text the entry's embedding is computed from.
-    init(block: String, indexedText: String, embeddedText: String) {
-        let blockDigest = Self.digest(of: block)
-        let indexedTextDigest = indexedText == block ? blockDigest : Self.digest(of: indexedText)
-        self.block = blockDigest
-        self.indexedText = indexedTextDigest
-        if embeddedText == block {
-            self.embeddedText = blockDigest
-        } else if embeddedText == indexedText {
-            self.embeddedText = indexedTextDigest
-        } else {
-            self.embeddedText = Self.digest(of: embeddedText)
-        }
+  /// Digests one entry's three rendered texts, hashing each distinct text
+  /// exactly once.
+  ///
+  /// - Parameters:
+  ///   - block: the entry's verbatim rendered block.
+  ///   - indexedText: the text the entry's keyword signals tokenize.
+  ///   - embeddedText: the text the entry's embedding is computed from.
+  init(block: String, indexedText: String, embeddedText: String) {
+    let blockDigest = Self.digest(of: block)
+    let indexedTextDigest = indexedText == block ? blockDigest : Self.digest(of: indexedText)
+    self.block = blockDigest
+    self.indexedText = indexedTextDigest
+    if embeddedText == block {
+      self.embeddedText = blockDigest
+    } else if embeddedText == indexedText {
+      self.embeddedText = indexedTextDigest
+    } else {
+      self.embeddedText = Self.digest(of: embeddedText)
     }
+  }
 
-    /// The SHA-256 digest of `text`'s UTF-8 bytes.
-    ///
-    /// - Parameter text: the text to digest.
-    /// - Returns: the digest's bytes.
-    private static func digest(of text: String) -> Data {
-        Data(SHA256.hash(data: Data(text.utf8)))
-    }
+  /// The SHA-256 digest of `text`'s UTF-8 bytes.
+  ///
+  /// - Parameter text: the text to digest.
+  /// - Returns: the digest's bytes.
+  private static func digest(of text: String) -> Data {
+    Data(SHA256.hash(data: Data(text.utf8)))
+  }
 }

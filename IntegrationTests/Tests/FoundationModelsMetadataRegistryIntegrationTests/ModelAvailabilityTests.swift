@@ -24,18 +24,18 @@ import Testing
 /// reject one on the type.
 @Suite("Model availability")
 struct ModelAvailabilityTests {
-    /// Pins both halves of the precondition on this machine: the shared
-    /// `requireAvailable()` gate passes, and the model really does report
-    /// itself available.
-    ///
-    /// The second assertion is not a restatement of the first. `requireAvailable()`
-    /// throws on the unavailable path, so a broken gate that never threw would
-    /// leave this test green on its own; asserting `isAvailable` directly is
-    /// what makes the green mean "Apple Intelligence is serving here".
-    @Test("the availability gate passes on a machine that serves Apple Intelligence")
-    func availabilityGatePassesWhereTheModelIsAvailable() throws {
-        try ModelAvailability.requireAvailable()
+  /// Pins both halves of the precondition on this machine: the shared
+  /// `requireAvailable()` gate passes, and the model really does report
+  /// itself available.
+  ///
+  /// The second assertion is not a restatement of the first. `requireAvailable()`
+  /// throws on the unavailable path, so a broken gate that never threw would
+  /// leave this test green on its own; asserting `isAvailable` directly is
+  /// what makes the green mean "Apple Intelligence is serving here".
+  @Test("the availability gate passes on a machine that serves Apple Intelligence")
+  func availabilityGatePassesWhereTheModelIsAvailable() throws {
+    try ModelAvailability.requireAvailable()
 
-        #expect(SystemLanguageModel.default.isAvailable)
-    }
+    #expect(SystemLanguageModel.default.isAvailable)
+  }
 }
