@@ -1,4 +1,4 @@
-// swift-tools-version: 6.1
+// swift-tools-version: 6.4
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -99,70 +99,70 @@ let swissArmyHammerOrg = "git@github.com:swissarmyhammer/"
 /// APIs, and a Swift Testing unit test target. The runnable examples are in
 /// the separate `Examples/` package, which this manifest does not name.
 let package = Package(
-    name: packageName,
-    // Commit to macOS 27 / FoundationModels v2, no pre-27 fallback (plan.md
-    // §10). FoundationModelsRanker and FoundationModelsExtras declare the same
-    // floor, and the three telemetry API packages declare no higher floor, so
-    // no dependency imposes a higher one.
-    platforms: [
-        .macOS("27.0"),
-    ],
-    products: [
-        .library(
-            name: packageName,
-            targets: [packageName],
-        ),
-    ],
-    dependencies: [
-        .package(url: "\(swissArmyHammerOrg)\(foundationModelsRankerPackage).git", branch: "main"),
-        .package(url: "\(swissArmyHammerOrg)\(foundationModelsExtrasPackage).git", branch: "main"),
-        .package(url: "\(appleOrg)\(swiftDistributedTracingPackage).git", from: "1.5.0"),
-        .package(url: "\(appleOrg)\(swiftLogPackage).git", from: "1.15.1"),
-        .package(url: "\(appleOrg)\(swiftMetricsPackage).git", from: "2.11.0"),
-    ],
-    targets: [
-        .target(
-            name: packageName,
-            dependencies: [
-                .product(name: foundationModelsRankerPackage, package: foundationModelsRankerPackage),
-                .product(name: foundationModelsExtrasPackage, package: foundationModelsExtrasPackage),
-                // The telemetry APIs, and no backend: the spans, the logger
-                // and the metrics that `RegistryTelemetry` names.
-                .product(name: "Tracing", package: swiftDistributedTracingPackage),
-                .product(name: "Logging", package: swiftLogPackage),
-                .product(name: "Metrics", package: swiftMetricsPackage),
-            ],
-            path: "Sources/\(packageName)",
-        ),
-        // This target holds the unit tests, and only the unit tests. The
-        // suite that needs a real model lives in the nested
-        // `IntegrationTests/` package, which this manifest never names, so a
-        // bare `swift test` at the root runs this target and nothing else
-        // (the org test contract in swissarmyhammer/workflows' README). CI
-        // reaches that package by its own path, through the shared
-        // workflow's `integration-package-path` input.
-        .testTarget(
-            name: "\(packageName)Tests",
-            dependencies: [
-                .target(name: packageName),
-                // `RegistryTelemetryTests` binds an in-memory tracer to a
-                // task and reads which tracer the library resolves.
-                .product(name: "Tracing", package: swiftDistributedTracingPackage),
-                .product(name: "InMemoryTracing", package: swiftDistributedTracingPackage),
-                // `DiagnosticsTests` reads the level and the metadata of each
-                // log record that `MetadataDiagnostic.log(_:)` writes.
-                .product(name: "Logging", package: swiftLogPackage),
-                // `RegistryMetricsTests` reads each timer and gauge that the
-                // registry records into the `TestMetrics` factory of a
-                // `TelemetryCapture`.
-                .product(name: "MetricsTestKit", package: swiftMetricsPackage),
-                // `TelemetryContentSafetyTests` runs each public entry point
-                // inside a `TelemetryCapture`, which records an issue for each
-                // span, log record or metric that holds content. Only this
-                // test target may name this product.
-                .product(name: "TelemetryTestSupport", package: foundationModelsExtrasPackage),
-            ],
-            path: "Tests/\(packageName)Tests",
-        ),
-    ],
+  name: packageName,
+  // Commit to macOS 27 / FoundationModels v2, no pre-27 fallback (plan.md
+  // §10). FoundationModelsRanker and FoundationModelsExtras declare the same
+  // floor, and the three telemetry API packages declare no higher floor, so
+  // no dependency imposes a higher one.
+  platforms: [
+    .macOS("27.0")
+  ],
+  products: [
+    .library(
+      name: packageName,
+      targets: [packageName],
+    )
+  ],
+  dependencies: [
+    .package(url: "\(swissArmyHammerOrg)\(foundationModelsRankerPackage).git", branch: "main"),
+    .package(url: "\(swissArmyHammerOrg)\(foundationModelsExtrasPackage).git", branch: "main"),
+    .package(url: "\(appleOrg)\(swiftDistributedTracingPackage).git", from: "1.5.0"),
+    .package(url: "\(appleOrg)\(swiftLogPackage).git", from: "1.15.1"),
+    .package(url: "\(appleOrg)\(swiftMetricsPackage).git", from: "2.11.0"),
+  ],
+  targets: [
+    .target(
+      name: packageName,
+      dependencies: [
+        .product(name: foundationModelsRankerPackage, package: foundationModelsRankerPackage),
+        .product(name: foundationModelsExtrasPackage, package: foundationModelsExtrasPackage),
+        // The telemetry APIs, and no backend: the spans, the logger
+        // and the metrics that `RegistryTelemetry` names.
+        .product(name: "Tracing", package: swiftDistributedTracingPackage),
+        .product(name: "Logging", package: swiftLogPackage),
+        .product(name: "Metrics", package: swiftMetricsPackage),
+      ],
+      path: "Sources/\(packageName)",
+    ),
+    // This target holds the unit tests, and only the unit tests. The
+    // suite that needs a real model lives in the nested
+    // `IntegrationTests/` package, which this manifest never names, so a
+    // bare `swift test` at the root runs this target and nothing else
+    // (the org test contract in swissarmyhammer/workflows' README). CI
+    // reaches that package by its own path, through the shared
+    // workflow's `integration-package-path` input.
+    .testTarget(
+      name: "\(packageName)Tests",
+      dependencies: [
+        .target(name: packageName),
+        // `RegistryTelemetryTests` binds an in-memory tracer to a
+        // task and reads which tracer the library resolves.
+        .product(name: "Tracing", package: swiftDistributedTracingPackage),
+        .product(name: "InMemoryTracing", package: swiftDistributedTracingPackage),
+        // `DiagnosticsTests` reads the level and the metadata of each
+        // log record that `MetadataDiagnostic.log(_:)` writes.
+        .product(name: "Logging", package: swiftLogPackage),
+        // `RegistryMetricsTests` reads each timer and gauge that the
+        // registry records into the `TestMetrics` factory of a
+        // `TelemetryCapture`.
+        .product(name: "MetricsTestKit", package: swiftMetricsPackage),
+        // `TelemetryContentSafetyTests` runs each public entry point
+        // inside a `TelemetryCapture`, which records an issue for each
+        // span, log record or metric that holds content. Only this
+        // test target may name this product.
+        .product(name: "TelemetryTestSupport", package: foundationModelsExtrasPackage),
+      ],
+      path: "Tests/\(packageName)Tests",
+    ),
+  ],
 )

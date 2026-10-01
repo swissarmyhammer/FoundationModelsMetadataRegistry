@@ -1,4 +1,4 @@
-// swift-tools-version: 6.1
+// swift-tools-version: 6.4
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -67,31 +67,31 @@ private let extrasPackageName = "FoundationModelsExtras"
 /// cheap; only the run is expensive. `CIWorkflowTests` pins that input from
 /// the root package, so the coupling cannot be dropped unnoticed.
 let package = Package(
-    name: "FoundationModelsMetadataRegistryIntegrationTests",
-    // Commit to macOS 27 / FoundationModels v2, exactly as `../Package.swift`
-    // does; a lower floor here would not resolve against it.
-    platforms: [
-        .macOS("27.0"),
-    ],
-    dependencies: [
-        .package(path: ".."),
-        .package(url: "git@github.com:swissarmyhammer/\(extrasPackageName).git", branch: "main"),
-    ],
-    targets: [
-        // The real-model suite. Two products: the library under test, and the
-        // core FoundationModelsExtras product for `PooledEmbedder`. No Router,
-        // and nothing from `Examples/` — the root manifest exports a single
-        // library product, and `ExamplesSupport` and the example cores are
-        // targets of that package rather than products of it, so they are not
-        // reachable here and must not be made so. MLX and Hugging Face
-        // resolve as dependencies of FoundationModelsExtras only.
-        .testTarget(
-            name: "\(productPackageName)IntegrationTests",
-            dependencies: [
-                .product(name: productPackageName, package: productPackageName),
-                .product(name: extrasPackageName, package: extrasPackageName),
-            ],
-            path: "Tests/\(productPackageName)IntegrationTests",
-        ),
-    ],
+  name: "FoundationModelsMetadataRegistryIntegrationTests",
+  // Commit to macOS 27 / FoundationModels v2, exactly as `../Package.swift`
+  // does; a lower floor here would not resolve against it.
+  platforms: [
+    .macOS("27.0")
+  ],
+  dependencies: [
+    .package(path: ".."),
+    .package(url: "git@github.com:swissarmyhammer/\(extrasPackageName).git", branch: "main"),
+  ],
+  targets: [
+    // The real-model suite. Two products: the library under test, and the
+    // core FoundationModelsExtras product for `PooledEmbedder`. No Router,
+    // and nothing from `Examples/` — the root manifest exports a single
+    // library product, and `ExamplesSupport` and the example cores are
+    // targets of that package rather than products of it, so they are not
+    // reachable here and must not be made so. MLX and Hugging Face
+    // resolve as dependencies of FoundationModelsExtras only.
+    .testTarget(
+      name: "\(productPackageName)IntegrationTests",
+      dependencies: [
+        .product(name: productPackageName, package: productPackageName),
+        .product(name: extrasPackageName, package: extrasPackageName),
+      ],
+      path: "Tests/\(productPackageName)IntegrationTests",
+    )
+  ],
 )

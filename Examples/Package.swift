@@ -1,4 +1,4 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.4
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -29,39 +29,40 @@ let examplesSupportName = "ExamplesSupport"
 let exampleNames = ["CatalogSearch", "SemanticSearch", "Librarian", "BigCatalog", "HotReload"]
 
 let package = Package(
-    name: "Examples",
-    // The same floor as the root package.
-    platforms: [
-        .macOS("27.0"),
-    ],
-    dependencies: [
-        .package(path: ".."),
-        // The model pool (`ModelPool`, `ModelRef`, `PooledEmbedder`,
-        // `PooledModel`). The same URL as in the root manifest, so the two
-        // resolve as one package.
-        .package(url: "git@github.com:swissarmyhammer/\(extrasPackage).git", branch: "main"),
-    ],
-    targets: [
-        // The catalog item type, the git-command catalog, the match
-        // formatter, the report writer, and the two models that the
-        // examples share.
-        .target(
-            name: examplesSupportName,
-            dependencies: [
-                .product(name: registryPackage, package: registryPackage),
-                .product(name: extrasPackage, package: extrasPackage),
-            ],
-            path: examplesSupportName,
-        ),
-    ] + exampleNames.map { name in
-        .executableTarget(
-            name: name,
-            dependencies: [
-                .product(name: registryPackage, package: registryPackage),
-                .product(name: extrasPackage, package: extrasPackage),
-                .target(name: examplesSupportName),
-            ],
-            path: name,
-        )
+  name: "Examples",
+  // The same floor as the root package.
+  platforms: [
+    .macOS("27.0")
+  ],
+  dependencies: [
+    .package(path: ".."),
+    // The model pool (`ModelPool`, `ModelRef`, `PooledEmbedder`,
+    // `PooledModel`). The same URL as in the root manifest, so the two
+    // resolve as one package.
+    .package(url: "git@github.com:swissarmyhammer/\(extrasPackage).git", branch: "main"),
+  ],
+  targets: [
+    // The catalog item type, the git-command catalog, the match
+    // formatter, the report writer, and the two models that the
+    // examples share.
+    .target(
+      name: examplesSupportName,
+      dependencies: [
+        .product(name: registryPackage, package: registryPackage),
+        .product(name: extrasPackage, package: extrasPackage),
+      ],
+      path: examplesSupportName,
+    )
+  ]
+    + exampleNames.map { name in
+      .executableTarget(
+        name: name,
+        dependencies: [
+          .product(name: registryPackage, package: registryPackage),
+          .product(name: extrasPackage, package: extrasPackage),
+          .target(name: examplesSupportName),
+        ],
+        path: name,
+      )
     },
 )

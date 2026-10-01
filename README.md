@@ -5,7 +5,7 @@
 Hybrid metadata search for Foundation Models sessions. The searcher fuses BM25,
 character-trigram, and cosine signals with reciprocal rank fusion. An optional
 selection tier lets an on-device LLM select catalog ids — never re-typed text.
-The package targets macOS 27+ and Swift 6.1 (Apple's on-device Foundation Models).
+The package targets macOS 27+ and Swift 6.4 (Apple's on-device Foundation Models).
 
 ```swift
 import FoundationModelsMetadataRegistry
