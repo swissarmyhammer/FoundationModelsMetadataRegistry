@@ -6,3 +6,5 @@
 .swiftpm/
 .DS_Store
 Package.resolved
+# Runtime logs of the kanban MCP server
+.kanban/mcp.*.log
