@@ -62,8 +62,24 @@ comments:
     - evidence: 46 paths (42 modified, 4 deleted, 2 added, by `git status`). `swift build`: Build complete. `swift build --build-tests`: Build complete, no warning from a project file. `swift test`: 172 tests in 21 suites passed. `swift build --package-path Examples`: Build complete. `swift build --package-path IntegrationTests --build-tests`: Build complete. The only build warning is the SwiftPM "missing creator for mutated node" message for the mlx-swift bundle, which comes from the dependency.
     - next: `/review ^n1anw3g`
   timestamp: 2026-10-07T21:07:27.380099+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m4c3f9vjre57hym58v8ysbvc
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (51e5a80). 0 findings, 0 confirmed, 1 refuted. 45 files reviewed. Files not reviewed: 2 .kanban files (ignore rule) and README.md (no validator). Some tool rules declined 4 deleted files (AgentSessionTests.swift, ScriptedAgentSession.swift, SelectionFixtures.swift, SelectionSchema.swift) because the files are not on disk.
+    - next: none. The task moved to done.
+  timestamp: 2026-10-07T21:14:22.962429+00:00
+- actor: claude-code
+  id: 01m4c3fm4wmhs1ewfk4pd0vaf7
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 46 paths (42 modified, 4 deleted, 2 added)
+    - test: green — swift test 172 passed, 0 failed, 0 skipped; Examples and IntegrationTests (--build-tests) build
+    - commit: 51e5a80 (local, not pushed; the ignored Package.resolved files were removed from the commit)
+    - review: clean — 0 findings on HEAD~1..HEAD
+  timestamp: 2026-10-07T21:14:33.500836+00:00
+position_column: done
+position_ordinal: b780
 title: Move the registry to PooledEmbedding and any LanguageModel
 ---
 ## Goal
