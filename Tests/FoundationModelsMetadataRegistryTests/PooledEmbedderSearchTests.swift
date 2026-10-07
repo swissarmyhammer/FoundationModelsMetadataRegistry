@@ -6,7 +6,7 @@ import Testing
 /// Tests for a `MetadataSearcher` that embeds through a FoundationModelsExtras
 /// `PooledEmbedder` (plan.md §5, decision #16).
 ///
-/// FoundationModelsRanker makes `PooledEmbedder` a `TextEmbedding`, so the
+/// FoundationModelsExtras makes `PooledEmbedder` a `PooledEmbedding`, so the
 /// searcher takes it as its `embedder:` directly. `PooledEmbedder(ref:pool:)`
 /// loads nothing, thus the synchronous initializer embeds nothing, and the
 /// first search embeds the catalog (see `FirstSearchCatchUp`).
@@ -115,11 +115,6 @@ struct PooledEmbedderSearchTests {
 struct TableEmbeddingModel: PooledEmbedding {
   /// The vectors of the texts.
   let table: VectorTable
-
-  /// The length of each vector of `table`.
-  var dimension: Int {
-    table.unregisteredVector.count
-  }
 
   /// Gives the vector of each text from `table`.
   ///

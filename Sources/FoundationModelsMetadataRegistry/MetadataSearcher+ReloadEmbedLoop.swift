@@ -1,3 +1,5 @@
+import FoundationModelsExtras
+
 /// The single-flight reload embed loop of `MetadataSearcher.update(items:)`
 /// (plan.md §8): a burst of updates embeds only the newest catalog.
 extension MetadataSearcher {
@@ -41,7 +43,7 @@ extension MetadataSearcher {
   /// awaited by every caller, so it never outlives the loop it runs.
   ///
   /// - Parameter embedder: the embedder the loop embeds with.
-  func embedNewestCatalog(with embedder: any TextEmbedding) async {
+  func embedNewestCatalog(with embedder: any PooledEmbedding) async {
     switch reloadEmbedLoop {
     case .idle:
       let task = Task { await self.runReloadEmbedLoop(with: embedder) }
@@ -65,7 +67,7 @@ extension MetadataSearcher {
   /// starts a new loop and is never lost.
   ///
   /// - Parameter embedder: the embedder to embed each pass with.
-  private func runReloadEmbedLoop(with embedder: any TextEmbedding) async {
+  private func runReloadEmbedLoop(with embedder: any PooledEmbedding) async {
     defer { reloadEmbedLoop = .idle }
     repeat {
       await catchUpEmbeddings(with: embedder, source: .reload)

@@ -1,7 +1,7 @@
 /// An exact-text to vector lookup table, shared by the embedding test doubles
 /// `FakeEmbedder` and `GatedEmbedder`.
 ///
-/// `TextEmbedding` has no `dimension`: the length of a vector is the length
+/// `PooledEmbedding` has no `dimension`: the length of a vector is the length
 /// of the vector that the embedder returns. A text absent from this table
 /// embeds to an all-zero vector, which contributes nothing to cosine (see the
 /// zero-norm guard of the cosine signal). That vector has the length of the

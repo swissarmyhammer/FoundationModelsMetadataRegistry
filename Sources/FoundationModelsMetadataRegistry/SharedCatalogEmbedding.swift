@@ -1,3 +1,5 @@
+import FoundationModelsExtras
+
 /// One first-search catalog embed that two or more `MetadataSearcher`s share
 /// (plan.md §5, §8).
 ///
@@ -43,7 +45,7 @@ public actor SharedCatalogEmbedding<Item: SearchableMetadata> {
 
   /// The embedder for the catalog embed, and for the queries and reloads of
   /// each sharing searcher.
-  nonisolated let embedder: any TextEmbedding
+  nonisolated let embedder: any PooledEmbedding
 
   /// Called with `.embedCatchUp` one time, when the catalog embed starts.
   let onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
@@ -69,7 +71,7 @@ public actor SharedCatalogEmbedding<Item: SearchableMetadata> {
   ///     `MetadataDiagnostic.log(_:)`.
   public init(
     index: MetadataIndex<Item>,
-    embedder: any TextEmbedding,
+    embedder: any PooledEmbedding,
     onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
   ) {
     self.index = index

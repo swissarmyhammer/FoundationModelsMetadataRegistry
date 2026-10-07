@@ -3,42 +3,56 @@ import Testing
 
 @testable import FoundationModelsMetadataRegistry
 
-/// Tests for the selection tier's over-budget path (plan.md §6) and `.auto`
-/// mode's real resolution.
+/// Tests for the over-budget path of the selection tier (plan.md §6), for the
+/// budget boundary, and for the text that each prompt sends.
 ///
-/// The assembled prefix is the preamble, a `# Candidates` header, and every
-/// candidate's `renderSummaryBlock()` under its id as a markdown heading.
-/// When that prefix is longer than `capacityCharacterLimit`, the tier divides
+/// The assembled prefix is the preamble, then one `<candidate>` block for
+/// each catalog id. Each block holds the id on an `id:` line and the
+/// `renderSummaryBlock()` of the item on a `description:` line. Each prompt
+/// goes to a new `LanguageModelSession`. The prefix is the instructions of
+/// that session, and the prompt is the `<request>` block and the exact-ids
+/// line only.
+///
+/// When the whole prefix is at or under `capacityCharacterLimit`, each search
+/// makes one prompt over all ids. When the prefix is longer, the tier divides
 /// the catalog ids, in catalog order, into runs whose prefix each fits the
-/// budget, and gives every run one prompt on a fresh one-off session. Every
-/// id reaches exactly one prompt, the tier cuts nothing, and no
-/// `MetadataDiagnostic.retrievalCut` is reported. At or under the budget the
-/// tier keeps one cached root session and forks it per call instead.
+/// budget, and each run gets one prompt. Every id gets to exactly one
+/// prompt, the tier cuts nothing, and no `MetadataDiagnostic.retrievalCut`
+/// is reported. Nothing is kept from one search to the next.
 ///
-/// `.auto` resolves to selection when a session factory is configured, and to
-/// retrieval otherwise. Driven against the internal `AgentSession` seam with
-/// scripted fakes (`TestSupport/SelectionFixtures.swift`): no GPU, no
-/// external dependency, the same pattern `SelectionTests` established for the
-/// under-budget path.
+/// Each test uses a `ScriptedLanguageModel` (`TestSupport`) and reads the
+/// prompts from its `calls`: no GPU and no real model.
 struct OverBudgetTests {
   // MARK: - Fixtures
 
+  /// A catalog item whose summary is not its block.
   struct FixtureItem: SearchableMetadata {
+    /// The id of the item.
     let id: String
+
+    /// The full block of the item. A `Match` carries this text.
     let block: String
+
+    /// The summary of the item. The prefix shows this text.
     let summary: String
 
+    /// Gives the full block, verbatim.
+    ///
+    /// - Returns: `block`.
     func renderBlock() -> String {
       block
     }
 
+    /// Gives the summary.
+    ///
+    /// - Returns: `summary`.
     func renderSummaryBlock() -> String {
       summary
     }
   }
 
-  /// Five items whose ids are distinct enough that a `## <id>` heading in
-  /// one run's prefix can never be confused with another id's heading.
+  /// Five items whose ids are different enough that the `id:` line of one
+  /// run's prefix can never be confused with the `id:` line of another id.
   static let catalog: [FixtureItem] = [
     FixtureItem(id: "alpha", block: "alpha handles alpha tasks", summary: "SUMMARY_alpha"),
     FixtureItem(id: "bravo", block: "second unrelated block text", summary: "SUMMARY_bravo"),
@@ -47,90 +61,129 @@ struct OverBudgetTests {
     FixtureItem(id: "echo", block: "fifth unrelated block text", summary: "SUMMARY_echo"),
   ]
 
+  /// The ids of `catalog`, in catalog order.
+  static let catalogIDs = catalog.map(\.id)
+
   /// A `capacityCharacterLimit` of `1` is smaller than the assembled
   /// preamble alone, so every catalog is over budget and no run can hold
   /// more than the one entry the tier cannot split — one prompt per
   /// catalog id, in catalog order.
   static let forcedOverBudgetLimit = 1
 
-  /// One scripted response for each id of `catalog`, so a single session
-  /// shared by every run answers each of its calls instead of running out
-  /// of script.
-  static let oneResponsePerRun = [String](repeating: #"{"ids":["alpha"]}"#, count: catalog.count)
+  /// The intent of each search in this suite.
+  static let intent = "alpha"
+
+  /// The `limit` of each search in this suite: more than the catalog holds.
+  static let searchLimit = 5
+
+  /// The number of searches in a test that compares two searches.
+  static let searchCountOfTwo = 2
+
+  /// Makes a model that gives `answer` to each prompt of `searches`
+  /// searches, when each search makes at most one prompt for each catalog
+  /// id.
+  ///
+  /// - Parameters:
+  ///   - answer: the `Selection` JSON that each prompt answers.
+  ///   - searches: the number of searches the model answers. Defaults to
+  ///     one search.
+  /// - Returns: the model.
+  static func modelAnsweringEveryRun(with answer: String, searches: Int = 1)
+    -> ScriptedLanguageModel
+  {
+    ScriptedLanguageModel([String](repeating: answer, count: catalog.count * searches))
+  }
+
+  /// The whole prefix that `catalog` assembles with `preamble`.
+  ///
+  /// - Parameter preamble: the preamble of the prefix.
+  /// - Returns: the assembled prefix.
+  static func wholePrefix(preamble: String) -> String {
+    SelectionTier.assemblePrefix(preamble: preamble, catalog: MetadataIndex(items: catalog))
+  }
+
+  // MARK: - The prefix is the instructions, the prompt is the request only
+
+  @Test
+  func underBudgetPromptIsTheRequestOnlyAndThePrefixIsTheInstructions() async throws {
+    let model = ScriptedLanguageModel([#"{"ids":["alpha"]}"#])
+    let config = SelectionConfig(model: model)
+    let searcher = MetadataSearcher(items: Self.catalog, mode: .selection, selection: config)
+
+    _ = try await searcher.search(intent: Self.intent, limit: Self.searchLimit)
+
+    let call = try #require(model.calls.first)
+    #expect(model.calls.count == 1)
+    #expect(call.prompt == ExpectedSelectionPrompt.request(for: Self.intent, ids: Self.catalogIDs))
+    #expect(call.instructions == Self.wholePrefix(preamble: config.preamble))
+  }
+
+  @Test
+  func overBudgetPromptOfEachRunIsTheRequestOverTheIdsOfThatRun() async throws {
+    let model = Self.modelAnsweringEveryRun(with: #"{"ids":["alpha"]}"#)
+    let config = SelectionConfig(model: model, capacityCharacterLimit: Self.forcedOverBudgetLimit)
+    let searcher = MetadataSearcher(items: Self.catalog, mode: .selection, selection: config)
+
+    _ = try await searcher.search(intent: Self.intent, limit: Self.searchLimit)
+
+    let expectedPrompts = Self.catalogIDs.map {
+      ExpectedSelectionPrompt.request(for: Self.intent, ids: [$0])
+    }
+    #expect(model.calls.map(\.prompt) == expectedPrompts)
+  }
 
   // MARK: - One prompt per run, every id in exactly one of them
 
   @Test
   func overBudgetGivesEveryCatalogIdOnePromptInCatalogOrder() async throws {
-    let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
-    let config = SelectionConfig(
-      model: factory.makeSession, capacityCharacterLimit: Self.forcedOverBudgetLimit)
+    let model = Self.modelAnsweringEveryRun(with: #"{"ids":["alpha"]}"#)
+    let config = SelectionConfig(model: model, capacityCharacterLimit: Self.forcedOverBudgetLimit)
     let searcher = MetadataSearcher(items: Self.catalog, mode: .selection, selection: config)
 
-    _ = try await searcher.search(intent: "alpha", limit: 5)
+    _ = try await searcher.search(intent: Self.intent, limit: Self.searchLimit)
 
     // The tier splits rather than cuts, so the prompt count is the run
     // count and the runs follow catalog order.
-    let instructions = factory.receivedInstructions
+    let instructions = model.calls.map(\.instructions)
     #expect(instructions.count == Self.catalog.count)
     for (instruction, item) in zip(instructions, Self.catalog) {
-      #expect(instruction.contains("## \(item.id)\n\(item.summary)"))
+      let text = try #require(instruction)
+      #expect(text.contains("id: \(item.id)\ndescription: \(item.summary)"))
     }
   }
 
   @Test
-  func overBudgetPromptNamesOnlyItsOwnRunsCandidateIds() async throws {
-    let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
-    let config = SelectionConfig(
-      model: factory.makeSession, capacityCharacterLimit: Self.forcedOverBudgetLimit)
+  func overBudgetPrefixNamesOnlyItsOwnRunsCandidateIds() async throws {
+    let model = Self.modelAnsweringEveryRun(with: #"{"ids":["alpha"]}"#)
+    let config = SelectionConfig(model: model, capacityCharacterLimit: Self.forcedOverBudgetLimit)
     let searcher = MetadataSearcher(items: Self.catalog, mode: .selection, selection: config)
 
-    _ = try await searcher.search(intent: "alpha", limit: 5)
+    _ = try await searcher.search(intent: Self.intent, limit: Self.searchLimit)
 
-    let instructions = factory.receivedInstructions
+    let instructions = model.calls.map(\.instructions)
+    #expect(instructions.count == Self.catalog.count)
     for (instruction, item) in zip(instructions, Self.catalog) {
-      let otherIds = Self.catalog.map(\.id).filter { $0 != item.id }
-      #expect(otherIds.allSatisfy { !instruction.contains("## \($0)") })
+      let text = try #require(instruction)
+      let otherIDs = Self.catalogIDs.filter { $0 != item.id }
+      #expect(otherIDs.allSatisfy { !text.contains("id: \($0)\n") })
     }
   }
 
-  // MARK: - One-off sessions: no caching, no fork
+  // MARK: - Nothing is kept between searches
 
   @Test
-  func overBudgetMakesAFreshSessionForEveryRunOfEverySearch() async throws {
-    let factoryCallCount = CallCounter()
-    let config = SelectionConfig(
-      model: { _ in
-        factoryCallCount.increment()
-        return ScriptedAgentSession([#"{"ids":["alpha"]}"#])
-      },
-      capacityCharacterLimit: Self.forcedOverBudgetLimit,
-    )
+  func overBudgetMakesOnePromptForEveryRunOfEverySearch() async throws {
+    let model = Self.modelAnsweringEveryRun(
+      with: #"{"ids":["alpha"]}"#, searches: Self.searchCountOfTwo)
+    let config = SelectionConfig(model: model, capacityCharacterLimit: Self.forcedOverBudgetLimit)
     let searcher = MetadataSearcher(items: Self.catalog, mode: .selection, selection: config)
 
-    _ = try await searcher.search(intent: "alpha", limit: 5)
-    _ = try await searcher.search(intent: "alpha", limit: 5)
+    _ = try await searcher.search(intent: Self.intent, limit: Self.searchLimit)
+    _ = try await searcher.search(intent: Self.intent, limit: Self.searchLimit)
 
-    // Unlike the cached-root path, nothing survives a call: each search
-    // makes one session for each of its runs.
-    #expect(factoryCallCount.count == Self.catalog.count * 2)
-  }
-
-  @Test
-  func overBudgetSessionIsNeverForked() async throws {
-    let session = ScriptedAgentSession(Self.oneResponsePerRun)
-    let config = SelectionConfig(
-      model: { _ in session },
-      capacityCharacterLimit: Self.forcedOverBudgetLimit,
-    )
-    let searcher = MetadataSearcher(items: Self.catalog, mode: .selection, selection: config)
-
-    _ = try await searcher.search(intent: "alpha", limit: 5)
-
-    // A factory source seeds each run's prefix as its own session's
-    // instructions, so no run has a parent to fork from.
-    #expect(session.forkCount == 0)
-    #expect(session.callCount == Self.catalog.count)
+    // Nothing stays from one search to the next: each search makes one
+    // prompt for each of its runs.
+    #expect(model.calls.count == Self.catalog.count * Self.searchCountOfTwo)
   }
 
   // MARK: - Nothing is cut, so `.retrievalCut` is never reported
@@ -138,9 +191,8 @@ struct OverBudgetTests {
   @Test
   func overBudgetSearchNeverFiresRetrievalCut() async throws {
     let recorder = DiagnosticRecorder()
-    let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
-    let config = SelectionConfig(
-      model: factory.makeSession, capacityCharacterLimit: Self.forcedOverBudgetLimit)
+    let model = Self.modelAnsweringEveryRun(with: #"{"ids":["alpha"]}"#)
+    let config = SelectionConfig(model: model, capacityCharacterLimit: Self.forcedOverBudgetLimit)
     let searcher = MetadataSearcher(
       items: Self.catalog,
       mode: .selection,
@@ -148,7 +200,7 @@ struct OverBudgetTests {
       onDiagnostic: { recorder.record($0) },
     )
 
-    _ = try await searcher.search(intent: "alpha", limit: 5)
+    _ = try await searcher.search(intent: Self.intent, limit: Self.searchLimit)
 
     // The selection path runs no retrieval at all now, so it reports
     // neither a cut nor the `.embeddingUnavailable` a ranking pass with
@@ -159,8 +211,8 @@ struct OverBudgetTests {
   @Test
   func underBudgetSearchNeverFiresRetrievalCut() async throws {
     let recorder = DiagnosticRecorder()
-    let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha"]}"#])
-    let config = SelectionConfig(model: factory.makeSession)
+    let model = ScriptedLanguageModel([#"{"ids":["alpha"]}"#])
+    let config = SelectionConfig(model: model)
     let searcher = MetadataSearcher(
       items: Self.catalog,
       mode: .selection,
@@ -168,22 +220,16 @@ struct OverBudgetTests {
       onDiagnostic: { recorder.record($0) },
     )
 
-    _ = try await searcher.search(intent: "alpha", limit: 5)
+    _ = try await searcher.search(intent: Self.intent, limit: Self.searchLimit)
 
     #expect(recorder.diagnostics.isEmpty)
   }
 
   @Test
-  func overBudgetWithAnEmptyCatalogReturnsNoMatchesWithoutInvokingTheSessionFactory() async throws {
+  func overBudgetWithAnEmptyCatalogReturnsNoMatchesWithoutAPrompt() async throws {
     let recorder = DiagnosticRecorder()
-    let factoryCallCount = CallCounter()
-    let config = SelectionConfig(
-      model: { _ in
-        factoryCallCount.increment()
-        return ScriptedAgentSession([#"{"ids":[]}"#])
-      },
-      capacityCharacterLimit: Self.forcedOverBudgetLimit,
-    )
+    let model = ScriptedLanguageModel([String]())
+    let config = SelectionConfig(model: model, capacityCharacterLimit: Self.forcedOverBudgetLimit)
     let searcher = MetadataSearcher(
       items: [FixtureItem](),
       mode: .selection,
@@ -191,12 +237,12 @@ struct OverBudgetTests {
       onDiagnostic: { recorder.record($0) },
     )
 
-    let matches = try await searcher.search(intent: "alpha", limit: 5)
+    let matches = try await searcher.search(intent: Self.intent, limit: Self.searchLimit)
 
     // An empty catalog splits into no runs at all, so there is nothing
     // to prompt and nothing to report.
     #expect(matches.isEmpty)
-    #expect(factoryCallCount.count == 0)
+    #expect(model.calls.isEmpty)
     #expect(recorder.diagnostics.isEmpty)
   }
 
@@ -210,9 +256,8 @@ struct OverBudgetTests {
     // catalog, so a run's own candidate set never limits what resolves.
     // When the tier still cut candidates, this same answer was reported
     // as `.unknownSelectedId`.
-    let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha","charlie"]}"#])
-    let config = SelectionConfig(
-      model: factory.makeSession, capacityCharacterLimit: Self.forcedOverBudgetLimit)
+    let model = Self.modelAnsweringEveryRun(with: #"{"ids":["alpha","charlie"]}"#)
+    let config = SelectionConfig(model: model, capacityCharacterLimit: Self.forcedOverBudgetLimit)
     let searcher = MetadataSearcher(
       items: Self.catalog,
       mode: .selection,
@@ -220,7 +265,7 @@ struct OverBudgetTests {
       onDiagnostic: { recorder.record($0) },
     )
 
-    let matches = try await searcher.search(intent: "alpha", limit: 5)
+    let matches = try await searcher.search(intent: Self.intent, limit: Self.searchLimit)
 
     #expect(matches.map(\.id) == ["alpha", "charlie"])
     #expect(recorder.diagnostics.isEmpty)
@@ -229,9 +274,8 @@ struct OverBudgetTests {
   @Test
   func overBudgetIdOutsideTheCatalogIsFilteredAndReportedAsUnknown() async throws {
     let recorder = DiagnosticRecorder()
-    let factory = RecordingSessionFactory(responses: [#"{"ids":["alpha","not-a-real-id"]}"#])
-    let config = SelectionConfig(
-      model: factory.makeSession, capacityCharacterLimit: Self.forcedOverBudgetLimit)
+    let model = Self.modelAnsweringEveryRun(with: #"{"ids":["alpha","not-a-real-id"]}"#)
+    let config = SelectionConfig(model: model, capacityCharacterLimit: Self.forcedOverBudgetLimit)
     let searcher = MetadataSearcher(
       items: Self.catalog,
       mode: .selection,
@@ -239,7 +283,7 @@ struct OverBudgetTests {
       onDiagnostic: { recorder.record($0) },
     )
 
-    let matches = try await searcher.search(intent: "alpha", limit: 5)
+    let matches = try await searcher.search(intent: Self.intent, limit: Self.searchLimit)
 
     #expect(matches.map(\.id) == ["alpha"])
     #expect(recorder.diagnostics == [.unknownSelectedId(id: "not-a-real-id")])
@@ -249,21 +293,15 @@ struct OverBudgetTests {
 
   @Test
   func assembledPrefixNamesEachCandidateIdAboveItsSummary() {
-    // Ranker fixed a defect here: the prefix used to render each
-    // candidate's summary block alone, so the model saw no ids at all
-    // while the preamble told it not to invent one, and every selection
-    // came back `.unknownSelectedId`. A grammar-backed caller never saw
-    // the defect, because the id-enum grammar forced a valid id out of
-    // the decoder whatever the prompt said. This package drives the tier
-    // with no grammar, so the prefix is the only thing standing between
-    // the model and an invented id.
-    let prefix = SelectionTier.assemblePrefix(
-      preamble: .librarianDefault,
-      catalog: MetadataIndex(items: Self.catalog),
-    )
+    // The prefix must show each id. A prefix of summaries only gives the
+    // model no id to copy, and each selection then comes back as
+    // `.unknownSelectedId`. The prefix is the only text that shows the
+    // model the ids it can answer with.
+    let prefix = Self.wholePrefix(preamble: .librarianDefault)
 
     for item in Self.catalog {
-      #expect(prefix.contains("## \(item.id)\n\(item.summary)"))
+      let entry = "<candidate>\nid: \(item.id)\ndescription: \(item.summary)\n</candidate>"
+      #expect(prefix.contains(entry))
     }
   }
 
@@ -271,12 +309,11 @@ struct OverBudgetTests {
 
   @Test
   func selectionResultsAreScoredByTheModelsOrderAndCarryNoSignals() async throws {
-    let factory = RecordingSessionFactory(responses: [#"{"ids":["charlie","alpha"]}"#])
-    let config = SelectionConfig(
-      model: factory.makeSession, capacityCharacterLimit: Self.forcedOverBudgetLimit)
+    let model = Self.modelAnsweringEveryRun(with: #"{"ids":["charlie","alpha"]}"#)
+    let config = SelectionConfig(model: model, capacityCharacterLimit: Self.forcedOverBudgetLimit)
     let searcher = MetadataSearcher(items: Self.catalog, mode: .selection, selection: config)
 
-    let matches = try await searcher.search(intent: "alpha", limit: 5)
+    let matches = try await searcher.search(intent: Self.intent, limit: Self.searchLimit)
 
     // No retrieval signal enters a selection: a pick's score is the
     // reciprocal of its rank in the answer (1/1, then 1/2), and there is
@@ -289,65 +326,47 @@ struct OverBudgetTests {
   // MARK: - Budget boundary
 
   @Test
-  func prefixExactlyAtTheCapacityLimitUsesTheCachedRootPath() async throws {
-    let expectedPrefix = SelectionTier.assemblePrefix(
-      preamble: .librarianDefault,
-      ids: Self.catalog.map(\.id),
-      catalog: MetadataIndex(items: Self.catalog),
-    )
-    let factoryCallCount = CallCounter()
-    let root = RootSessionRespondCalledDirectlySession(forkResponses: [
-      #"{"ids":["alpha"]}"#,
-      #"{"ids":["alpha"]}"#,
-    ])
+  func prefixExactlyAtTheCapacityLimitMakesOnePromptForEachSearch() async throws {
+    let expectedPrefix = Self.wholePrefix(preamble: .librarianDefault)
+    let model = ScriptedLanguageModel([#"{"ids":["alpha"]}"#, #"{"ids":["alpha"]}"#])
     let config = SelectionConfig(
-      model: { _ in
-        factoryCallCount.increment()
-        return root
-      },
+      model: model,
       preamble: .librarianDefault,
       capacityCharacterLimit: expectedPrefix.count,
     )
     let searcher = MetadataSearcher(items: Self.catalog, mode: .selection, selection: config)
 
-    _ = try await searcher.search(intent: "alpha", limit: 5)
-    _ = try await searcher.search(intent: "alpha", limit: 5)
+    _ = try await searcher.search(intent: Self.intent, limit: Self.searchLimit)
+    _ = try await searcher.search(intent: Self.intent, limit: Self.searchLimit)
 
-    // Cached-root path: the factory runs exactly once, and every call
-    // forks -- the boundary itself (`==`) still counts as "under
-    // budget", matching `capacityCharacterLimit`'s own "at or under"
-    // documentation.
-    #expect(factoryCallCount.count == 1)
-    #expect(root.forkCount == 2)
+    // The boundary itself (`==`) is under budget, as the "at or under"
+    // documentation of `capacityCharacterLimit` says: each search makes one
+    // prompt, and each prompt gets the whole prefix as its instructions.
+    #expect(model.calls.count == Self.searchCountOfTwo)
+    #expect(model.calls.map(\.instructions) == [expectedPrefix, expectedPrefix])
   }
 
   @Test
-  func prefixOneCharacterOverTheCapacityLimitCachesNothingBetweenSearches() async throws {
-    let expectedPrefix = SelectionTier.assemblePrefix(
-      preamble: .librarianDefault,
-      ids: Self.catalog.map(\.id),
-      catalog: MetadataIndex(items: Self.catalog),
-    )
-    let factoryCallCount = CallCounter()
+  func prefixOneCharacterOverTheCapacityLimitSplitsEachSearchTheSameWay() async throws {
+    let expectedPrefix = Self.wholePrefix(preamble: .librarianDefault)
+    let model = Self.modelAnsweringEveryRun(
+      with: #"{"ids":["alpha"]}"#, searches: Self.searchCountOfTwo)
     let config = SelectionConfig(
-      model: { _ in
-        factoryCallCount.increment()
-        return ScriptedAgentSession([#"{"ids":["alpha"]}"#])
-      },
+      model: model,
       preamble: .librarianDefault,
       capacityCharacterLimit: expectedPrefix.count - 1,
     )
     let searcher = MetadataSearcher(items: Self.catalog, mode: .selection, selection: config)
 
-    _ = try await searcher.search(intent: "alpha", limit: 5)
-    let sessionsAfterFirstSearch = factoryCallCount.count
-    _ = try await searcher.search(intent: "alpha", limit: 5)
+    _ = try await searcher.search(intent: Self.intent, limit: Self.searchLimit)
+    let promptsAfterFirstSearch = model.calls.count
+    _ = try await searcher.search(intent: Self.intent, limit: Self.searchLimit)
 
-    // One character over the budget is enough to leave the cached-root
-    // path. How many runs the split makes depends on the fixture's own
-    // entry sizes, so the fact under test is that the second search
-    // repeats the first one's session count rather than reusing it.
-    #expect(sessionsAfterFirstSearch >= 1)
-    #expect(factoryCallCount.count == sessionsAfterFirstSearch * 2)
+    // One character over the budget is enough to split the catalog. How
+    // many runs the split makes depends on the entry sizes of the fixture,
+    // so the test checks that the first search makes more than one prompt
+    // and that the second search repeats the prompt count of the first.
+    #expect(promptsAfterFirstSearch > 1)
+    #expect(model.calls.count == promptsAfterFirstSearch * Self.searchCountOfTwo)
   }
 }

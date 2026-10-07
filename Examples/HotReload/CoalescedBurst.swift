@@ -124,15 +124,21 @@ private actor FirstEmbedHold {
 }
 
 /// An embedder whose first embed call `hold` holds.
-private struct HeldFirstEmbedder: TextEmbedding {
+private struct HeldFirstEmbedder: PooledEmbedding {
   /// The embedder that computes the vectors.
   let base: PooledEmbedder
 
   /// The hold that records and holds the calls.
   let hold: FirstEmbedHold
 
-  func embed(_ texts: [String]) async throws -> [[Float]] {
+  /// Records the texts of this call, holds the call when it is the first,
+  /// and then embeds the texts with `base`.
+  ///
+  /// - Parameter texts: the texts to embed.
+  /// - Returns: one vector for each text, in the order of `texts`.
+  /// - Throws: the error of `base`.
+  func embed(texts: [String]) async throws -> [[Float]] {
     await hold.enter(with: texts)
-    return try await base.embed(texts)
+    return try await base.embed(texts: texts)
   }
 }

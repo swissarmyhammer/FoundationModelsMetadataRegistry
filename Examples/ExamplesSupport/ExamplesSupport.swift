@@ -19,8 +19,10 @@ public let exampleEmbedder = PooledEmbedder(ref: "mlx-community/Qwen3-Embedding-
 /// The language model of the examples that select: Qwen3 4B, 4-bit, from the
 /// Hugging Face hub.
 ///
-/// The model loads nothing when you make it. The first session loads the
-/// model through `ModelPool.shared`, and the first run downloads the weights.
+/// The model loads nothing when you make it. The first prompt to a session
+/// of this model loads the model through `ModelPool.shared`, and the first
+/// run downloads the weights. Give this value to `SelectionConfig` as its
+/// `model`.
 public let exampleSelectionModel = PooledModel(ref: "mlx-community/Qwen3-4B-4bit")
 
 /// The report that an example writes: its whole output, one line at a time.

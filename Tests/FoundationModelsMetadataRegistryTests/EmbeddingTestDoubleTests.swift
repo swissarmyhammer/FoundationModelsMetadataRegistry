@@ -4,7 +4,7 @@ import Testing
 
 /// Tests for the vectors that the embedding test doubles give.
 ///
-/// `TextEmbedding` has no `dimension`, so a double does not declare one. A
+/// `PooledEmbedding` has no `dimension`, so a double does not declare one. A
 /// text that a double does not know embeds to an all-zero vector. That vector
 /// must have the length of the registered vectors: the ranker reports
 /// `.embeddingUnavailable` when the vectors of one search do not have the
@@ -17,7 +17,7 @@ struct EmbeddingTestDoubleTests {
   func anUnregisteredTextEmbedsToAZeroVectorOfTheRegisteredLength() async throws {
     let embedder = FakeEmbedder(vectorsByText: ["registered": [1, 0, 0]])
 
-    let vectors = try await embedder.embed(["registered", Self.unregisteredText])
+    let vectors = try await embedder.embed(texts: ["registered", Self.unregisteredText])
 
     #expect(vectors == [[1, 0, 0], [0, 0, 0]])
   }
@@ -28,7 +28,7 @@ struct EmbeddingTestDoubleTests {
   {
     let embedder = FakeEmbedder()
 
-    let vectors = try await embedder.embed([Self.unregisteredText])
+    let vectors = try await embedder.embed(texts: [Self.unregisteredText])
 
     #expect(vectors == [[Float](repeating: 0, count: VectorTable.defaultVectorLength)])
   }
@@ -39,7 +39,7 @@ struct EmbeddingTestDoubleTests {
     await gate.release()
     let embedder = GatedEmbedder(vectorsByText: ["registered": [0, 1, 0]], gate: gate)
 
-    let vectors = try await embedder.embed([Self.unregisteredText])
+    let vectors = try await embedder.embed(texts: [Self.unregisteredText])
 
     #expect(vectors == [[0, 0, 0]])
   }

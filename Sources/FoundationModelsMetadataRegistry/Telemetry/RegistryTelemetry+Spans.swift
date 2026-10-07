@@ -26,9 +26,11 @@ extension RegistryTelemetry {
   /// hangs still shows in the logging backend. The tracer is resolved late,
   /// through ``tracer(explicit:)``, at each call.
   ///
-  /// When `body` throws, the span records the error, the error status and
-  /// the type of the error (``recordFailure(_:on:)``), and this function
-  /// throws the same error.
+  /// When `body` throws, `TracedCall.run` gives the span the error status
+  /// with no message, and sets ``AttributeKey/errorType``. Then this
+  /// function throws the same error. The span never gets the message of the
+  /// error, because a message can hold the query text or the content of an
+  /// item.
   ///
   /// Rule 4: `spanName` and `attributes` hold no content of the caller.
   ///
@@ -50,42 +52,7 @@ extension RegistryTelemetry {
       tracer: tracer(explicit: nil),
       logger: makeLogger(),
       attributes: { $0.merge(attributes) },
-      { span in try await run(body, recordingFailureOn: span) },
+      body,
     )
-  }
-
-  /// Runs `body` in `span`, and marks the span as failed when `body`
-  /// throws.
-  ///
-  /// - Parameters:
-  ///   - body: the call.
-  ///   - span: the open span of the call.
-  /// - Returns: the value of `body`.
-  /// - Throws: the error of `body`, after ``recordFailure(_:on:)``.
-  private nonisolated(nonsending) static func run<Output>(
-    _ body: nonisolated(nonsending) (any Span) async throws -> Output,
-    recordingFailureOn span: any Span,
-  ) async throws -> Output {
-    do {
-      return try await body(span)
-    } catch {
-      recordFailure(error, on: span)
-      throw error
-    }
-  }
-
-  /// Marks `span` as failed because of `error`.
-  ///
-  /// Sets the error status with no message, and sets
-  /// ``AttributeKey/errorType`` to the name of the type of `error`. The
-  /// message of `error` never goes into an attribute or into the status,
-  /// because a message can hold the query text or the content of an item.
-  ///
-  /// - Parameters:
-  ///   - error: the error that ended the call of the span.
-  ///   - span: the span to mark.
-  private static func recordFailure(_ error: any Error, on span: any Span) {
-    span.setStatus(SpanStatus(code: .error))
-    span.attributes[AttributeKey.errorType] = String(describing: type(of: error))
   }
 }

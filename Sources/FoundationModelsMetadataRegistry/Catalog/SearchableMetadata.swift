@@ -17,8 +17,9 @@
 /// block whole.
 public protocol SearchableMetadata: Sendable {
   /// A stable id, unique within one catalog — the join key across every
-  /// tier: the BM25 `id` field, the trigram target, the selection-enum
-  /// member, and the verbatim-lookup key back to this item (plan.md §4).
+  /// tier: the BM25 `id` field, the trigram target, the id that the
+  /// selection model answers with, and the verbatim-lookup key back to
+  /// this item (plan.md §4).
   var id: String { get }
 
   /// Renders this item to the text that IS its search surface: what a
@@ -43,7 +44,7 @@ public protocol SearchableMetadata: Sendable {
   func renderIndexedText(from block: String) -> String
 
   /// Renders the text the embedder embeds: what `MetadataIndex` sends to
-  /// `TextEmbedding.embed(_:)` for this item's stored vector.
+  /// `PooledEmbedding.embed(texts:)` for this item's stored vector.
   ///
   /// Defaults to `block`, so a domain that overrides nothing has one text
   /// for every job, exactly as before this method existed. Override it to
@@ -62,7 +63,7 @@ public protocol SearchableMetadata: Sendable {
   func renderEmbeddedText(from block: String) -> String
 
   /// Renders a (typically shorter) summary of this item, used to seed the
-  /// selection tier's cached prefix (plan.md §4, §6) instead of the full
+  /// selection tier's prefix (plan.md §4, §6) instead of the full
   /// `renderBlock()` — relevant for catalogs (e.g. MCP resources) whose
   /// full description is large. Defaults to `renderBlock()`.
   func renderSummaryBlock() -> String

@@ -174,11 +174,10 @@ struct RegistryMetricsTests {
   @Test
   func selectionSearchWhoseSessionThrowsRecordsTheSelectionTierAndAnError() async throws {
     try await TelemetryCapture.run(forbidding: Fixtures.forbidden) { context in
-      let factory = RecordingSessionFactory(responses: [])
       let searcher = MetadataSearcher(
         items: Fixtures.catalog,
         mode: .selection,
-        selection: SelectionConfig(model: factory.makeSession),
+        selection: SelectionConfig(model: ScriptedLanguageModel(answers: [.failure])),
       )
       await #expect(throws: (any Error).self) {
         try await searcher.search(intent: Fixtures.query, limit: Fixtures.searchLimit)

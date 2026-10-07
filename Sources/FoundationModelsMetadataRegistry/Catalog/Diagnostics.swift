@@ -38,8 +38,9 @@ public enum MetadataDiagnostic: Sendable, Equatable {
   case embeddingUnavailable
 
   /// The selection model returned an id absent from the current candidate
-  /// set. Structurally unreachable given grammar-constrained output
-  /// (plan.md §6), but defended against anyway.
+  /// set. Guided generation limits the answer to the shape of `Selection`,
+  /// not to the candidate ids, so the tier removes such an id from the
+  /// answer and reports it here (plan.md §6).
   case unknownSelectedId(id: String)
 
   /// The over-budget capacity fallback (plan.md §6) cut the candidate set

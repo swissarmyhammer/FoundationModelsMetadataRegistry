@@ -38,8 +38,10 @@ private let extrasPackageName = "FoundationModelsExtras"
 ///     swift test                                     # unit tests
 ///     swift test --package-path IntegrationTests     # this suite
 ///
-/// **What this suite measures.** Apple Intelligence, driven through
-/// `LanguageModelSession(model: .default)`. `Support/ModelAvailability.swift`
+/// **What this suite measures.** Apple Intelligence, given to
+/// `SelectionConfig` as `SystemLanguageModel.default`. The selection tier
+/// makes a new `LanguageModelSession` on that model for each prompt.
+/// `Support/ModelAvailability.swift`
 /// stops a run loudly when the machine cannot serve that model, and
 /// `Support/IntegrationCatalog.swift` holds the fixture every scenario ranks
 /// and selects over. `PooledEmbedderRealModelTests` also measures a real MLX
@@ -47,15 +49,17 @@ private let extrasPackageName = "FoundationModelsExtras"
 /// `PooledEmbedder`.
 ///
 /// **Why two dependencies are the whole list.** `FoundationModels` is an OS
-/// framework, so it needs no package entry. `SelectionConfig`, `AgentSession`,
+/// framework, so it needs no package entry. `SelectionConfig`,
 /// `SelectionTier`, `Tokenizer`, and the retrieval primitives beside them
 /// reach this suite through the package under test's own
 /// `@_exported import FoundationModelsRanker`
 /// (`Sources/FoundationModelsMetadataRegistry/FoundationModelsRankerReexport.swift`),
 /// so `.package(path: "..")` gives them. The FoundationModelsRanker package
 /// still resolves, as a transitive dependency of `..`; this manifest never
-/// names it. `PooledEmbedder` and `ModelRef` come from the core
-/// FoundationModelsExtras product (see `extrasPackageName`).
+/// names it. The selection model is a FoundationModels `LanguageModel`, and
+/// the embedder is a FoundationModelsExtras `PooledEmbedding`.
+/// `PooledEmbedder`, which conforms to `PooledEmbedding`, and `ModelRef` come
+/// from the core FoundationModelsExtras product (see `extrasPackageName`).
 ///
 /// **The compile coupling this package owes CI.** The root build does not
 /// compile these files at all, so a broken integration test cannot break a

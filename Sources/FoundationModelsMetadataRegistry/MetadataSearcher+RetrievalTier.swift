@@ -1,3 +1,4 @@
+import FoundationModelsExtras
 import Tracing
 
 /// The `.retrieval` search tier of `MetadataSearcher` (plan.md §5), through
@@ -139,7 +140,7 @@ extension MetadataSearcher {
     intent: String,
     index: MetadataIndex<Item>,
     weights: Weights,
-    embedder: (any TextEmbedding)?,
+    embedder: (any PooledEmbedding)?,
     onDiagnostic: @Sendable (MetadataDiagnostic) -> Void,
   ) async -> [Double]? {
     // Cosine only runs when configured to actually count: a zero weight
@@ -147,7 +148,7 @@ extension MetadataSearcher {
     // embed the query or warn about a missing embedder for it.
     guard weights.cosine > 0.0 else { return nil }
     guard let embedder, index.ids.contains(where: { index.embedding(forID: $0) != nil }),
-      let queryEmbedding = try? await embedder.embed([intent]).first
+      let queryEmbedding = try? await embedder.embed(texts: [intent]).first
     else {
       onDiagnostic(.embeddingUnavailable)
       return nil

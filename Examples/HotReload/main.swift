@@ -17,9 +17,11 @@ import os
 // 2. A burst while an embed is in flight. The example holds the first embed
 //    call and sends the rest of the burst. The searcher then embeds only the
 //    newest catalog, not each catalog between.
-// 3. Selection after a change. In `.selection` mode, the searcher caches a
-//    root session for the catalog. A real change to the catalog discards
-//    that session, and the next search makes a new one for the new catalog.
+// 3. Selection after a change. In `.selection` mode, the searcher keeps a
+//    selection tier that holds the prefix of the catalog. A real change to
+//    the catalog builds a new tier for the new catalog. Each search sends
+//    its prompt to a new session of the model, so the next search sees the
+//    new catalog at once.
 //
 // Parts 1 and 2 embed with `exampleEmbedder` of ExamplesSupport: a
 // `PooledEmbedder` of FoundationModelsExtras for Qwen3 Embedding 0.6B, 4-bit,
@@ -28,8 +30,8 @@ import os
 // searchers share that one loaded model. Part 3 selects with
 // `exampleSelectionModel` of ExamplesSupport: a `PooledModel` of
 // FoundationModelsExtras for Qwen3 4B, 4-bit, from the Hugging Face hub. The
-// first root session loads that model through `ModelPool.shared`, and the
-// first run downloads the weights.
+// first selection prompt loads that model through `ModelPool.shared`, and
+// the first run downloads the weights.
 //
 // Run with `swift run --package-path Examples HotReload`.
 
@@ -110,47 +112,28 @@ Report.write("  search(\"\(query)\") after the burst = \(coalesced.searchResultI
 
 // MARK: - 3. Selection after a change
 
-Report.write("\nSelection root session after a catalog change (Qwen3 4B):")
+Report.write("\nSelection after a catalog change (Qwen3 4B, a new session for each prompt):")
 
-/// Counts each root session that the searcher asks the factory for. Each one
-/// is a real session of `exampleSelectionModel`.
-let sessionCount = CallCounter()
-let selectionConfig = SelectionConfig(model: { instructions in
-  await sessionCount.increment()
-  return try await exampleSelectionModel.session(instructions: instructions)
-})
-let selector = MetadataSearcher(items: [toolA], mode: .selection, selection: selectionConfig)
+let selector = MetadataSearcher(
+  items: [toolA],
+  mode: .selection,
+  selection: SelectionConfig(model: exampleSelectionModel),
+)
 
 /// The intent of each selection search of part 3.
-let selectionIntent = "read a file"
+let selectionIntent = "write a file"
 
 let firstSelection = try await selector.search(intent: selectionIntent, limit: searchLimit).map(
   \.id)
-Report.write(
-  "  root session built \(await sessionCount.count) time(s) for candidates [\"toolA\"]; "
-    + "selected \(firstSelection)",
-)
+Report.write("  candidates [\"toolA\"]: selected \(firstSelection)")
 
 await selector.update(items: [toolA, toolB])
 let secondSelection = try await selector.search(intent: selectionIntent, limit: searchLimit).map(
   \.id)
 Report.write(
-  "  after a real catalog change, root session built \(await sessionCount.count) time(s) total "
-    + "for candidates [\"toolA\", \"toolB\"]; selected \(secondSelection)",
-)
+  "  after a real catalog change, candidates [\"toolA\", \"toolB\"]: selected \(secondSelection)")
 
 // MARK: - Helpers
-
-/// A call counter that the async session factory can share.
-actor CallCounter {
-  /// The number of calls counted so far.
-  private(set) var count = 0
-
-  /// Counts one more call.
-  func increment() {
-    count += 1
-  }
-}
 
 /// A thread-safe log of the diagnostics that a searcher reports.
 ///

@@ -88,8 +88,7 @@ struct RegistryTracingTests {
   /// Makes a selection configuration whose scripted model picks
   /// `selectedID`.
   static func makeSelectionConfig() -> SelectionConfig {
-    let factory = RecordingSessionFactory(responses: [#"{"ids":["\#(selectedID)"]}"#])
-    return SelectionConfig(model: factory.makeSession)
+    SelectionConfig(model: ScriptedLanguageModel([#"{"ids":["\#(selectedID)"]}"#]))
   }
 
   /// Returns the one span named `name` that ended in `context`.
@@ -229,7 +228,9 @@ struct RegistryTracingTests {
 
       let search = try Self.onlySpan(named: SpanName.search, in: context)
       #expect(search.status == SpanStatus(code: .error))
-      #expect(search.attributes.get(Key.errorType) == .string("SelectionTierUnavailable"))
+      #expect(
+        search.attributes.get(Key.errorType)
+          == .string("FoundationModelsRanker.SelectionTierUnavailable"))
       #expect(search.attributes.get(Key.searchResultCount) == nil)
       #expect(Self.spans(named: SpanName.rank, in: context).isEmpty)
       let message = String(describing: SelectionTierUnavailable())
@@ -240,18 +241,19 @@ struct RegistryTracingTests {
   @Test
   func selectionSearchWhoseSessionThrowsRecordsTheErrorTypeAndNoMessage() async throws {
     try await TelemetryCapture.run(forbidding: Self.forbidden) { context in
-      let factory = RecordingSessionFactory(responses: [])
       let searcher = MetadataSearcher(
         items: Self.catalog,
         mode: .selection,
-        selection: SelectionConfig(model: factory.makeSession),
+        selection: SelectionConfig(model: ScriptedLanguageModel(answers: [.failure])),
       )
       let error = try #require(
         await #expect(throws: (any Error).self) {
           try await searcher.search(intent: Self.query, limit: Self.searchLimit)
         })
 
-      let errorType = String(describing: type(of: error))
+      // The type name has its module. The failure case has no payload,
+      // so the value holds no case name.
+      let errorType = "FoundationModelsMetadataRegistryTests.ScriptedLanguageModelError"
       let search = try Self.onlySpan(named: SpanName.search, in: context)
       let rank = try Self.onlySpan(named: SpanName.rank, in: context)
       #expect(search.status == SpanStatus(code: .error))

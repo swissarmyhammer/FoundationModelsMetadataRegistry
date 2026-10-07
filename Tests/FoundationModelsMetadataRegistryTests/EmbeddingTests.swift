@@ -1,14 +1,15 @@
+import FoundationModelsExtras
 import Testing
 
 @testable import FoundationModelsMetadataRegistry
 
-/// Tests for the embedding signal (plan.md §5, §8): the `TextEmbedding`
+/// Tests for the embedding signal (plan.md §5, §8): the `PooledEmbedding`
 /// seam, cosine joining RRF fusion in `MetadataSearcher.search`, the
 /// absent-signal rule for un-embedded items, graceful degradation to
 /// keyword-only with `.embeddingUnavailable` when no embedder is
 /// configured, and `MetadataIndex.build(items:embedder:previous:onDiagnostic:)`'s
 /// hash-keyed incremental re-embedding. Every embedder here is a scripted
-/// fake behind the `TextEmbedding` seam — no GPU in unit tests.
+/// fake behind the `PooledEmbedding` seam — no GPU in unit tests.
 struct EmbeddingTests {
   struct FixtureItem: SearchableMetadata {
     let id: String
@@ -71,14 +72,17 @@ struct EmbeddingTests {
     #expect(recorder.diagnostics.contains(.embeddingUnavailable))
   }
 
-  /// A `TextEmbedding` conformer that violates the documented "one vector
+  /// A `PooledEmbedding` conformer that violates the documented "one vector
   /// per input" contract by always returning an empty array without
   /// throwing -- exercises `computeCosineScores`'s defense-in-depth
   /// diagnostic for that specific misbehavior, distinct from the
   /// `FakeEmbedder`-throwing path `searchWithNoEmbedderConfigured...`
   /// and friends already cover.
-  private struct EmptyResultEmbedder: TextEmbedding {
-    func embed(_: [String]) async throws -> [[Float]] {
+  private struct EmptyResultEmbedder: PooledEmbedding {
+    /// Gives no vector, whatever the texts are.
+    ///
+    /// - Returns: an empty array.
+    func embed(texts _: [String]) async throws -> [[Float]] {
       []
     }
   }

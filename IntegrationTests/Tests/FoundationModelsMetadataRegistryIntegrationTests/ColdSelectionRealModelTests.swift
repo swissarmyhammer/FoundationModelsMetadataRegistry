@@ -6,9 +6,10 @@ import os
 /// `MetadataSearcher` in `.selection` mode answers a plain-language intent, and
 /// every id it answers with is one the catalog really holds.
 ///
-/// **The defect this guards.** A selection tier that has never spoken to its
-/// model has no cached root session and no prefilled prefix, so its first call
-/// is the one that can come back `{"ids":[]}` — the shape
+/// **The defect this guards.** The selection tier sends each prompt to a new
+/// `LanguageModelSession` that has answered nothing yet. The assembled prefix
+/// is the instructions of that session, and the prompt holds the intent only.
+/// Such a cold session is the one that can come back `{"ids":[]}` — the shape
 /// `.librarianDefault`'s own "return an empty list if nothing fits" invites.
 /// FoundationModelsRanker measured that answer against its neutral
 /// `.selectionDefault`; `^nwt7nz4` measured 125 cold runs against
@@ -17,20 +18,19 @@ import os
 /// to watch, and the off-topic control below is why asserting against it means
 /// something.
 ///
-/// **Why every query builds its own searcher.** `LanguageModelSession.fork()`
-/// returns `self` (FoundationModelsRanker's `LanguageModelSessionSupport.swift`),
-/// so a searcher reused across the parameterized run is warm from its second
-/// call onward: its transcript already carries the assembled prefix and one
-/// answered turn. A warm searcher cannot see a cold-session defect at all, and a
-/// suite of warm queries would report green whatever the first call does. The
-/// searcher is therefore constructed **inside the test body**, once per intent.
-/// The synchronous initializer makes that cost nothing but an index rebuild over
-/// four one-line entries.
+/// **Why every query builds its own searcher.** The tier caches no session
+/// between searches, so each search of a searcher is cold, and a cold searcher
+/// and a warm searcher behave the same. The test still builds the searcher
+/// **inside the test body**, once per intent, so that no run of the
+/// parameterized test shares state with another run. The synchronous
+/// initializer makes that cost nothing but an index rebuild over four one-line
+/// entries.
 ///
-/// **Scope.** The under-budget cached-root path only. Six one-line fixture
-/// entries assemble a prefix of a few hundred characters against
-/// `SelectionConfig.defaultCapacityCharacterLimit` of 32,000, so no query here
-/// reaches the over-budget one-off path — see `IntegrationCatalog`'s own note on
+/// **Scope.** The under-budget path only: one prompt that shows the whole
+/// catalog. Six one-line fixture entries assemble a prefix of a few hundred
+/// characters against `SelectionConfig.defaultCapacityCharacterLimit` of
+/// 32,000, so no query here reaches the over-budget path, which sends one
+/// prompt for each run of candidates — see `IntegrationCatalog`'s own note on
 /// the budget.
 ///
 /// The package's deployment floor is macOS 27 already, so no redundant
@@ -81,8 +81,8 @@ struct ColdSelectionRealModelTests {
     // non-empty assertion below was proved able to fail.
     let catalog = IntegrationCatalog.base
     let recorded = OSAllocatedUnfairLock<[MetadataDiagnostic]>(initialState: [])
-    // Built here, per query. See the suite's note on why a reused searcher
-    // would be warm and could not see the defect this scenario guards.
+    // Built here, per query, so that no run shares state with another run.
+    // See the suite's note on why each search is cold.
     let searcher = SelectionScenario.makeSearcher(over: catalog, reporting: recorded)
 
     let matches = try await ModelAvailability.recordingEnvironmentFaults {

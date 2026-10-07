@@ -14,24 +14,26 @@ import os
 /// conformance to `SelectionCatalog`, with this package's `.librarianDefault`.
 ///
 /// **The defect this guards.** `update(items:)` rebuilds the whole selection
-/// tier on a content change, and that rebuild is what drops the tier's cached
-/// root session and re-assembles its prefix from the new catalog. A rebuild
-/// that failed to happen would leave the previous root answering: a newly
-/// added id would stay unreachable, and — the half that matters — a deleted id
-/// would keep coming back from a prefix that still lists it. `MetadataSearcher`'s
+/// tier on a content change, and that rebuild re-assembles the prefix from the
+/// new catalog. Each search then sends its prompt to a new session whose
+/// instructions are that prefix. A rebuild that failed to happen would leave
+/// the previous prefix in each new session: a newly added id would stay
+/// unreachable, and — the half that matters — a deleted id would keep coming
+/// back from a prefix that still lists it. `MetadataSearcher`'s
 /// own unit suite can assert that the index changed; only a real model reading
 /// a re-assembled prefix can show that the model no longer sees the old
 /// catalog.
 ///
 /// **The remove half is the load-bearing one.** The add half can be satisfied
-/// by a tier that merely widened its id set. Only the remove half proves a
-/// stale cached root stopped answering, so it is the assertion this suite is
+/// by a tier that merely widened its id set. Only the remove half proves that
+/// the stale prefix stopped answering, so it is the assertion this suite is
 /// written around.
 ///
-/// **Scope.** The under-budget cached-root path only. Five one-line fixture
-/// entries assemble a prefix of a few hundred characters against
-/// `SelectionConfig.defaultCapacityCharacterLimit` of 32,000, so no query here
-/// reaches the over-budget one-off path — see `IntegrationCatalog`'s own note
+/// **Scope.** The under-budget path only: one prompt that shows the whole
+/// catalog. Five one-line fixture entries assemble a prefix of a few hundred
+/// characters against `SelectionConfig.defaultCapacityCharacterLimit` of
+/// 32,000, so no query here reaches the over-budget path, which sends one
+/// prompt for each run of candidates — see `IntegrationCatalog`'s own note
 /// on the budget. No embed catch-up and no cosine assertion either: this
 /// scenario gives the searcher no embedder, so `update(items:)` returns
 /// straight after the tier rebuild. `PooledEmbedderRealModelTests` measures
@@ -122,8 +124,8 @@ struct HotReloadRealModelTests {
       !answer.ids.contains(IntegrationCatalog.removeOnly.id),
       """
       the search for "\(Self.removeIntent)" answered with \(IntegrationCatalog.removeOnly.id), which \
-      `update(items:)` removed from the catalog. A stale cached root session is still \
-      answering from a prefix that lists the deleted entry. This is the exact symptom this \
+      `update(items:)` removed from the catalog. The selection tier is still answering \
+      from a prefix that lists the deleted entry. This is the exact symptom this \
       suite guards: the same intent found that id on 5 of 5 runs while it was present, and \
       returned nothing on 5 of 5 runs against the reloaded catalog.
       """,
@@ -143,8 +145,9 @@ struct HotReloadRealModelTests {
   /// initializer, which rebuilds nothing and is not the path this suite
   /// measures.
   ///
-  /// The searcher answers exactly one query afterwards, so nothing here
-  /// depends on whether a reused searcher would be warm.
+  /// The searcher answers exactly one query afterwards. Each search sends its
+  /// prompt to a new session, so a cold searcher and a warm searcher behave
+  /// the same.
   ///
   /// - Parameter intent: the plain-language intent to search the reloaded
   ///   catalog for.

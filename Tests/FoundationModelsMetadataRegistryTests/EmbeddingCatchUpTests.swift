@@ -141,12 +141,12 @@ extension EmbeddingTests {
   @Test
   func firstSelectionSearchCatchesUpTheCatalogBeforeTheTierRanks() async throws {
     let recorder = DiagnosticRecorder()
-    let factory = RecordingSessionFactory(responses: [#"{"ids":["a"]}"#])
+    let model = ScriptedLanguageModel([#"{"ids":["a"]}"#])
     let searcher = MetadataSearcher(
       index: MetadataIndex(items: Self.unembeddedItems),
       mode: .selection,
       embedder: Self.catchUpEmbedder(),
-      selection: SelectionConfig(model: factory.makeSession),
+      selection: SelectionConfig(model: model),
       onDiagnostic: { recorder.record($0) },
     )
 

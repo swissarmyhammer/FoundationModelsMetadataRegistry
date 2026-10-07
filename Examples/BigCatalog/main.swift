@@ -25,8 +25,8 @@ import FoundationModelsMetadataRegistry
 // the model gives an id that is not in the catalog, the searcher drops that
 // id and reports `.unknownSelectedId` through its diagnostic callback.
 //
-// The model loads nothing when you make it. The first selection prompt asks
-// the factory for a session, and then `ModelPool.shared` loads the model.
+// The model loads nothing when you make it. The first selection prompt goes
+// to a new session, and then `ModelPool.shared` loads the model.
 // The first run downloads the weights (about 2.3 GB) into the Hugging Face
 // cache; a later run loads them from the cache.
 //
@@ -94,7 +94,7 @@ let selection = MetadataSearcher(
   items: catalog,
   mode: .selection,
   selection: SelectionConfig(
-    model: { try await exampleSelectionModel.session(instructions: $0) },
+    model: exampleSelectionModel,
     capacityCharacterLimit: selectionCapacityCharacterLimit,
   ),
 )

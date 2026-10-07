@@ -1,3 +1,5 @@
+import FoundationModelsExtras
+
 /// Per-signal fusion weights for `MetadataSearcher`'s retrieval tier (plan.md §5).
 ///
 /// FoundationModelsRanker's `SignalWeights` under this package's
@@ -75,7 +77,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
   /// synchronously built index (see `FirstSearchCatchUp`).
   /// The same embedder instance is reused for both roles across every
   /// `update`.
-  let embedder: (any TextEmbedding)?
+  let embedder: (any PooledEmbedding)?
 
   /// Called for every diagnostic emitted while building the index and while searching.
   ///
@@ -113,9 +115,10 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
   /// `Match.item`/`Match.block` consistent even if a concurrent
   /// `update(items:)` swaps `index` while a search is suspended in the
   /// tier. Rebuilt by `update(items:)` on every real catalog change
-  /// (plan.md §8): a fresh `SelectionTier` starts with no cached root
-  /// session, a prefix assembled from the new index, and an id-enum
-  /// grammar derived from the new id set.
+  /// (plan.md §8): the new `SelectionTier` assembles its prefix from the
+  /// new index. The tier keeps no session between searches: each
+  /// selection prompt goes to a new `LanguageModelSession` on
+  /// `SelectionConfig.model`.
   var selectionTier: ConfiguredSelectionTier?
 
   /// This searcher's first-search catch-up state (see `FirstSearchCatchUp`).
@@ -211,7 +214,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     items: [Item],
     mode: SearchMode = .auto,
     weights: Weights = Weights(),
-    embedder: (any TextEmbedding)?,
+    embedder: (any PooledEmbedding)?,
     selection: SelectionConfig? = nil,
     onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
   ) {
@@ -257,7 +260,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     index: MetadataIndex<Item>,
     mode: SearchMode = .auto,
     weights: Weights = Weights(),
-    embedder: (any TextEmbedding)? = nil,
+    embedder: (any PooledEmbedding)? = nil,
     selection: SelectionConfig? = nil,
     onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
   ) {
@@ -281,7 +284,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     index: MetadataIndex<Item>,
     mode: SearchMode,
     weights: Weights,
-    embedder: (any TextEmbedding)?,
+    embedder: (any PooledEmbedding)?,
     sharedEmbedding: SharedCatalogEmbedding<Item>?,
     selection: SelectionConfig?,
     onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void,
@@ -309,14 +312,16 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
   /// `selectionSearch(_:intent:limit:)` re-attaches typed items from
   /// (see `ConfiguredSelectionTier`) — the one piece of tier construction
   /// both the designated initializer and `update(items:)` (plan.md §8,
-  /// hot reload) need whenever the underlying index changes: a fresh tier
-  /// starts with no cached root session and a prefix assembled from
-  /// `index`. The tier's `RankDiagnostic`s are mapped into the same-named
-  /// `MetadataDiagnostic` cases.
+  /// hot reload) need whenever the underlying index changes: the new tier
+  /// assembles its prefix from `index`, and caches nothing between
+  /// searches. Each selection prompt goes to a new `LanguageModelSession`
+  /// on `config.model`. The tier's `RankDiagnostic`s are mapped into the
+  /// same-named `MetadataDiagnostic` cases.
   ///
-  /// The tier itself ranks nothing: it makes one prompt that picks, so it
-  /// needs neither the fusion weights nor the embedder this searcher's
-  /// retrieval tier uses.
+  /// The tier itself ranks nothing: the model picks the ids. Under budget
+  /// the tier sends one prompt, and over budget it sends one prompt for
+  /// each run of the catalog. Thus it needs neither the fusion weights nor
+  /// the embedder that the retrieval tier of this searcher uses.
   ///
   /// `static`, not an instance method: the synchronous designated
   /// initializer builds the pair from its own parameters, and SE-0327's

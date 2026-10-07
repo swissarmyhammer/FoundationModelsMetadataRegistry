@@ -21,12 +21,14 @@ enum SelectionScenario {
   /// text named here is the preamble `^nwt7nz4` measured every intent
   /// against.
   ///
+  /// **Why the model is `SystemLanguageModel.default`.** These scenarios
+  /// measure Apple Intelligence, the on-device model. The selection tier
+  /// makes a new `LanguageModelSession` on this model for each prompt.
+  ///
   /// **Why no embedder.** The selection scenarios measure the selection
   /// tier, not the cosine signal (`PooledEmbedderRealModelTests` measures
-  /// that), so each selection scenario runs keyword-only and each selection
-  /// search reports `.embeddingUnavailable`. See
-  /// `expectNoUnknownSelectedId(among:answering:sourceLocation:)` for what
-  /// that costs an assertion.
+  /// that). The selection tier runs no retrieval step and needs no
+  /// embedder, so the searcher gets none.
   ///
   /// - Parameters:
   ///   - items: the catalog this searcher indexes, and the id set its
@@ -36,8 +38,8 @@ enum SelectionScenario {
   ///     lock is `Sendable` and `Copyable`, so the `@escaping @Sendable`
   ///     callback captures it directly and no suite needs an
   ///     `@unchecked Sendable` conformance of its own to justify.
-  /// - Returns: a searcher in `.selection` mode over `items`, with no cached
-  ///   root session yet.
+  /// - Returns: a searcher in `.selection` mode over `items`. Each of its
+  ///   searches sends its prompt to a new session.
   static func makeSearcher(
     over items: [IntegrationItem],
     reporting recorded: OSAllocatedUnfairLock<[MetadataDiagnostic]>,
@@ -46,9 +48,7 @@ enum SelectionScenario {
       items: items,
       mode: .selection,
       selection: SelectionConfig(
-        model: { instructions in
-          LanguageModelSession(model: .default, instructions: instructions)
-        },
+        model: SystemLanguageModel.default,
         preamble: .librarianDefault,
       ),
       onDiagnostic: { diagnostic in recorded.withLock { $0.append(diagnostic) } },
@@ -59,13 +59,12 @@ enum SelectionScenario {
   /// does not hold.
   ///
   /// **Filter for the case; never test the collection for emptiness.**
-  /// `.embeddingUnavailable` fires on **every** selection search this
-  /// package makes — 55 of 55 runs measured on `^nwt7nz4` — because
-  /// `SelectionTier`'s under-budget path calls `retrievalRanking` once per
-  /// call to attach a real `score` and `signals`, and that closure reports
-  /// the missing embedder. These scenarios wire no embedder, so an assertion
-  /// that no diagnostic was recorded would fail on every run, for a reason
-  /// that has nothing to do with the defect a scenario guards.
+  /// The searcher reports diagnostics that have nothing to do with the
+  /// defect a scenario guards, for example `.duplicateId` or
+  /// `.embedCatchUp`. An assertion that no diagnostic was recorded would
+  /// fail for such a diagnostic. This helper reads only
+  /// `.unknownSelectedId`, the one case that shows the model named an id
+  /// that the catalog does not hold.
   ///
   /// - Parameters:
   ///   - diagnostics: everything the searcher reported for one search.

@@ -110,8 +110,11 @@ enum RegistryTelemetry {
     /// The result of a catalog embed, as an ``EmbedOutcome`` raw value.
     static let embedOutcome = "embed.outcome"
 
-    /// The name of the type of the error that a failed span recorded.
-    /// Never the message of the error: a message can hold content.
+    /// The type of the error that ended a span. `TracedCall.run` of
+    /// FoundationModelsExtras writes it: the type name with its module, then
+    /// the enum case name when reflection shows one, for example
+    /// `FoundationModelsRanker.SelectionTierUnavailable`. Never the message
+    /// of the error: a message can hold content.
     static let errorType = "error.type"
   }
 

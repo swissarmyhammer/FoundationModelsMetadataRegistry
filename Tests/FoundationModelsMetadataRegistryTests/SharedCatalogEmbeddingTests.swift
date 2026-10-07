@@ -6,7 +6,7 @@ import Testing
 /// mode:weights:selection:onDiagnostic:)` (plan.md §5, §8): two or more
 /// searchers that are built synchronously over one index share one
 /// first-search embed of the catalog. Every embedder here is a scripted fake
-/// behind the `TextEmbedding` seam.
+/// behind the `PooledEmbedding` seam.
 struct SharedCatalogEmbeddingTests {
   typealias FixtureItem = EmbeddingTests.FixtureItem
 

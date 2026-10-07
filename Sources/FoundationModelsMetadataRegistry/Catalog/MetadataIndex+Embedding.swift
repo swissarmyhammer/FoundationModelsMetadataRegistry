@@ -1,3 +1,4 @@
+import FoundationModelsExtras
 import Tracing
 
 /// Index-build/update-time embedding support for `MetadataIndex`: hash-keyed
@@ -67,7 +68,7 @@ extension MetadataIndex {
   /// exactly like a brand-new item, so it catches up as soon as an
   /// embedder is actually available instead of staying cosine-blind
   /// forever just because its text never changed (plan.md §8 "embed
-  /// catch-up"). `embedder.embed(_:)` is called with exactly the
+  /// catch-up"). `embedder.embed(texts:)` is called with exactly the
   /// new-or-changed-or-never-embedded texts, batched into a single
   /// call, never once per item. This is what makes `update(items:)`
   /// (plan.md §8, a later task) cheap to call on every upstream change
@@ -87,14 +88,15 @@ extension MetadataIndex {
   ///   - onDiagnostic: forwarded to `init(items:onDiagnostic:)` for
   ///     duplicate-id reporting.
   /// - Returns: the built index, with embeddings populated wherever
-  ///   `embedder` was configured and ran successfully. If `embedder.embed(_:)`
+  ///   `embedder` was configured and ran successfully. If
+  ///   `embedder.embed(texts:)`
   ///   throws, every item that would have been (re-)embedded this call is
   ///   left with whatever embedding it already had (`nil` for a new item) —
   ///   graceful degradation, matching plan.md §5's "no embedder configured"
   ///   handling rather than propagating a transient embedding failure.
   public static func build(
     items: [Item],
-    embedder: (any TextEmbedding)?,
+    embedder: (any PooledEmbedding)?,
     previous: MetadataIndex<Item>? = nil,
     onDiagnostic: @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
   ) async -> MetadataIndex<Item> {
@@ -328,10 +330,10 @@ extension MetadataIndex {
   ///   - onDiagnostic: called with `.embedCatchUp(pending:total:)` before
   ///     the embedder call. Defaults to reporting nothing.
   /// - Returns: the embedded batch, or `nil` when no entry is pending, when
-  ///   `embed(_:)` throws, or when it returns a vector count other than
+  ///   `embed(texts:)` throws, or when it returns a vector count other than
   ///   the pending count.
   func embedPendingEntries(
-    with embedder: any TextEmbedding,
+    with embedder: any PooledEmbedding,
     source: RegistryTelemetry.EmbedSource,
     onDiagnostic: @Sendable (MetadataDiagnostic) -> Void = { _ in },
   ) async -> EmbeddedBatch? {
@@ -366,16 +368,16 @@ extension MetadataIndex {
   ///   - embedder: the embedder to embed `texts` with.
   ///   - span: the embed span, which gets `RegistryTelemetry.AttributeKey.embedOutcome`.
   /// - Returns: one vector for each text, in the order of `texts`.
-  /// - Throws: the error of `embed(_:)`, or `EmbedVectorCountMismatch` when
+  /// - Throws: the error of `embed(texts:)`, or `EmbedVectorCountMismatch` when
   ///   the embedder gave a count of vectors other than the count of texts.
   private static func checkedVectors(
     for texts: [String],
-    with embedder: any TextEmbedding,
+    with embedder: any PooledEmbedding,
     in span: any Span,
   ) async throws -> [[Float]] {
     let outcomeKey = RegistryTelemetry.AttributeKey.embedOutcome
     do {
-      let vectors = try await embedder.embed(texts)
+      let vectors = try await embedder.embed(texts: texts)
       guard vectors.count == texts.count else {
         throw EmbedVectorCountMismatch()
       }

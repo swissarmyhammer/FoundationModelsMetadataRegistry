@@ -1,3 +1,4 @@
+import FoundationModelsExtras
 import Tracing
 
 /// Hot reload, the search entry point and the `.selection` search tier for
@@ -33,11 +34,12 @@ extension MetadataSearcher {
   ///    reload owns the embedding, a search that lands in this interim
   ///    window serves keyword-only rather than embedding the same pending
   ///    blocks a second time.
-  /// 3. Drops the cached selection-tier root session by rebuilding the
-  ///    whole tier over the new index: the next under-budget `.selection`/
-  ///    `.auto` search re-prefills against the new catalog (one prefix
-  ///    re-prefill), and any id-enum grammar a caller derives from the
-  ///    tier's candidate ids reflects the new id set.
+  /// 3. Rebuilds the selection tier over the new index. The new tier
+  ///    assembles its prefix from the new catalog, so the next
+  ///    `.selection`/`.auto` search sends the new catalog and the new id
+  ///    set to the model. Each selection prompt goes to a new
+  ///    `LanguageModelSession` on `SelectionConfig.model`, and nothing is
+  ///    cached between searches.
   ///
   /// Hash-guarded: if `items` renders to content identical to what's
   /// already indexed (same ids, same block hashes) *and* nothing is
@@ -51,8 +53,7 @@ extension MetadataSearcher {
   /// up (e.g. a prior embed call failed transiently) still re-embeds, just
   /// without rebuilding the selection tier — nothing keyword/selection-
   /// relevant changed, only the still-missing embedding is worth
-  /// finishing, and a rebuild would pointlessly drop the cached root
-  /// session.
+  /// finishing, and a rebuild would assemble the same prefix again.
   ///
   /// When this call returns, the embed catch-up that includes its own
   /// catalog is done (plan.md §8): a call that joins a loop in flight
@@ -110,10 +111,10 @@ extension MetadataSearcher {
 
     index = baseline
     RegistryTelemetry.recordCatalogSize(baseline.count)
-    // Only a genuine content change warrants dropping the cached root
-    // session -- catching up an embedding for otherwise-unchanged
-    // content doesn't affect keyword search or the selection prefix at
-    // all, so forcing a re-prefill for it would be pure waste.
+    // Rebuild the selection tier only when the content changed. An
+    // embedding catch-up for the same content does not change keyword
+    // search or the selection prefix, so a rebuild would assemble the
+    // same prefix again.
     if contentChanged {
       selectionTier = Self.buildSelectionTierIfConfigured(
         config: selectionConfig, index: baseline, onDiagnostic: onDiagnostic,
@@ -159,7 +160,7 @@ extension MetadataSearcher {
   ///   - embedder: the embedder to embed the pending entries with.
   ///   - source: the path that started this catch-up, for the embed span:
   ///     `.reload` or `.firstSearch`.
-  func catchUpEmbeddings(with embedder: any TextEmbedding, source: RegistryTelemetry.EmbedSource)
+  func catchUpEmbeddings(with embedder: any PooledEmbedding, source: RegistryTelemetry.EmbedSource)
     async
   {
     let batch = await index.embedPendingEntries(

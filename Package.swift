@@ -13,20 +13,29 @@ let packageName = "FoundationModelsMetadataRegistry"
 /// The name of the FoundationModelsRanker dependency package — one of the
 /// two family packages this manifest declares (plan.md decision #16).
 ///
-/// The shared search/ranking library this package's ported copies were
-/// extracted into (plan.md decision #9). It supplies the retrieval
-/// primitives (`BM25`, `BM25Corpus`, `Trigram`, `Tokenizer`, `RRF`, `Hit`,
-/// `Signals`), the embedding seam (`TextEmbedding`), and the whole selection
-/// tier (`SelectionTier`, `SelectionConfig`, `AgentSession`, and the types
-/// they carry) — all re-exported to this package's consumers via
-/// `FoundationModelsRankerReexport.swift`.
+/// The shared search and ranking library that the ported copies of this
+/// package were extracted into (plan.md decision #9). It supplies these
+/// types, and `FoundationModelsRankerReexport.swift` re-exports all of them
+/// to the consumers of this package:
+///
+/// - The retrieval pipeline: `HybridRanker`, `RankedDocument`,
+///   `SignalWeights`, `CosineScoring`, `Hit`, `Signals`, and the primitives
+///   `BM25`, `BM25Corpus`, `Trigram`, `Tokenizer` and `RRF`.
+/// - The selection tier: `SelectionTier`, `SelectionConfig`,
+///   `SelectionCatalog`, `SelectionMatch`, `Selection`, `RankDiagnostic`
+///   and `SelectionTierUnavailable`.
+///
+/// The embedder type, `PooledEmbedding`, comes from FoundationModelsExtras,
+/// not from this package. The selection model is a FoundationModels
+/// `LanguageModel`.
 ///
 /// Wired as a remote dependency (`main` branch) rather than a local path
 /// dependency: a `../FoundationModelsRanker` path resolves only where the
 /// sibling repository is already checked out beside this one, so a fresh
-/// clone and CI could not build it. FoundationModelsRanker's own manifest
-/// declares `dependencies: []`, so this entry adds no package to the
-/// resolved graph other than itself.
+/// clone and CI could not build it. The only package dependency of
+/// FoundationModelsRanker is FoundationModelsExtras, which this manifest
+/// also declares, so this entry adds no other package to the resolved
+/// graph.
 let foundationModelsRankerPackage = "FoundationModelsRanker"
 
 /// The name of the FoundationModelsExtras dependency package, and also the
@@ -36,7 +45,11 @@ let foundationModelsRankerPackage = "FoundationModelsRanker"
 /// OpenTelemetry design of 2026-09-28.
 ///
 /// The core `FoundationModelsExtras` product holds the process-wide model
-/// pool (`ModelPool`, `ModelRef`, `PooledEmbedder`, `GenerationQueue`). In one
+/// pool (`ModelPool`, `ModelRef`, `PooledEmbedder`, `PooledModel`,
+/// `GenerationQueue`), and the embedder protocol `PooledEmbedding` that the
+/// library and FoundationModelsRanker take. `PooledEmbedder` is a
+/// `PooledEmbedding`, and `PooledModel` is a FoundationModels
+/// `LanguageModel` that a `SelectionConfig` can take. In one
 /// process, each model loads one time only, and the router and the registry
 /// share it. Use this core product only. Do not use `Operations`,
 /// `OperationsCLI` or `Marketplace`: they compile swift-syntax,

@@ -36,8 +36,8 @@ This path does not need an embedder, a model, or a session. Retrieval alone fuse
 BM25 (id field ×5, block ×1) and character-trigram Dice by reciprocal rank fusion.
 Thus `commit` gets the first rank although its own block never says the word
 `commit` — the ×5 id field carries that term. Give an `embedder:` to get a cosine
-signal. A `PooledEmbedder` from `FoundationModelsExtras` is a `TextEmbedding`, and
-searchers that name one model share one pooled copy of it:
+signal. A `PooledEmbedder` from `FoundationModelsExtras` is a `PooledEmbedding`,
+and searchers that name one model share one pooled copy of it:
 
 ```swift
 import FoundationModelsExtras

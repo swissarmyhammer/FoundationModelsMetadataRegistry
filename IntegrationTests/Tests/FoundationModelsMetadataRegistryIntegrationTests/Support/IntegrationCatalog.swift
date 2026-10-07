@@ -45,8 +45,9 @@ struct IntegrationItem: SearchableMetadata {
 ///
 /// **The budget.** Six one-line entries assemble a prefix of a few hundred
 /// characters, far under `SelectionConfig.defaultCapacityCharacterLimit`, so
-/// every scenario stays on the under-budget cached-root-plus-fork path and none
-/// of them measures the over-budget one-off path by accident. Keep it that way:
+/// every scenario stays on the under-budget path, one prompt that shows the
+/// whole catalog, and none of them measures the over-budget path, one prompt
+/// for each run of candidates, by accident. Keep it that way:
 /// a fixture that grew past the limit would silently change what these
 /// scenarios measure.
 enum IntegrationCatalog {

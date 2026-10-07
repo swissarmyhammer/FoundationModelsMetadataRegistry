@@ -5,7 +5,7 @@ import Testing
 /// Tests for `MetadataIndex.embedPendingEntries(with:source:onDiagnostic:)` and
 /// `MetadataIndex.EmbeddedBatch.merged(into:)` (plan.md §8): the one
 /// embed-and-merge step that each catalog embed of this package goes through.
-/// Every embedder here is a scripted fake behind the `TextEmbedding` seam.
+/// Every embedder here is a scripted fake behind the `PooledEmbedding` seam.
 struct EmbedPendingEntriesTests {
   typealias FixtureItem = EmbeddingTests.FixtureItem
 

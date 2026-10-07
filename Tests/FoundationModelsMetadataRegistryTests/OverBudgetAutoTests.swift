@@ -10,21 +10,22 @@ extension OverBudgetTests {
   // MARK: - `.auto` resolution both ways
 
   @Test
-  func autoModeResolvesToSelectionWhenASessionFactoryIsConfigured() async throws {
+  func autoModeResolvesToSelectionWhenASelectionModelIsConfigured() async throws {
     // Scripted to return "echo" -- something plain retrieval for the
     // "alpha" intent would never surface, proving `.auto` actually took
     // the selection path rather than silently falling back.
-    let factory = RecordingSessionFactory(responses: [#"{"ids":["echo"]}"#])
-    let config = SelectionConfig(model: factory.makeSession)
+    let model = ScriptedLanguageModel([#"{"ids":["echo"]}"#])
+    let config = SelectionConfig(model: model)
     let searcher = MetadataSearcher(items: Self.catalog, mode: .auto, selection: config)
 
     let matches = try await searcher.search(intent: "alpha", limit: 5)
 
     #expect(matches.map(\.id) == ["echo"])
+    #expect(model.calls.count == 1)
   }
 
   @Test
-  func autoModeFallsBackToRetrievalWhenNoSessionFactoryIsConfigured() async throws {
+  func autoModeFallsBackToRetrievalWhenNoSelectionModelIsConfigured() async throws {
     let retrieval = MetadataSearcher(items: Self.catalog, mode: .retrieval)
     let auto = MetadataSearcher(items: Self.catalog, mode: .auto)
 

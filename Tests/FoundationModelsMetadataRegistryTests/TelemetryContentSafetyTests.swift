@@ -132,8 +132,7 @@ struct TelemetryContentSafetyTests {
   /// Makes a selection configuration whose scripted model picks
   /// `selectedID`.
   private static func makeSelectionConfig() -> SelectionConfig {
-    let factory = RecordingSessionFactory(responses: [#"{"ids":["\#(selectedID)"]}"#])
-    return SelectionConfig(model: factory.makeSession)
+    SelectionConfig(model: ScriptedLanguageModel([#"{"ids":["\#(selectedID)"]}"#]))
   }
 
   /// One sample of each case of `MetadataDiagnostic`, with the fixture ids.
@@ -178,11 +177,10 @@ struct TelemetryContentSafetyTests {
   @Test
   func selectionSearchWhoseSessionThrowsKeepsContentOutOfTheTelemetry() async throws {
     try await TelemetryCapture.run(forbidding: Marker.all) { context in
-      let factory = RecordingSessionFactory(responses: [])
       let searcher = MetadataSearcher(
         items: Self.catalog,
         mode: .selection,
-        selection: SelectionConfig(model: factory.makeSession),
+        selection: SelectionConfig(model: ScriptedLanguageModel(answers: [.failure])),
       )
       await #expect(throws: (any Error).self) {
         try await searcher.search(intent: Self.query, limit: Self.searchLimit)

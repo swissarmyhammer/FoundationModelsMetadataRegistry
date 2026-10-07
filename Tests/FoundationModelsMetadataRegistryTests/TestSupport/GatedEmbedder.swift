@@ -1,3 +1,5 @@
+import FoundationModelsExtras
+
 @testable import FoundationModelsMetadataRegistry
 
 /// A continuation-based gate `GatedEmbedder` suspends inside, shared by
@@ -5,14 +7,15 @@
 /// items:)`'s "interim" window (plan.md §8): the moment between this call's
 /// synchronous keyword-index rebuild (already visible to concurrent
 /// `search(intent:limit:)` calls, actor reentrancy across the suspended
-/// `await embedder.embed(_:)` below) and the re-embed actually completing.
+/// `await embedder.embed(texts:)` below) and the re-embed actually
+/// completing.
 ///
 /// An `actor` rather than a lock-boxed class because `CheckedContinuation`
 /// must be resumed from exactly one place with no data race — actor
-/// isolation gives that for free, unlike `ScriptedAgentSession`'s counters,
-/// which only ever read/increment plain values.
+/// isolation gives that for free, unlike `EmbedCallCounter`, which only
+/// ever reads and appends plain values.
 actor EmbedGate {
-  /// Resumed by `signalStarted()` once `embed(_:)` has actually been
+  /// Resumed by `signalStarted()` once `embed(texts:)` has actually been
   /// entered — `nil` once `started` is `true` and there's nothing left to
   /// resume.
   private var startContinuation: CheckedContinuation<Void, Never>?
@@ -67,7 +70,7 @@ actor EmbedGate {
   }
 
   /// Marks this gate started and resumes any `waitForStart()` waiter —
-  /// `GatedEmbedder.embed(_:)` calls this immediately on entry.
+  /// `GatedEmbedder.embed(texts:)` calls this immediately on entry.
   func signalStarted() {
     started = true
     startContinuation?.resume()
@@ -75,7 +78,7 @@ actor EmbedGate {
   }
 
   /// Suspends until `release()` fires, or returns immediately if it
-  /// already has — what `GatedEmbedder.embed(_:)` blocks on to hold the
+  /// already has — what `GatedEmbedder.embed(texts:)` blocks on to hold the
   /// interim window open until the test says otherwise.
   func waitForRelease() async {
     if released {
@@ -94,13 +97,17 @@ actor EmbedGate {
   }
 }
 
-/// A `TextEmbedding` test double that blocks inside `embed(_:)` until a
-/// shared `EmbedGate` is released — `HotReloadTests`' tool for
+/// A `PooledEmbedding` test double that blocks inside `embed(texts:)` until
+/// a shared `EmbedGate` is released — `HotReloadTests`' tool for
 /// deterministically driving `MetadataSearcher.update(items:)`'s async
 /// re-embed into its "interim" window and holding it there, instead of
 /// racing a real suspension point against a concurrent `search()`/`update()`
 /// call.
-struct GatedEmbedder: TextEmbedding {
+///
+/// Give this double to the searcher directly. Do not put it in a
+/// FoundationModelsExtras `PooledEmbedder`: that queue runs one job at a
+/// time, so a held call blocks the next call, and a gated test deadlocks.
+struct GatedEmbedder: PooledEmbedding {
   /// Exact-text -> vector lookup table, same contract as `FakeEmbedder`'s:
   /// a text absent from this table embeds to an all-zero vector.
   private let table: VectorTable
@@ -118,7 +125,7 @@ struct GatedEmbedder: TextEmbedding {
   /// ever being released) while the first stays suspended.
   var gatedTexts: Set<String>?
 
-  /// Records the texts of every `embed(_:)` call, gated or not, so a test
+  /// Records the texts of every `embed(texts:)` call, gated or not, so a test
   /// can assert on how many times — and with which texts — this embedder
   /// was called while the gate held other callers back.
   private let counter: EmbedCallCounter
@@ -133,8 +140,8 @@ struct GatedEmbedder: TextEmbedding {
   ///   - gate: the gate this embedder signals and blocks on.
   ///   - gatedTexts: the texts whose calls block on `gate`; `nil` (the
   ///     default) gates every call.
-  ///   - counter: the call counter to record every `embed(_:)` call's texts
-  ///     into. Defaults to a fresh, unshared counter.
+  ///   - counter: the call counter to record every `embed(texts:)` call's
+  ///     texts into. Defaults to a fresh, unshared counter.
   init(
     vectorsByText: [String: [Float]] = [:],
     gate: EmbedGate,
@@ -147,12 +154,17 @@ struct GatedEmbedder: TextEmbedding {
     self.counter = counter
   }
 
-  /// The texts of every `embed(_:)` call so far, in call order.
+  /// The texts of every `embed(texts:)` call so far, in call order.
   var embeddedBatches: [[String]] {
     counter.batches
   }
 
-  func embed(_ texts: [String]) async throws -> [[Float]] {
+  /// Records `texts`, holds the call on `gate` when the call is gated, then
+  /// gives the table vector of each text.
+  ///
+  /// - Parameter texts: the texts to embed.
+  /// - Returns: one vector for each text, in order.
+  func embed(texts: [String]) async throws -> [[Float]] {
     counter.record(texts)
     let shouldGate = gatedTexts.map { !$0.isDisjoint(with: texts) } ?? true
     if shouldGate {

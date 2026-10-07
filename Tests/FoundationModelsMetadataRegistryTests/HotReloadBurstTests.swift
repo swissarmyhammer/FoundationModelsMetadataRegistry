@@ -36,7 +36,7 @@ extension HotReloadTests {
 
     // While A is suspended re-embedding "version one text", B replaces
     // the same id with different content -- actor reentrancy across A's
-    // suspended `await embedder.embed(_:)`. B joins the reload loop in
+    // suspended `await embedder.embed(texts:)`. B joins the reload loop in
     // flight and waits for it, so it runs in a task of its own; the wait
     // below returns when B's keyword index is live.
     let updateBTask = Task { await searcher.update(items: [itemV2]) }
