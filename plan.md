@@ -800,6 +800,23 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
     | decision-qwen3-4b | 0.90 | 0.93 | 0.50 | 0.55 | 0.80 | 0.80 | 0.90 | 877.1 | 1014.7 |
     | decision-decider-4b | 1.00 | 1.00 | 0.70 | 0.70 | 0.50 | 0.50 | 1.00 | 1234.7 | 1322.6 |
 
+    **The second benchmark run (2026-11-14, whole catalog).** The run measured
+    seven configurations on the same machine, at commit `465c15b` plus the new
+    `decision-h2o-lightning-4b` configuration, with 3 repeats of each intent.
+    The decision tier scored all 62 catalog items in each search. The full
+    report is in
+    [`Benchmarks/Results/2026-11-14-whole-catalog/`](Benchmarks/Results/2026-11-14-whole-catalog/report.md).
+
+    | Configuration | lexical hit@1 | lexical MRR | paraphrase hit@1 | paraphrase MRR | multiStep hit@1 | multiStep MRR | offTopic empty rate | p50 ms | p95 ms |
+    | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+    | retrieval-keyword | 1.00 | 1.00 | 0.10 | 0.10 | 1.00 | 1.00 | 0.00 | 0.4 | 3.9 |
+    | retrieval-semantic | 1.00 | 1.00 | 0.10 | 0.13 | 1.00 | 1.00 | 0.00 | 5.7 | 8.5 |
+    | selection-qwen3-4b | 1.00 | 1.00 | 0.20 | 0.20 | 0.50 | 0.50 | 1.00 | 472.4 | 558.4 |
+    | selection-apple | 1.00 | 1.00 | 0.83 | 0.83 | 1.00 | 1.00 | 0.90 | 1430.3 | 2058.6 |
+    | decision-qwen3-4b | 0.90 | 0.90 | 0.70 | 0.75 | 0.80 | 0.80 | 0.90 | 2993.5 | 3789.5 |
+    | decision-decider-4b | 1.00 | 1.00 | 1.00 | 1.00 | 0.60 | 0.60 | 1.00 | 3268.5 | 3335.6 |
+    | decision-h2o-lightning-4b | 1.00 | 1.00 | 0.90 | 0.90 | 0.80 | 0.80 | 0.90 | 3782.8 | 3825.3 |
+
 ## 12. Public API (as shipped)
 
 > *(Superseded in part, 2026-08-30 — decision #14. The searcher, `Match`, the

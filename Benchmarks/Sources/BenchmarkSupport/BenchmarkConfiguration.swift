@@ -23,6 +23,9 @@ public struct BenchmarkConfiguration: Sendable {
     /// The decision tier with the decider 4B GGUF model and its own prompt
     /// format.
     case decisionDecider = "decision-decider-4b"
+    /// The decision tier with the H2O-Lightning 4B GGUF model. The native
+    /// decision code of llama.cpp makes the prompt and reads the answer.
+    case decisionH2OLightning = "decision-h2o-lightning-4b"
   }
 
   /// The maximum count of matches of each search, for each configuration.

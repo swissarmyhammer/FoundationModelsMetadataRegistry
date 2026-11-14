@@ -12,13 +12,13 @@ struct ArgumentParsingTests {
   /// The arguments with only the required `--output`.
   static let outputOnly = ["--output", outputPath]
 
-  /// The six configuration names, in the order of a run.
-  @Test("the configuration names are the six configurations of the benchmark")
-  func configurationNamesAreTheSixConfigurationsOfTheBenchmark() {
+  /// The seven configuration names, in the order of a run.
+  @Test("the configuration names are the seven configurations of the benchmark")
+  func configurationNamesAreTheSevenConfigurationsOfTheBenchmark() {
     #expect(
       BenchmarkConfiguration.allNames == [
         "retrieval-keyword", "retrieval-semantic", "selection-qwen3-4b", "selection-apple",
-        "decision-qwen3-4b", "decision-decider-4b",
+        "decision-qwen3-4b", "decision-decider-4b", "decision-h2o-lightning-4b",
       ])
   }
 

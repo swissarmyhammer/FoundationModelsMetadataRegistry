@@ -24,7 +24,15 @@ enum Configurations {
   /// The decider 4B model. The ref names the GGUF file in the repository.
   static let deciderRef: ModelRef = "Mapika/decider-4b-GGUF/decider-4b-v3-Q4_K_M.gguf"
 
-  /// The pool that loads GGUF files with llama.cpp, for the decider model.
+  /// The H2O-Lightning 4B model. Its GGUF file has the decision type
+  /// `h2o-lightning`. The revision is the revision that the model matrix of
+  /// FoundationModelsDecision tests.
+  static let h2oLightningRef = ModelRef(
+    repo: "h2oai/h2o-lightning-4b-gguf", path: "h2o-lightning-4b-Q4_K_M.gguf",
+    revision: "61f8d8b7a8c2d84426d0d143ca187f65d235934b")
+
+  /// The pool that loads GGUF files with llama.cpp, for the decider model
+  /// and the H2O-Lightning model.
   static let ggufPool = ModelPool(loader: HubModelLoader(gguf: LlamaCppModelLoader()))
 
   /// Makes the configuration of `name`.
@@ -55,6 +63,8 @@ enum Configurations {
         model: {
           PooledDecisionModel(ref: deciderRef, pool: ggufPool, format: DeciderPromptFormat())
         })
+    case .decisionH2OLightning:
+      decision(name, model: { PooledNativeDecisionModel(ref: h2oLightningRef, pool: ggufPool) })
     }
   }
 
