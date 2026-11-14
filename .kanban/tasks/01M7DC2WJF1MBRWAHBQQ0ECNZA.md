@@ -1,8 +1,8 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8780'
+position_column: done
+position_ordinal: be80
 title: 'Adopt FoundationModelsRanker ddb39a1: nil cosine means no embedding, zero and negative cosine scores rank'
 ---
 ## What
