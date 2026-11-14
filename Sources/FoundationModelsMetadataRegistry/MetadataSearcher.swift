@@ -28,11 +28,13 @@ public typealias Weights = SignalWeights
 /// FoundationModelsRanker's `HybridRanker`, plan.md §5) answers with no
 /// session, no tokens. Without an
 /// `embedder` (or before any catalog item has been embedded), the cosine
-/// signal never ranks anything and every `Match.signals.cosine` is `0.0` —
-/// the same "no embedding available" value `Signals.cosine` documents, not a
-/// crash or a special case (plan.md §5 "absent-signal rule") — and
-/// `.embeddingUnavailable` is reported via `onDiagnostic` on every such
-/// search, never silently. Each initializer that takes an embedder is
+/// signal never ranks anything, not a crash or a special case (plan.md §5
+/// "absent-signal rule"), and `.embeddingUnavailable` is reported via
+/// `onDiagnostic` on every such search, never silently. When the cosine
+/// signal runs, an item with no embedding gets no cosine rank, and each
+/// item with an embedding gets a cosine rank, also for a zero or negative
+/// score. `Match.signals.cosine` holds `0.0` for an item with no cosine
+/// score, so a `0.0` alone does not show that the item has no embedding. Each initializer that takes an embedder is
 /// synchronous and embeds nothing. A searcher with an embedder over
 /// not-yet-embedded items (`init(items:mode:weights:embedder:selection:
 /// decision:onDiagnostic:)`, or `init(index:mode:weights:embedder:selection:

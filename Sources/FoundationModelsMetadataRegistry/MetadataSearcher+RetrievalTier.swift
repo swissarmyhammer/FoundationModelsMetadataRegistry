@@ -127,9 +127,11 @@ extension MetadataSearcher {
   /// A zero `weights.cosine` also returns `nil`, but *without* the
   /// diagnostic: the caller doesn't want the signal, so there's no reason
   /// to embed the query or warn about a missing embedder for it. An item
-  /// with no stored embedding scores `0.0` — the absent-signal rule
-  /// (plan.md §5): it contributes nothing to cosine but still ranks via
-  /// BM25 + trigram.
+  /// with no stored embedding gets a `nil` score — the absent-signal rule
+  /// (plan.md §5): `HybridRanker` gives it no cosine rank, but it can
+  /// still rank through BM25 + trigram. Each item with an embedding gets
+  /// its real score, and `HybridRanker` ranks each one, also a zero or
+  /// negative score.
   ///
   /// - Parameters:
   ///   - intent: the search query.
@@ -141,14 +143,15 @@ extension MetadataSearcher {
   ///   - onDiagnostic: called with `.embeddingUnavailable` when cosine
   ///     was wanted but can't contribute.
   /// - Returns: one raw cosine score per document, positionally aligned
-  ///   with `index.ids`, or `nil` to skip the cosine signal.
+  ///   with `index.ids` (`nil` for a document with no embedding), or `nil`
+  ///   to skip the cosine signal.
   private static func computeCosineScores(
     intent: String,
     index: MetadataIndex<Item>,
     weights: Weights,
     embedder: (any PooledEmbedding)?,
     onDiagnostic: @Sendable (MetadataDiagnostic) -> Void,
-  ) async -> [Double]? {
+  ) async -> [Double?]? {
     // Cosine only runs when configured to actually count: a zero weight
     // means the caller doesn't want the signal, so there's no reason to
     // embed the query or warn about a missing embedder for it.
@@ -161,8 +164,7 @@ extension MetadataSearcher {
     }
 
     return index.ids.map { id in
-      guard let itemEmbedding = index.embedding(forID: id) else { return 0.0 }
-      return CosineScoring.cosineSimilarity(queryEmbedding, itemEmbedding)
+      index.embedding(forID: id).map { CosineScoring.cosineSimilarity(queryEmbedding, $0) }
     }
   }
 
