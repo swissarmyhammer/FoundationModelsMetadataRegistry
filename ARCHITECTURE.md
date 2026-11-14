@@ -9,3 +9,7 @@ This package has not shipped, and none of the swissarmyhammer packages has. We d
 - Do not keep a schema version only so that an old file can still be read.
 
 This rule holds until we ship. When we ship, this section will say what we promise from then on.
+
+## Nested packages
+
+- `Benchmarks/` is a separate SwiftPM package that holds the labeled relevance fixture, the ranking metrics and the benchmark report. The root manifest does not name it and CI does not build or run it, so use `swift test --package-path Benchmarks` to run its tests.
