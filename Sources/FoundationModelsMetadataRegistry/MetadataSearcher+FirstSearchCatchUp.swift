@@ -5,8 +5,8 @@
 extension MetadataSearcher {
   /// Where the one-time embed catch-up a synchronously built searcher runs at its first search stands.
   ///
-  /// `init(items:mode:weights:embedder:selection:onDiagnostic:)` and
-  /// `init(index:mode:weights:embedder:selection:onDiagnostic:)` are
+  /// `init(items:mode:weights:embedder:selection:decision:onDiagnostic:)` and
+  /// `init(index:mode:weights:embedder:selection:decision:onDiagnostic:)` are
   /// synchronous and cannot await an embedder, so a searcher built that
   /// way over not-yet-embedded
   /// items starts cosine-blind. Rather than reporting
@@ -62,7 +62,7 @@ extension MetadataSearcher {
   /// the next `update(items:)` retries whatever is still pending.
   ///
   /// A searcher built with `init(sharing:mode:weights:selection:
-  /// onDiagnostic:)` does not embed the catalog itself. It awaits the one
+  /// decision:onDiagnostic:)` does not embed the catalog itself. It awaits the one
   /// shared embed of its `SharedCatalogEmbedding` and merges that batch
   /// into its own live `index`, through the same hash-checked
   /// `MetadataIndex.EmbeddedBatch.merged(into:)` as its own catch-up. Thus

@@ -21,20 +21,26 @@ extension MetadataSearcher {
   /// an empty catalog) ranks nothing, so it opens no span, records no rank
   /// duration and names no signal.
   ///
-  /// Internal, not private, because `search(intent:limit:)` lives in its
-  /// own file.
+  /// Internal, not private, because `search(intent:limit:)` and the
+  /// decision tier live in their own files.
+  ///
+  /// The caller gives the index snapshot to rank. Each `Match` takes its
+  /// block and its `item` from that snapshot, so a concurrent
+  /// `update(items:)` during the cosine embed cannot mix two catalogs.
   ///
   /// - Parameters:
   ///   - intent: the search query.
   ///   - limit: the maximum number of matches to return.
+  ///   - index: the index snapshot to rank, usually the live `index`.
   /// - Returns: the fused matches, with the `retrieval` tier and the
   ///   signals that ranked them.
-  func retrievalSearch(intent: String, limit: Int) async -> TierAnswer {
+  func retrievalSearch(intent: String, limit: Int, over index: MetadataIndex<Item>) async
+    -> TierAnswer
+  {
     guard limit > 0, !index.ids.isEmpty else {
       return TierAnswer(tier: .retrieval, signals: [], matches: [])
     }
 
-    let index = index
     let weights = weights
     let cosineScores = await Self.computeCosineScores(
       intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic,
@@ -121,9 +127,11 @@ extension MetadataSearcher {
   /// A zero `weights.cosine` also returns `nil`, but *without* the
   /// diagnostic: the caller doesn't want the signal, so there's no reason
   /// to embed the query or warn about a missing embedder for it. An item
-  /// with no stored embedding scores `0.0` — the absent-signal rule
-  /// (plan.md §5): it contributes nothing to cosine but still ranks via
-  /// BM25 + trigram.
+  /// with no stored embedding gets a `nil` score — the absent-signal rule
+  /// (plan.md §5): `HybridRanker` gives it no cosine rank, but it can
+  /// still rank through BM25 + trigram. Each item with an embedding gets
+  /// its real score, and `HybridRanker` ranks each one, also a zero or
+  /// negative score.
   ///
   /// - Parameters:
   ///   - intent: the search query.
@@ -135,14 +143,15 @@ extension MetadataSearcher {
   ///   - onDiagnostic: called with `.embeddingUnavailable` when cosine
   ///     was wanted but can't contribute.
   /// - Returns: one raw cosine score per document, positionally aligned
-  ///   with `index.ids`, or `nil` to skip the cosine signal.
+  ///   with `index.ids` (`nil` for a document with no embedding), or `nil`
+  ///   to skip the cosine signal.
   private static func computeCosineScores(
     intent: String,
     index: MetadataIndex<Item>,
     weights: Weights,
     embedder: (any PooledEmbedding)?,
     onDiagnostic: @Sendable (MetadataDiagnostic) -> Void,
-  ) async -> [Double]? {
+  ) async -> [Double?]? {
     // Cosine only runs when configured to actually count: a zero weight
     // means the caller doesn't want the signal, so there's no reason to
     // embed the query or warn about a missing embedder for it.
@@ -155,8 +164,7 @@ extension MetadataSearcher {
     }
 
     return index.ids.map { id in
-      guard let itemEmbedding = index.embedding(forID: id) else { return 0.0 }
-      return CosineScoring.cosineSimilarity(queryEmbedding, itemEmbedding)
+      index.embedding(forID: id).map { CosineScoring.cosineSimilarity(queryEmbedding, $0) }
     }
   }
 

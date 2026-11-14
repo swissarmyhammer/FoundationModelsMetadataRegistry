@@ -4,7 +4,7 @@ import Testing
 
 /// First-search embed catch-up for a synchronously built searcher
 /// (plan.md §5, §8): a `MetadataSearcher` built with `init(index:mode:
-/// weights:embedder:selection:onDiagnostic:)` over not-yet-embedded items
+/// weights:embedder:selection:decision:onDiagnostic:)` over not-yet-embedded items
 /// embeds every pending block at its first search, one time, whichever tier
 /// answers. Split out of `EmbeddingTests` to keep each file within the
 /// project's line-length conventions; shares its `FixtureItem` fixture via

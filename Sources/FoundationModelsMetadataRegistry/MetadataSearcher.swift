@@ -11,8 +11,8 @@ import FoundationModelsExtras
 /// than included at zero, so the ceiling never counts a signal that couldn't
 /// have scored anything (plan.md §5 "absent-signal rule"). `cosine` only
 /// takes effect when the searcher is configured with an embedder
-/// (`init(items:mode:weights:embedder:selection:onDiagnostic:)` or
-/// `init(index:mode:weights:embedder:selection:onDiagnostic:)`) — without
+/// (`init(items:mode:weights:embedder:selection:decision:onDiagnostic:)` or
+/// `init(index:mode:weights:embedder:selection:decision:onDiagnostic:)`) — without
 /// one, cosine never ranks
 /// anything regardless of this weight — and a zero `cosine` weight skips the
 /// cosine computation without an `.embeddingUnavailable` diagnostic.
@@ -28,15 +28,17 @@ public typealias Weights = SignalWeights
 /// FoundationModelsRanker's `HybridRanker`, plan.md §5) answers with no
 /// session, no tokens. Without an
 /// `embedder` (or before any catalog item has been embedded), the cosine
-/// signal never ranks anything and every `Match.signals.cosine` is `0.0` —
-/// the same "no embedding available" value `Signals.cosine` documents, not a
-/// crash or a special case (plan.md §5 "absent-signal rule") — and
-/// `.embeddingUnavailable` is reported via `onDiagnostic` on every such
-/// search, never silently. Each initializer that takes an embedder is
+/// signal never ranks anything, not a crash or a special case (plan.md §5
+/// "absent-signal rule"), and `.embeddingUnavailable` is reported via
+/// `onDiagnostic` on every such search, never silently. When the cosine
+/// signal runs, an item with no embedding gets no cosine rank, and each
+/// item with an embedding gets a cosine rank, also for a zero or negative
+/// score. `Match.signals.cosine` holds `0.0` for an item with no cosine
+/// score, so a `0.0` alone does not show that the item has no embedding. Each initializer that takes an embedder is
 /// synchronous and embeds nothing. A searcher with an embedder over
 /// not-yet-embedded items (`init(items:mode:weights:embedder:selection:
-/// onDiagnostic:)`, or `init(index:mode:weights:embedder:selection:
-/// onDiagnostic:)` over an index with no embeddings) closes that gap
+/// decision:onDiagnostic:)`, or `init(index:mode:weights:embedder:selection:
+/// decision:onDiagnostic:)` over an index with no embeddings) closes that gap
 /// itself: its first
 /// `search(intent:limit:)` embeds every pending block one time before it
 /// ranks (see `FirstSearchCatchUp`), so it never reports
@@ -47,10 +49,15 @@ public typealias Weights = SignalWeights
 /// `item` by id lookup and mapping its `RankDiagnostic`s into the same-named
 /// `MetadataDiagnostic` cases; otherwise it throws
 /// `SelectionTierUnavailable` (FoundationModelsRanker's error, re-exported)
-/// rather than silently doing something the caller didn't ask for. `.auto`
-/// resolves to `.selection`
-/// when a selection tier is configured, `.retrieval` otherwise (plan.md §7
-/// "selection when a model is configured, else retrieval").
+/// rather than silently doing something the caller didn't ask for.
+/// `.decision` ranks each item of the whole catalog by the P(yes) that a
+/// FoundationModelsDecision `DecisionModel` gives, when a decision tier is
+/// configured (`init(..., decision:)`, see `DecisionConfig`); otherwise it
+/// throws `DecisionTierUnavailable`. `.auto`
+/// resolves to `.decision` when a decision tier is configured, else to
+/// `.selection` when a selection tier is configured, else to `.retrieval`
+/// (plan.md §7 "selection when a model is configured, else retrieval", with
+/// the decision tier first).
 public actor MetadataSearcher<Item: SearchableMetadata> {
   /// The in-memory index built from the catalog's items at `init`.
   ///
@@ -92,6 +99,14 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
   /// tier from the same configuration whenever the index changes.
   let selectionConfig: SelectionConfig?
 
+  /// This searcher's decision tier configuration, or `nil` when none was
+  /// supplied at `init`.
+  ///
+  /// The decision tier ranks each item of the live `index` at each search,
+  /// so `update(items:)` keeps this value and builds
+  /// nothing from it.
+  let decisionConfig: DecisionConfig?
+
   /// A selection tier paired with the index snapshot it answers over.
   ///
   /// `selectionSearch(_:intent:limit:)` re-attaches each returned id's
@@ -130,7 +145,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
 
   /// The catalog embed that the first search awaits in place of an embed of
   /// its own (see `runFirstSearchCatchUp()`), or `nil`. Set only by
-  /// `init(sharing:mode:weights:selection:onDiagnostic:)`.
+  /// `init(sharing:mode:weights:selection:decision:onDiagnostic:)`.
   let sharedEmbedding: SharedCatalogEmbedding<Item>?
 
   /// This searcher's reload embed loop state (see `ReloadEmbedLoop` in
@@ -143,7 +158,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
   ///
   /// Cosine never ranks anything and every search degrades to
   /// keyword-only, reported via `.embeddingUnavailable` (plan.md §5). Use
-  /// `init(items:mode:weights:embedder:selection:onDiagnostic:)` to wire up
+  /// `init(items:mode:weights:embedder:selection:decision:onDiagnostic:)` to wire up
   /// cosine.
   ///
   /// - Parameters:
@@ -156,6 +171,8 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
   ///     Defaults to `1.0` for every signal.
   ///   - selection: this searcher's selection tier configuration (plan.md
   ///     §6), or `nil` (the default) to leave `.selection` unavailable.
+  ///   - decision: this searcher's decision tier configuration, or `nil`
+  ///     (the default) to leave `.decision` unavailable.
   ///   - onDiagnostic: called for every diagnostic emitted while building
   ///     the index (currently only `.duplicateId`), and by later tiers as
   ///     they land. Defaults to logging via `MetadataDiagnostic.log(_:)`.
@@ -164,6 +181,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     mode: SearchMode = .auto,
     weights: Weights = Weights(),
     selection: SelectionConfig? = nil,
+    decision: DecisionConfig? = nil,
     onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
   ) {
     self.init(
@@ -172,6 +190,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
       weights: weights,
       embedder: nil,
       selection: selection,
+      decision: decision,
       onDiagnostic: onDiagnostic,
     )
   }
@@ -204,9 +223,11 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
   ///     Defaults to `1.0` for every signal.
   ///   - embedder: the embedder to embed every item's block with at the
   ///     first search, and the query with at each search. `nil` behaves
-  ///     like `init(items:mode:weights:selection:onDiagnostic:)`.
+  ///     like `init(items:mode:weights:selection:decision:onDiagnostic:)`.
   ///   - selection: this searcher's selection tier configuration (plan.md
   ///     §6), or `nil` (the default) to leave `.selection` unavailable.
+  ///   - decision: this searcher's decision tier configuration, or `nil`
+  ///     (the default) to leave `.decision` unavailable.
   ///   - onDiagnostic: called for every diagnostic emitted while building
   ///     the index and while searching. Defaults to logging via
   ///     `MetadataDiagnostic.log(_:)`.
@@ -216,6 +237,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     weights: Weights = Weights(),
     embedder: (any PooledEmbedding)?,
     selection: SelectionConfig? = nil,
+    decision: DecisionConfig? = nil,
     onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
   ) {
     self.init(
@@ -224,6 +246,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
       weights: weights,
       embedder: embedder,
       selection: selection,
+      decision: decision,
       onDiagnostic: onDiagnostic,
     )
   }
@@ -254,6 +277,8 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
   ///     Defaults to `nil` (keyword-only).
   ///   - selection: this searcher's selection tier configuration (plan.md
   ///     §6), or `nil` (the default) to leave `.selection` unavailable.
+  ///   - decision: this searcher's decision tier configuration, or `nil`
+  ///     (the default) to leave `.decision` unavailable.
   ///   - onDiagnostic: called for every diagnostic emitted while searching.
   ///     Defaults to logging via `MetadataDiagnostic.log(_:)`.
   public init(
@@ -262,6 +287,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     weights: Weights = Weights(),
     embedder: (any PooledEmbedding)? = nil,
     selection: SelectionConfig? = nil,
+    decision: DecisionConfig? = nil,
     onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
   ) {
     self.init(
@@ -271,13 +297,14 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
       embedder: embedder,
       sharedEmbedding: nil,
       selection: selection,
+      decision: decision,
       onDiagnostic: onDiagnostic,
     )
   }
 
   /// The designated initializer that every other initializer calls. Each
   /// parameter is the same as in `init(index:mode:weights:embedder:
-  /// selection:onDiagnostic:)`, and `sharedEmbedding` is the shared catalog
+  /// selection:decision:onDiagnostic:)`, and `sharedEmbedding` is the shared catalog
   /// embed that the first search awaits, or `nil`. It records the size of
   /// `index` in the `RegistryTelemetry.MetricName.catalogSize` gauge.
   init(
@@ -287,6 +314,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     embedder: (any PooledEmbedding)?,
     sharedEmbedding: SharedCatalogEmbedding<Item>?,
     selection: SelectionConfig?,
+    decision: DecisionConfig?,
     onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void,
   ) {
     self.index = index
@@ -296,6 +324,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     self.sharedEmbedding = sharedEmbedding
     self.onDiagnostic = onDiagnostic
     selectionConfig = selection
+    decisionConfig = decision
     firstSearchCatchUp = embedder == nil ? .done : .pending
     reloadEmbedLoop = .idle
     selectionTier = Self.buildSelectionTierIfConfigured(

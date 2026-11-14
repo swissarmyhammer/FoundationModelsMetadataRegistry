@@ -48,7 +48,8 @@ enum RegistryTelemetry {
     static let search = namePrefix + "search"
 
     /// The child span of a search around one call to a ranker: the
-    /// hybrid ranker of the retrieval tier, or the selection tier.
+    /// hybrid ranker of the retrieval tier, the selection tier, or the
+    /// decision model of the decision tier.
     static let rank = namePrefix + "rank"
 
     /// The span of one `MetadataSearcher.update(items:)` call.
@@ -126,6 +127,10 @@ enum RegistryTelemetry {
 
     /// The selection tier: a model session picks the matches.
     case selection
+
+    /// The decision tier: the retrieval tier gives the candidates, and a
+    /// decision model reranks them by the probability of "yes".
+    case decision
   }
 
   /// One signal that ranked a search: an element of
@@ -142,6 +147,10 @@ enum RegistryTelemetry {
 
     /// The model session of the selection tier.
     case selection
+
+    /// The decision model of the decision tier. It follows the retrieval
+    /// signals that gave the candidates.
+    case decision
   }
 
   /// The ranker of a rank span: the value of ``AttributeKey/rankRanker``.
@@ -151,6 +160,10 @@ enum RegistryTelemetry {
 
     /// `SelectionTier` of FoundationModelsRanker.
     case selection
+
+    /// The `DecisionSession` of the decision tier, which asks the decision
+    /// model one batch of questions.
+    case decision
   }
 
   /// The path that started a catalog embed: the value of
@@ -199,13 +212,16 @@ enum RegistryTelemetry {
     /// throws.
     ///
     /// Dimensions: ``DimensionKey/tier``, as a ``Tier`` raw value, or
-    /// ``noTier`` when a `.selection` search has no selection tier; and
+    /// ``noTier`` when a `.selection` search has no selection tier or a
+    /// `.decision` search has no decision tier; and
     /// ``DimensionKey/outcome``, as an ``Outcome`` raw value.
     static let searchDuration = namePrefix + "search.duration"
 
     /// A `Timer` (nanoseconds): the duration of one call to a ranker of
-    /// a search, the hybrid ranker of the retrieval tier or the
-    /// selection tier. A search that ranks nothing records no value.
+    /// a search: the hybrid ranker of the retrieval tier, the selection
+    /// tier, or the decision model of the decision tier. Each call records
+    /// one value, also a call that throws. A search that ranks nothing
+    /// records no value.
     ///
     /// Dimension: ``DimensionKey/ranker``, as a ``Ranker`` raw value.
     static let rankDuration = namePrefix + "rank.duration"
@@ -237,7 +253,8 @@ enum RegistryTelemetry {
   }
 
   /// The value of ``DimensionKey/tier`` when no tier answered: a
-  /// `.selection` search on a searcher that has no selection tier.
+  /// `.selection` search on a searcher that has no selection tier, or a
+  /// `.decision` search on a searcher that has no decision tier.
   static let noTier = "none"
 
   /// The result of a search: the value of ``DimensionKey/outcome``.

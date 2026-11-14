@@ -20,7 +20,20 @@ public enum SearchMode: String, Sendable {
   /// `SelectionTierUnavailable`.
   case selection
 
-  /// Selection when a selection tier is configured, retrieval otherwise
-  /// (plan.md §7's default).
+  /// The decision model ranks the whole catalog. A FoundationModelsDecision
+  /// `DecisionModel` gives the probability of "yes" for one yes-or-no
+  /// question about each catalog item, in batches of at most
+  /// `DecisionConfig.batchSize` questions. An item that the retrieval tier
+  /// does not find also gets a question. The matches are the items whose
+  /// probability is not below `DecisionConfig.minimumProbability`, in the
+  /// order of that probability.
+  /// The decision tier is configured with
+  /// `MetadataSearcher.init(..., decision:)`. Requesting this mode without
+  /// a configured decision tier throws `DecisionTierUnavailable`.
+  case decision
+
+  /// Decision when a decision tier is configured, else selection when a
+  /// selection tier is configured, else retrieval (plan.md §7's default,
+  /// with the decision tier first).
   case auto
 }

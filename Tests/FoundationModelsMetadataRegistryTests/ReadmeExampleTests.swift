@@ -54,6 +54,16 @@ struct ReadmeExampleTests {
   /// The README, relative to the repository root.
   private static let readmeFileName = "README.md"
 
+  /// The text that the README must spell for the decision tier: its
+  /// configuration type, its batch size, its search mode, and the command
+  /// that runs the benchmark that compares the tiers.
+  private static let decisionTierTexts = [
+    "DecisionConfig(",
+    "batchSize",
+    "mode: .decision",
+    "swift run -c release --package-path Benchmarks RankingBenchmark",
+  ]
+
   @Test("the README example returns its limit of matches, commit first")
   func commitRanksFirstForTheReadmeQuery() async throws {
     let searcher = MetadataSearcher(items: Self.commands, mode: .retrieval)
@@ -86,6 +96,19 @@ struct ReadmeExampleTests {
       This suite runs the README's example, so every line of it must still be in \
       \(Self.readmeFileName). Update both together; these lines are no longer there: \
       \(missing)
+      """,
+    )
+  }
+
+  @Test("the README names the decision tier and the benchmark command")
+  func readmeNamesTheDecisionTier() throws {
+    let readme = try RepositoryFiles.text(at: Self.readmeFileName)
+    let missing = Self.decisionTierTexts.filter { !readme.contains($0) }
+    #expect(
+      missing.isEmpty,
+      """
+      \(Self.readmeFileName) must show the decision tier and the benchmark command; \
+      it does not spell: \(missing)
       """,
     )
   }

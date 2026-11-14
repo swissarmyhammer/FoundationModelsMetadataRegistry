@@ -38,7 +38,10 @@ embedders come from [`../FoundationModelsRouter`](../FoundationModelsRouter/plan
 > `integration-package-path` input again. Everything decision #14 says about
 > the Router removal still holds; the one line of it that no longer does is
 > "the repository has no integration suite", and decision #15 says what stands
-> there instead.
+> there instead. Since 2026-09-30 (decision #16), one suite of the package,
+> `PooledEmbedderRealModelTests`, loads the MLX embedding model
+> `mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ` through a `PooledEmbedder`, so
+> "no MLX, no tiny `mlx-community` model" above is history.
 >
 > **Update 2026-09-26 — decision #16.** The package now has two dependencies:
 > `FoundationModelsRanker` and the core `FoundationModelsExtras` product, which
@@ -309,7 +312,99 @@ Mechanics, lifted from the shipped `Librarian` and generalized:
   `RoutedLLM.makeGuidedSession(_:instructions:)` in production — lifted from Multitool
   and now shipped here, for Multitool to import back (M5).
 
+## 6a. Decision tier — the probability ranker *(added 2026-11-14 — decision #17; changed 2026-11-14: the model scores the whole catalog)*
+
+The decision tier ranks the relevance of catalog items with a
+FoundationModelsDecision `DecisionModel`. `SearchMode.decision` selects it. The
+model scores the WHOLE catalog, not only the retrieval candidates, so it can
+find an item that the retrieval tier does not find. The tier takes the index
+snapshot before its first suspension, and then has two steps:
+
+1. **Retrieval.** The retrieval tier (§5) ranks the same snapshot, with the
+   catalog size as its limit (BM25, trigram and cosine, fused by RRF). The
+   decision tier uses this result only to attach the `Signals` of each match
+   and to order equal scores.
+2. **Decision.** One `DecisionSession` on the model, whose state is
+   `.text(intent)`, answers one yes-or-no `Question` for each catalog item, in
+   catalog order. The session gets the questions in batches of at most
+   `batchSize`. All batches go to the one session, so a local model reads the
+   intent one time and uses it again for each question. The score of each item
+   is its probability of "yes", P(yes). The tier removes each item whose P(yes)
+   is below `minimumProbability`, sorts the remaining items by P(yes), and
+   returns at most `limit` of them. For equal P(yes), the retrieval order comes
+   first, and then the catalog order of the items that the retrieval tier does
+   not rank. Thus an intent that no item satisfies gives an empty result.
+
+An empty catalog or `limit <= 0` gives an empty result, and the tier asks the
+model nothing. Each `Match` keeps the retrieval `Signals` of its item. An item
+that the retrieval tier does not rank gets the `Signals` value that the
+retrieval tier uses for "no signal": `0.0` for each signal. The `score` of each
+`Match` is its P(yes). A `.decision` search on a searcher that has no decision
+tier throws `DecisionTierUnavailable`. It does not use a different tier in its
+place.
+
+**`DecisionConfig`.** The caller gives the tier to
+`MetadataSearcher.init(..., decision:)`. The initializer is:
+
+```swift
+public init(
+  model: any DecisionModel,
+  batchSize: Int = defaultBatchSize,                      // 64
+  minimumProbability: Double = defaultMinimumProbability, // 0.5
+  question: @escaping @Sendable (String, String) -> Question = DecisionConfig.relevanceQuestion,
+)
+```
+
+- `model` gives P(yes) for each catalog item.
+- `batchSize` is the largest count of questions in one
+  `DecisionSession.decide` call. A catalog larger than `batchSize` goes to the
+  session in more than one call. A value below 1 becomes 1. The earlier
+  `candidateCount` property is gone, with no alias: the model scores the whole
+  catalog.
+- `minimumProbability` is the lowest P(yes) that a match must have. A value
+  outside `0...1` becomes the nearest end of that range.
+- `question` makes the yes-or-no question for one catalog item from its id and
+  its block. The default, `DecisionConfig.relevanceQuestion(id:block:)`, asks "Does
+  this catalog entry do what the request asks?" Its criteria say that "yes"
+  means the entry does the requested task, and that "no" means the entry is
+  unrelated, or only shares words with the request.
+
+**The `.auto` order.** `.auto` selects the decision tier when the searcher has
+a `DecisionConfig`, else the selection tier (§6) when it has a
+`SelectionConfig`, else the retrieval tier.
+
+**Telemetry.** The decision tier uses the vocabulary of `RegistryTelemetry`:
+
+- The search span holds `search.mode` `decision` for a `.decision` searcher,
+  and `search.tier` `decision` when the decision tier answered.
+- `search.rankers` holds the retrieval signals, then `decision`.
+- The retrieval step keeps its own rank span, with `rank.ranker` `hybrid`.
+  The calls to the model run in one more rank span, with `rank.ranker`
+  `decision` and the catalog size as `rank.candidate_count`. The questions of
+  all batches go in that one span.
+- The `rank.duration` timer records one value with the `ranker` dimension
+  `decision` for each search that asks the model, also when the model throws.
+- The `search.duration` timer records the `tier` dimension `decision`. A
+  `.decision` search on a searcher that has no decision tier records the
+  `tier` dimension `none`.
+- No span, log record or metric holds the intent, a block or a question.
+
+**Why the library links only the core `FoundationModelsDecision` product.**
+That product holds `DecisionModel`, `DecisionSession` and `Question`, and it
+has no package dependencies. `DecisionConfig` takes `any DecisionModel`, as
+`SelectionConfig` takes `any LanguageModel`, so the library does not need a
+model runtime. The `FoundationModelsDecisionPooled` product holds
+`PooledDecisionModel`, and it compiles MLX and llama.cpp. A caller that wants a
+pooled decision model links that product in its own package and gives the model
+to `DecisionConfig`. Thus a caller that uses only the retrieval tier does not
+compile a model runtime.
+
 ## 7. Modes
+
+*(Extended 2026-11-14 — decision #17: `SearchMode` has a fourth case,
+`.decision`, and `.auto` selects the decision tier first. §6a describes the
+tier and the `.auto` order. The code block below shows the three cases of the
+first design.)*
 
 ```swift
 public enum SearchMode: Sendable {
@@ -660,6 +755,67 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
     share it, with a work queue for each model. The router and the registry both
     use the pool, so the registry cannot load a second copy of a model that the
     router already holds.
+17. *(2026-11-14 — extends decision #6 and §7: `SearchMode` gets a fourth case)*
+    **The registry gets a decision tier.** `SearchMode.decision` ranks the
+    whole catalog by the P(yes) that a FoundationModelsDecision
+    `DecisionModel` gives for one yes-or-no question about each catalog item,
+    in batches of at most `DecisionConfig.batchSize` questions. A
+    `DecisionConfig` configures the tier, and `.auto` selects it before the
+    selection tier. §6a describes the tier. The manifest declares a third
+    family package, `FoundationModelsDecision`, and the library target uses its
+    core product only.
+
+    **The decision tier and the selection tier stay together for a short
+    time.** The `Benchmarks/` package compares the retrieval, selection and
+    decision tiers on a labeled fixture. When the benchmark result is
+    available, the tier that loses is deleted. ARCHITECTURE.md says that the
+    package keeps no backward compatibility, so the deletion keeps no
+    deprecated alias and no shim for the tier that loses.
+
+    Why: the selection tier asks a model to write the ids of the matches. The
+    decision tier asks a model one yes-or-no question for each candidate and
+    reads the probability of "yes". That probability gives a score for each
+    item, and a threshold removes the items that do not satisfy the intent.
+    The benchmark tells which tier ranks the catalog better.
+
+    *(2026-11-14)* After the first benchmark run, the user chose the
+    whole-catalog scope: the decision model scores each catalog item, not only
+    the first 20 retrieval candidates, because retrieval recall@5 on
+    paraphrase intents was 0.20. `DecisionConfig.batchSize` (default 64)
+    replaces `candidateCount`, which is gone with no alias.
+
+    **The first benchmark run (2026-11-14).** The run measured all six
+    configurations on an Apple M5 Max with macOS 27.2, at commit `65dc2a0`,
+    with 3 repeats of each intent. The table gives hit@1 and MRR for each
+    kind of intent, the off-topic empty rate, and the p50 and p95 latency of
+    a search. The full report, and the machine and the model revisions, are
+    in [`Benchmarks/Results/2026-11-14/`](Benchmarks/Results/2026-11-14/report.md).
+
+    | Configuration | lexical hit@1 | lexical MRR | paraphrase hit@1 | paraphrase MRR | multiStep hit@1 | multiStep MRR | offTopic empty rate | p50 ms | p95 ms |
+    | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+    | retrieval-keyword | 1.00 | 1.00 | 0.10 | 0.10 | 1.00 | 1.00 | 0.00 | 0.6 | 3.9 |
+    | retrieval-semantic | 1.00 | 1.00 | 0.10 | 0.13 | 1.00 | 1.00 | 0.00 | 7.7 | 10.2 |
+    | selection-qwen3-4b | 1.00 | 1.00 | 0.20 | 0.20 | 0.50 | 0.50 | 1.00 | 449.7 | 501.9 |
+    | selection-apple | 1.00 | 1.00 | 0.83 | 0.83 | 1.00 | 1.00 | 0.93 | 1382.3 | 1511.1 |
+    | decision-qwen3-4b | 0.90 | 0.93 | 0.50 | 0.55 | 0.80 | 0.80 | 0.90 | 877.1 | 1014.7 |
+    | decision-decider-4b | 1.00 | 1.00 | 0.70 | 0.70 | 0.50 | 0.50 | 1.00 | 1234.7 | 1322.6 |
+
+    **The second benchmark run (2026-11-14, whole catalog).** The run measured
+    seven configurations on the same machine, at commit `465c15b` plus the new
+    `decision-h2o-lightning-4b` configuration, with 3 repeats of each intent.
+    The decision tier scored all 62 catalog items in each search. The full
+    report is in
+    [`Benchmarks/Results/2026-11-14-whole-catalog/`](Benchmarks/Results/2026-11-14-whole-catalog/report.md).
+
+    | Configuration | lexical hit@1 | lexical MRR | paraphrase hit@1 | paraphrase MRR | multiStep hit@1 | multiStep MRR | offTopic empty rate | p50 ms | p95 ms |
+    | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+    | retrieval-keyword | 1.00 | 1.00 | 0.10 | 0.10 | 1.00 | 1.00 | 0.00 | 0.4 | 3.9 |
+    | retrieval-semantic | 1.00 | 1.00 | 0.10 | 0.13 | 1.00 | 1.00 | 0.00 | 5.7 | 8.5 |
+    | selection-qwen3-4b | 1.00 | 1.00 | 0.20 | 0.20 | 0.50 | 0.50 | 1.00 | 472.4 | 558.4 |
+    | selection-apple | 1.00 | 1.00 | 0.83 | 0.83 | 1.00 | 1.00 | 0.90 | 1430.3 | 2058.6 |
+    | decision-qwen3-4b | 0.90 | 0.90 | 0.70 | 0.75 | 0.80 | 0.80 | 0.90 | 2993.5 | 3789.5 |
+    | decision-decider-4b | 1.00 | 1.00 | 1.00 | 1.00 | 0.60 | 0.60 | 1.00 | 3268.5 | 3335.6 |
+    | decision-h2o-lightning-4b | 1.00 | 1.00 | 0.90 | 0.90 | 0.80 | 0.80 | 0.90 | 3782.8 | 3825.3 |
 
 ## 12. Public API (as shipped)
 

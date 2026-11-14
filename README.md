@@ -53,6 +53,29 @@ loads nothing. The first search loads the model and embeds the catalog.
 Add a `SelectionConfig` to let an LLM select verbatim ids
 from catalogs too large for one prompt.
 
+Add a `DecisionConfig` to rank the whole catalog with a decision model. The
+model gives the probability of "yes" for one yes-or-no question about each
+catalog item, also for an item that the retrieval tier does not find. The
+questions go to one decision session in batches of at most `batchSize`. The
+matches are the items with a probability of 0.5 or more, sorted by that
+probability. `PooledDecisionModel` is in the `FoundationModelsDecisionPooled`
+product of the FoundationModelsDecision package. This package does not link
+that product, so add it to your own package:
+
+```swift
+import FoundationModelsDecisionPooled
+
+let decided = MetadataSearcher(
+    items: commands,
+    mode: .decision,
+    decision: DecisionConfig(model: PooledDecisionModel(ref: "mlx-community/Qwen3-4B-4bit")),
+)
+```
+
+`DecisionConfig(model:batchSize:minimumProbability:question:)` has the defaults
+`batchSize: 64` and `minimumProbability: 0.5`. A `.decision` search without a
+`DecisionConfig` throws `DecisionTierUnavailable`.
+
 ## Install
 
 Add the package to `Package.swift`:
@@ -75,6 +98,16 @@ Hugging Face cache; a later run loads them from the cache. Run one with:
 ```sh
 swift run --package-path Examples SemanticSearch
 ```
+
+The separate [`Benchmarks/`](Benchmarks/) package compares the retrieval,
+selection and decision tiers on a labeled catalog. A run loads real models, and
+the first run downloads them into the Hugging Face cache. Run it with:
+
+```sh
+swift run -c release --package-path Benchmarks RankingBenchmark --output <dir>
+```
+
+The run writes `report.json` and `report.md` to `<dir>`.
 
 The full design (architecture, diagnostics, the
 hot-reload contract) is in [`plan.md`](plan.md).

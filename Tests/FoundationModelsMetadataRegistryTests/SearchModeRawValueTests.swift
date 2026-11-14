@@ -7,10 +7,10 @@ import Testing
 @Suite("SearchMode raw value")
 struct SearchModeRawValueTests {
   /// Each mode of the searcher, in the order of the declaration.
-  static let modes: [SearchMode] = [.retrieval, .selection, .auto]
+  static let modes: [SearchMode] = [.retrieval, .selection, .decision, .auto]
 
   /// The telemetry name of each mode of ``modes``, in the same order.
-  static let names = ["retrieval", "selection", "auto"]
+  static let names = ["retrieval", "selection", "decision", "auto"]
 
   @Test("The raw value of each mode is its telemetry name", arguments: zip(modes, names))
   func rawValueIsTheTelemetryName(mode: SearchMode, name: String) {

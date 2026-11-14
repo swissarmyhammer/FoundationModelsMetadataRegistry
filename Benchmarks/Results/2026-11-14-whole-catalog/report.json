@@ -1,0 +1,530 @@
+{
+  "recallCutoff" : 5,
+  "rows" : [
+    {
+      "name" : "retrieval-keyword",
+      "status" : {
+        "measured" : {
+          "_0" : {
+            "errorCount" : 0,
+            "firstSearch" : [
+              0,
+              2260125000000000
+            ],
+            "kinds" : [
+              {
+                "intentCount" : 30,
+                "kind" : "lexical",
+                "metrics" : {
+                  "answerable" : {
+                    "_0" : {
+                      "hitAt1" : 1,
+                      "meanReciprocalRank" : 1,
+                      "recallAtCutoff" : 1
+                    }
+                  }
+                }
+              },
+              {
+                "intentCount" : 30,
+                "kind" : "paraphrase",
+                "metrics" : {
+                  "answerable" : {
+                    "_0" : {
+                      "hitAt1" : 0.1,
+                      "meanReciprocalRank" : 0.1,
+                      "recallAtCutoff" : 0.1
+                    }
+                  }
+                }
+              },
+              {
+                "intentCount" : 30,
+                "kind" : "multiStep",
+                "metrics" : {
+                  "answerable" : {
+                    "_0" : {
+                      "hitAt1" : 1,
+                      "meanReciprocalRank" : 1,
+                      "recallAtCutoff" : 0.95
+                    }
+                  }
+                }
+              },
+              {
+                "intentCount" : 30,
+                "kind" : "offTopic",
+                "metrics" : {
+                  "offTopic" : {
+                    "_0" : {
+                      "emptyRate" : 0,
+                      "meanFalsePositiveCount" : 5
+                    }
+                  }
+                }
+              }
+            ],
+            "p50" : [
+              0,
+              369208000000000
+            ],
+            "p95" : [
+              0,
+              3922041000000000
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name" : "retrieval-semantic",
+      "status" : {
+        "measured" : {
+          "_0" : {
+            "errorCount" : 0,
+            "firstSearch" : [
+              0,
+              2382504917000000000
+            ],
+            "kinds" : [
+              {
+                "intentCount" : 30,
+                "kind" : "lexical",
+                "metrics" : {
+                  "answerable" : {
+                    "_0" : {
+                      "hitAt1" : 1,
+                      "meanReciprocalRank" : 1,
+                      "recallAtCutoff" : 1
+                    }
+                  }
+                }
+              },
+              {
+                "intentCount" : 30,
+                "kind" : "paraphrase",
+                "metrics" : {
+                  "answerable" : {
+                    "_0" : {
+                      "hitAt1" : 0.1,
+                      "meanReciprocalRank" : 0.13333333333333333,
+                      "recallAtCutoff" : 0.2
+                    }
+                  }
+                }
+              },
+              {
+                "intentCount" : 30,
+                "kind" : "multiStep",
+                "metrics" : {
+                  "answerable" : {
+                    "_0" : {
+                      "hitAt1" : 1,
+                      "meanReciprocalRank" : 1,
+                      "recallAtCutoff" : 0.95
+                    }
+                  }
+                }
+              },
+              {
+                "intentCount" : 30,
+                "kind" : "offTopic",
+                "metrics" : {
+                  "offTopic" : {
+                    "_0" : {
+                      "emptyRate" : 0,
+                      "meanFalsePositiveCount" : 5
+                    }
+                  }
+                }
+              }
+            ],
+            "p50" : [
+              0,
+              5675708000000000
+            ],
+            "p95" : [
+              0,
+              8454000000000000
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name" : "selection-qwen3-4b",
+      "status" : {
+        "measured" : {
+          "_0" : {
+            "errorCount" : 0,
+            "firstSearch" : [
+              0,
+              1393340375000000000
+            ],
+            "kinds" : [
+              {
+                "intentCount" : 30,
+                "kind" : "lexical",
+                "metrics" : {
+                  "answerable" : {
+                    "_0" : {
+                      "hitAt1" : 1,
+                      "meanReciprocalRank" : 1,
+                      "recallAtCutoff" : 1
+                    }
+                  }
+                }
+              },
+              {
+                "intentCount" : 30,
+                "kind" : "paraphrase",
+                "metrics" : {
+                  "answerable" : {
+                    "_0" : {
+                      "hitAt1" : 0.2,
+                      "meanReciprocalRank" : 0.2,
+                      "recallAtCutoff" : 0.2
+                    }
+                  }
+                }
+              },
+              {
+                "intentCount" : 30,
+                "kind" : "multiStep",
+                "metrics" : {
+                  "answerable" : {
+                    "_0" : {
+                      "hitAt1" : 0.5,
+                      "meanReciprocalRank" : 0.5,
+                      "recallAtCutoff" : 0.45
+                    }
+                  }
+                }
+              },
+              {
+                "intentCount" : 30,
+                "kind" : "offTopic",
+                "metrics" : {
+                  "offTopic" : {
+                    "_0" : {
+                      "emptyRate" : 1,
+                      "meanFalsePositiveCount" : 0
+                    }
+                  }
+                }
+              }
+            ],
+            "p50" : [
+              0,
+              472420083000000000
+            ],
+            "p95" : [
+              0,
+              558370958000000000
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name" : "selection-apple",
+      "status" : {
+        "measured" : {
+          "_0" : {
+            "errorCount" : 0,
+            "firstSearch" : [
+              0,
+              3089461667000000000
+            ],
+            "kinds" : [
+              {
+                "intentCount" : 30,
+                "kind" : "lexical",
+                "metrics" : {
+                  "answerable" : {
+                    "_0" : {
+                      "hitAt1" : 1,
+                      "meanReciprocalRank" : 1,
+                      "recallAtCutoff" : 1
+                    }
+                  }
+                }
+              },
+              {
+                "intentCount" : 30,
+                "kind" : "paraphrase",
+                "metrics" : {
+                  "answerable" : {
+                    "_0" : {
+                      "hitAt1" : 0.8333333333333334,
+                      "meanReciprocalRank" : 0.8333333333333334,
+                      "recallAtCutoff" : 0.8333333333333334
+                    }
+                  }
+                }
+              },
+              {
+                "intentCount" : 30,
+                "kind" : "multiStep",
+                "metrics" : {
+                  "answerable" : {
+                    "_0" : {
+                      "hitAt1" : 1,
+                      "meanReciprocalRank" : 1,
+                      "recallAtCutoff" : 0.9
+                    }
+                  }
+                }
+              },
+              {
+                "intentCount" : 30,
+                "kind" : "offTopic",
+                "metrics" : {
+                  "offTopic" : {
+                    "_0" : {
+                      "emptyRate" : 0.9,
+                      "meanFalsePositiveCount" : 0.23333333333333334
+                    }
+                  }
+                }
+              }
+            ],
+            "p50" : [
+              0,
+              1430296792000000000
+            ],
+            "p95" : [
+              0,
+              2058586875000000000
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name" : "decision-qwen3-4b",
+      "status" : {
+        "measured" : {
+          "_0" : {
+            "errorCount" : 0,
+            "firstSearch" : [
+              0,
+              3114274666000000000
+            ],
+            "kinds" : [
+              {
+                "intentCount" : 30,
+                "kind" : "lexical",
+                "metrics" : {
+                  "answerable" : {
+                    "_0" : {
+                      "hitAt1" : 0.9,
+                      "meanReciprocalRank" : 0.9,
+                      "recallAtCutoff" : 0.9
+                    }
+                  }
+                }
+              },
+              {
+                "intentCount" : 30,
+                "kind" : "paraphrase",
+                "metrics" : {
+                  "answerable" : {
+                    "_0" : {
+                      "hitAt1" : 0.7,
+                      "meanReciprocalRank" : 0.75,
+                      "recallAtCutoff" : 0.8
+                    }
+                  }
+                }
+              },
+              {
+                "intentCount" : 30,
+                "kind" : "multiStep",
+                "metrics" : {
+                  "answerable" : {
+                    "_0" : {
+                      "hitAt1" : 0.8,
+                      "meanReciprocalRank" : 0.8,
+                      "recallAtCutoff" : 0.7
+                    }
+                  }
+                }
+              },
+              {
+                "intentCount" : 30,
+                "kind" : "offTopic",
+                "metrics" : {
+                  "offTopic" : {
+                    "_0" : {
+                      "emptyRate" : 0.9,
+                      "meanFalsePositiveCount" : 0.4
+                    }
+                  }
+                }
+              }
+            ],
+            "p50" : [
+              0,
+              2993498792000000000
+            ],
+            "p95" : [
+              0,
+              3789494167000000000
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name" : "decision-decider-4b",
+      "status" : {
+        "measured" : {
+          "_0" : {
+            "errorCount" : 0,
+            "firstSearch" : [
+              0,
+              4837751625000000000
+            ],
+            "kinds" : [
+              {
+                "intentCount" : 30,
+                "kind" : "lexical",
+                "metrics" : {
+                  "answerable" : {
+                    "_0" : {
+                      "hitAt1" : 1,
+                      "meanReciprocalRank" : 1,
+                      "recallAtCutoff" : 1
+                    }
+                  }
+                }
+              },
+              {
+                "intentCount" : 30,
+                "kind" : "paraphrase",
+                "metrics" : {
+                  "answerable" : {
+                    "_0" : {
+                      "hitAt1" : 1,
+                      "meanReciprocalRank" : 1,
+                      "recallAtCutoff" : 1
+                    }
+                  }
+                }
+              },
+              {
+                "intentCount" : 30,
+                "kind" : "multiStep",
+                "metrics" : {
+                  "answerable" : {
+                    "_0" : {
+                      "hitAt1" : 0.6,
+                      "meanReciprocalRank" : 0.6,
+                      "recallAtCutoff" : 0.5
+                    }
+                  }
+                }
+              },
+              {
+                "intentCount" : 30,
+                "kind" : "offTopic",
+                "metrics" : {
+                  "offTopic" : {
+                    "_0" : {
+                      "emptyRate" : 1,
+                      "meanFalsePositiveCount" : 0
+                    }
+                  }
+                }
+              }
+            ],
+            "p50" : [
+              0,
+              3268464542000000000
+            ],
+            "p95" : [
+              0,
+              3335590000000000000
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name" : "decision-h2o-lightning-4b",
+      "status" : {
+        "measured" : {
+          "_0" : {
+            "errorCount" : 0,
+            "firstSearch" : [
+              0,
+              5556311583000000000
+            ],
+            "kinds" : [
+              {
+                "intentCount" : 30,
+                "kind" : "lexical",
+                "metrics" : {
+                  "answerable" : {
+                    "_0" : {
+                      "hitAt1" : 1,
+                      "meanReciprocalRank" : 1,
+                      "recallAtCutoff" : 1
+                    }
+                  }
+                }
+              },
+              {
+                "intentCount" : 30,
+                "kind" : "paraphrase",
+                "metrics" : {
+                  "answerable" : {
+                    "_0" : {
+                      "hitAt1" : 0.9,
+                      "meanReciprocalRank" : 0.9,
+                      "recallAtCutoff" : 0.9
+                    }
+                  }
+                }
+              },
+              {
+                "intentCount" : 30,
+                "kind" : "multiStep",
+                "metrics" : {
+                  "answerable" : {
+                    "_0" : {
+                      "hitAt1" : 0.8,
+                      "meanReciprocalRank" : 0.8,
+                      "recallAtCutoff" : 0.65
+                    }
+                  }
+                }
+              },
+              {
+                "intentCount" : 30,
+                "kind" : "offTopic",
+                "metrics" : {
+                  "offTopic" : {
+                    "_0" : {
+                      "emptyRate" : 0.9,
+                      "meanFalsePositiveCount" : 0.1
+                    }
+                  }
+                }
+              }
+            ],
+            "p50" : [
+              0,
+              3782803042000000000
+            ],
+            "p95" : [
+              0,
+              3825275916000000000
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

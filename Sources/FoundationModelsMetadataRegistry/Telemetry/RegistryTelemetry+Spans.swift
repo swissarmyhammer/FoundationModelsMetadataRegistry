@@ -55,4 +55,33 @@ extension RegistryTelemetry {
       body,
     )
   }
+
+  /// Runs one call to a ranker that waits on a model in one
+  /// ``SpanName/rank`` span, and records its duration in the
+  /// ``MetricName/rankDuration`` timer of `ranker`.
+  ///
+  /// The span opens through ``withTracedSpan(_:attributes:_:)`` (rule 8),
+  /// because a model can wait for a long time. The span holds
+  /// ``AttributeKey/rankRanker`` and ``AttributeKey/rankCandidateCount``.
+  /// The call records one duration value, also when `body` throws.
+  ///
+  /// - Parameters:
+  ///   - ranker: the ranker that `body` calls.
+  ///   - rankedCount: the count of candidates that the ranker ranks.
+  ///   - body: the call to the ranker. It runs on the actor of the caller.
+  /// - Returns: the value of `body`.
+  /// - Throws: the error of `body`.
+  nonisolated(nonsending) static func withTracedRank<Output>(
+    _ ranker: Ranker,
+    rankedCount: Int,
+    _ body: nonisolated(nonsending) () async throws -> Output,
+  ) async throws -> Output {
+    let attributes: SpanAttributes = [
+      AttributeKey.rankRanker: .string(ranker.rawValue),
+      AttributeKey.rankCandidateCount: rankedCount.toSpanAttribute(),
+    ]
+    return try await withTracedSpan(SpanName.rank, attributes: attributes) { _ in
+      try await rankTimer(for: ranker).measure { try await body() }
+    }
+  }
 }

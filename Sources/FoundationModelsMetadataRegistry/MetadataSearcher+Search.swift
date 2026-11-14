@@ -3,7 +3,8 @@ import Tracing
 
 /// Hot reload, the search entry point and the `.selection` search tier for
 /// `MetadataSearcher` (plan.md §6, §8). The `.retrieval` tier lives in
-/// `MetadataSearcher+RetrievalTier.swift`, and the first-search embed
+/// `MetadataSearcher+RetrievalTier.swift`, the `.decision` tier lives in
+/// `MetadataSearcher+DecisionTier.swift`, and the first-search embed
 /// catch-up lives in `MetadataSearcher+FirstSearchCatchUp.swift`.
 extension MetadataSearcher {
   /// Hot-reloads this searcher's catalog from `items`.
@@ -198,11 +199,14 @@ extension MetadataSearcher {
   ///     yields an empty result rather than throwing or crashing.
   /// - Returns: `.retrieval`'s fused, `[0, 1]`-normalized matches;
   ///   `.selection`'s verbatim matches when a selection tier is configured
-  ///   (plan.md §6); `.auto`'s resolution of whichever of those applies
-  ///   (plan.md §7).
+  ///   (plan.md §6); `.decision`'s whole catalog ranked by P(yes)
+  ///   when a decision tier is configured; `.auto`'s resolution of
+  ///   whichever of those applies (plan.md §7).
   /// - Throws: `SelectionTierUnavailable` when `mode == .selection` and no
-  ///   selection tier is configured (`init(..., selection:)`); otherwise
-  ///   whatever the underlying selection session throws.
+  ///   selection tier is configured (`init(..., selection:)`);
+  ///   `DecisionTierUnavailable` when `mode == .decision` and no decision
+  ///   tier is configured (`init(..., decision:)`); otherwise whatever the
+  ///   underlying selection session or decision session throws.
   public func search(intent: String, limit: Int) async throws -> [Match<Item>] {
     let attributes: SpanAttributes = [
       RegistryTelemetry.AttributeKey.searchMode: .string(mode.rawValue),
@@ -239,29 +243,40 @@ extension MetadataSearcher {
     /// The configured selection tier answers.
     case selection(ConfiguredSelectionTier)
 
-    /// `mode` is `.selection`, and no selection tier is configured.
-    case unavailable
+    /// The configured decision tier answers.
+    case decision(DecisionConfig)
 
-    /// The tier of this route, or `nil` for `unavailable`.
+    /// `mode` is `.selection`, and no selection tier is configured.
+    case selectionUnavailable
+
+    /// `mode` is `.decision`, and no decision tier is configured.
+    case decisionUnavailable
+
+    /// The tier of this route, or `nil` for a route that no tier answers.
     var tier: RegistryTelemetry.Tier? {
       switch self {
       case .retrieval: .retrieval
       case .selection: .selection
-      case .unavailable: nil
+      case .decision: .decision
+      case .selectionUnavailable, .decisionUnavailable: nil
       }
     }
   }
 
-  /// The tier that `mode` selects now: `.auto` selects the selection tier
-  /// when one is configured, and the retrieval tier when none is.
+  /// The tier that `mode` selects now: `.auto` selects the decision tier
+  /// when one is configured, else the selection tier when one is
+  /// configured, else the retrieval tier.
   private var tierRoute: TierRoute {
     switch mode {
     case .retrieval:
       .retrieval
     case .selection:
-      selectionTier.map(TierRoute.selection) ?? .unavailable
+      selectionTier.map(TierRoute.selection) ?? .selectionUnavailable
+    case .decision:
+      decisionConfig.map(TierRoute.decision) ?? .decisionUnavailable
     case .auto:
-      selectionTier.map(TierRoute.selection) ?? .retrieval
+      decisionConfig.map(TierRoute.decision) ?? selectionTier.map(TierRoute.selection)
+        ?? .retrieval
     }
   }
 
@@ -308,17 +323,23 @@ extension MetadataSearcher {
   ///   - intent: the search query.
   ///   - limit: the maximum number of matches to return.
   /// - Returns: the answer of the tier.
-  /// - Throws: `SelectionTierUnavailable` when `route` is `unavailable`;
-  ///   otherwise whatever the underlying selection session throws.
+  /// - Throws: `SelectionTierUnavailable` when `route` is
+  ///   `selectionUnavailable`; `DecisionTierUnavailable` when `route` is
+  ///   `decisionUnavailable`; otherwise whatever the underlying selection
+  ///   session or decision session throws.
   private func tierAnswer(_ route: TierRoute, intent: String, limit: Int) async throws -> TierAnswer
   {
     switch route {
     case .retrieval:
-      return await retrievalSearch(intent: intent, limit: limit)
+      return await retrievalSearch(intent: intent, limit: limit, over: index)
     case .selection(let selection):
       return try await Self.selectionSearch(selection, intent: intent, limit: limit)
-    case .unavailable:
+    case .decision(let config):
+      return try await decisionSearch(config, intent: intent, limit: limit)
+    case .selectionUnavailable:
       throw SelectionTierUnavailable()
+    case .decisionUnavailable:
+      throw DecisionTierUnavailable()
     }
   }
 
@@ -342,9 +363,10 @@ extension MetadataSearcher {
   /// The call to the tier runs in one `RegistryTelemetry.SpanName.rank`
   /// span, with the `selection` ranker and the snapshot size as the
   /// candidate count. The tier waits on a model session, so the span opens
-  /// through `RegistryTelemetry.withTracedSpan(_:attributes:_:)` (rule 8).
-  /// The call records one `RegistryTelemetry.MetricName.rankDuration`
-  /// value with the `selection` ranker, also when the session throws.
+  /// through `RegistryTelemetry.withTracedRank(_:rankedCount:_:)`
+  /// (rule 8). The call records one
+  /// `RegistryTelemetry.MetricName.rankDuration` value with the
+  /// `selection` ranker, also when the session throws.
   ///
   /// - Parameters:
   ///   - selection: the tier to search, paired with the index snapshot it
@@ -360,18 +382,10 @@ extension MetadataSearcher {
     limit: Int,
   ) async throws -> TierAnswer {
     let snapshot = selection.snapshot
-    let attributes: SpanAttributes = [
-      RegistryTelemetry.AttributeKey.rankRanker: .string(
-        RegistryTelemetry.Ranker.selection.rawValue),
-      RegistryTelemetry.AttributeKey.rankCandidateCount: snapshot.count.toSpanAttribute(),
-    ]
-    let selectionMatches = try await RegistryTelemetry.withTracedSpan(
-      RegistryTelemetry.SpanName.rank,
-      attributes: attributes,
-    ) { _ in
-      try await RegistryTelemetry.rankTimer(for: .selection).measure {
-        try await selection.tier.search(intent: intent, limit: limit)
-      }
+    let selectionMatches = try await RegistryTelemetry.withTracedRank(
+      .selection, rankedCount: snapshot.count
+    ) {
+      try await selection.tier.search(intent: intent, limit: limit)
     }
     let matches = selectionMatches.compactMap { match -> Match<Item>? in
       guard let item = snapshot.item(forID: match.id) else { return nil }

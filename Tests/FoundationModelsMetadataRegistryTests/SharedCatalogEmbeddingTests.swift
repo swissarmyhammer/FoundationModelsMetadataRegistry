@@ -3,7 +3,7 @@ import Testing
 @testable import FoundationModelsMetadataRegistry
 
 /// Tests for `SharedCatalogEmbedding` and `MetadataSearcher.init(sharing:
-/// mode:weights:selection:onDiagnostic:)` (plan.md §5, §8): two or more
+/// mode:weights:selection:decision:onDiagnostic:)` (plan.md §5, §8): two or more
 /// searchers that are built synchronously over one index share one
 /// first-search embed of the catalog. Every embedder here is a scripted fake
 /// behind the `PooledEmbedding` seam.
@@ -113,12 +113,16 @@ struct SharedCatalogEmbeddingTests {
     let firstSearcher = MetadataSearcher(sharing: shared)
     let secondSearcher = MetadataSearcher(sharing: shared)
 
-    async let firstMatches = firstSearcher.search(intent: Self.queries[0], limit: Self.searchLimit)
+    // `queries[2]` has the same vector as the block of `status`, and
+    // `status` is also its best keyword match. Thus a top match with a
+    // cosine that is not `0.0` shows that the search ranked over the
+    // shared catalog vectors.
+    async let firstMatches = firstSearcher.search(intent: Self.queries[2], limit: Self.searchLimit)
     // The catalog embed is now suspended inside the embedder, so the
     // second search starts while the catalog is still pending.
     await gate.waitForStart()
     async let secondMatches = secondSearcher.search(
-      intent: Self.queries[0], limit: Self.searchLimit)
+      intent: Self.queries[2], limit: Self.searchLimit)
     await gate.release()
     let (first, second) = try await (firstMatches, secondMatches)
 

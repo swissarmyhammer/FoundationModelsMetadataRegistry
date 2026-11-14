@@ -41,9 +41,13 @@ struct RegistryTracingTests {
   /// The query text of each search.
   static let query = "ship the build to production"
 
-  /// The strings that no span attribute may hold: the query text and each
+  /// A query text that no block of the catalogs holds a word or a trigram
+  /// of, so the retrieval tier finds no candidate for it.
+  static let unmatchedQuery = "xyzzy"
+
+  /// The strings that no span attribute may hold: each query text and each
   /// rendered block of both catalogs.
-  static let forbidden = [query] + reloadedCatalog.map(\.block)
+  static let forbidden = [query, unmatchedQuery] + reloadedCatalog.map(\.block)
 
   /// The `limit` of each search. It is larger than each catalog, so no
   /// result is cut.
@@ -89,6 +93,51 @@ struct RegistryTracingTests {
   /// `selectedID`.
   static func makeSelectionConfig() -> SelectionConfig {
     SelectionConfig(model: ScriptedLanguageModel([#"{"ids":["\#(selectedID)"]}"#]))
+  }
+
+  /// The P(yes) that the scripted decision model gives for each question.
+  /// It is above the default minimum probability, so each candidate is a
+  /// match.
+  static let decisionProbability = 0.9
+
+  /// Makes a scripted decision model that gives `decisionProbability` for
+  /// each question.
+  ///
+  /// - Parameter fails: whether the model throws for each batch.
+  /// - Returns: the model.
+  static func makeDecisionModel(fails: Bool = false) -> ScriptedDecisionModel {
+    ScriptedDecisionModel(fails: fails) { _ in decisionProbability }
+  }
+
+  /// Makes a `.decision` searcher over `catalog` on `model`. The
+  /// configuration asks the default question, which holds the block of
+  /// each candidate, so the forbidden strings reach the model.
+  ///
+  /// - Parameter model: the decision model of the searcher.
+  /// - Returns: the searcher.
+  static func makeDecisionSearcher(_ model: ScriptedDecisionModel) -> MetadataSearcher<FixtureItem>
+  {
+    MetadataSearcher(
+      items: catalog, mode: .decision, decision: DecisionConfig(model: model),
+      onDiagnostic: { _ in })
+  }
+
+  /// Returns the one rank span whose ranker is `ranker` that ended in
+  /// `context`.
+  ///
+  /// - Parameters:
+  ///   - ranker: the ranker of the span.
+  ///   - context: the capture that holds the spans.
+  /// - Returns: the span.
+  /// - Throws: when no rank span or more than one rank span has the ranker.
+  static func onlyRankSpan(
+    of ranker: RegistryTelemetry.Ranker, in context: TelemetryCapture.Context
+  ) throws -> FinishedInMemorySpan {
+    let spans = spans(named: SpanName.rank, in: context).filter {
+      $0.attributes.get(Key.rankRanker) == .string(ranker.rawValue)
+    }
+    try #require(spans.count == 1, "expected one \(ranker) rank span, found \(spans.count)")
+    return spans[0]
   }
 
   /// Returns the one span named `name` that ended in `context`.
@@ -418,6 +467,102 @@ extension RegistryTracingTests {
       _ = await MetadataIndex.build(items: Self.catalog, embedder: nil)
 
       #expect(Self.spans(named: SpanName.catalogEmbed, in: context).count == embedsBefore)
+    }
+  }
+}
+
+/// The search and rank spans of the decision tier.
+extension RegistryTracingTests {
+  // MARK: - Decision tier spans
+
+  @Test
+  func decisionSearchNamesTheDecisionTierAndTheSignalsThatRanked() async throws {
+    try await TelemetryCapture.run(forbidding: Self.forbidden) { context in
+      let searcher = Self.makeDecisionSearcher(Self.makeDecisionModel())
+      let matches = try await searcher.search(intent: Self.query, limit: Self.searchLimit)
+
+      let search = try Self.onlySpan(named: SpanName.search, in: context)
+      #expect(search.attributes.get(Key.searchMode) == .string("decision"))
+      #expect(search.attributes.get(Key.searchTier) == .string("decision"))
+      #expect(search.attributes.get(Key.searchResultCount) == .int64(Int64(matches.count)))
+      #expect(
+        search.attributes.get(Key.searchRankers) == .stringArray(["bm25", "trigram", "decision"]))
+    }
+  }
+
+  @Test
+  func decisionSearchRanksWithTheDecisionModelInAChildRankSpan() async throws {
+    try await TelemetryCapture.run(forbidding: Self.forbidden) { context in
+      let model = Self.makeDecisionModel()
+      let searcher = Self.makeDecisionSearcher(model)
+      _ = try await searcher.search(intent: Self.query, limit: Self.searchLimit)
+
+      let search = try Self.onlySpan(named: SpanName.search, in: context)
+      let rank = try Self.onlyRankSpan(of: .decision, in: context)
+      #expect(rank.parentSpanID == search.spanID)
+      #expect(rank.traceID == search.traceID)
+      #expect(rank.attributes.get(Key.rankCandidateCount) == .int64(Int64(Self.catalog.count)))
+    }
+  }
+
+  @Test
+  func decisionSearchKeepsTheHybridRankSpanOfItsRetrievalStep() async throws {
+    try await TelemetryCapture.run(forbidding: Self.forbidden) { context in
+      let searcher = Self.makeDecisionSearcher(Self.makeDecisionModel())
+      _ = try await searcher.search(intent: Self.query, limit: Self.searchLimit)
+
+      let search = try Self.onlySpan(named: SpanName.search, in: context)
+      let hybrid = try Self.onlyRankSpan(of: .hybrid, in: context)
+      #expect(hybrid.parentSpanID == search.spanID)
+    }
+  }
+
+  @Test
+  func decisionSearchWithAZeroLimitNamesTheDecisionTierAndOpensNoRankSpan() async throws {
+    try await TelemetryCapture.run(forbidding: Self.forbidden) { context in
+      let searcher = Self.makeDecisionSearcher(Self.makeDecisionModel())
+      _ = try await searcher.search(intent: Self.query, limit: 0)
+
+      let search = try Self.onlySpan(named: SpanName.search, in: context)
+      #expect(search.attributes.get(Key.searchTier) == .string("decision"))
+      #expect(Self.spans(named: SpanName.rank, in: context).isEmpty)
+    }
+  }
+
+  @Test
+  func decisionSearchThatRetrievalFindsNothingForStillRanksTheWholeCatalog() async throws {
+    try await TelemetryCapture.run(forbidding: Self.forbidden) { context in
+      let searcher = Self.makeDecisionSearcher(Self.makeDecisionModel())
+      _ = try await searcher.search(intent: Self.unmatchedQuery, limit: Self.searchLimit)
+
+      let search = try Self.onlySpan(named: SpanName.search, in: context)
+      let rank = try Self.onlyRankSpan(of: .decision, in: context)
+      #expect(
+        search.attributes.get(Key.searchRankers) == .stringArray(["bm25", "trigram", "decision"]))
+      #expect(rank.attributes.get(Key.rankCandidateCount) == .int64(Int64(Self.catalog.count)))
+    }
+  }
+
+  @Test
+  func decisionSearchWhoseModelThrowsRecordsTheErrorTypeAndNoMessage() async throws {
+    try await TelemetryCapture.run(forbidding: Self.forbidden) { context in
+      let searcher = Self.makeDecisionSearcher(Self.makeDecisionModel(fails: true))
+      let error = try #require(
+        await #expect(throws: ScriptedDecisionModelError.self) {
+          try await searcher.search(intent: Self.query, limit: Self.searchLimit)
+        })
+
+      // The type name has its module. The failure case has no payload,
+      // so the value holds no case name.
+      let errorType = "FoundationModelsMetadataRegistryTests.ScriptedDecisionModelError"
+      let search = try Self.onlySpan(named: SpanName.search, in: context)
+      let rank = try Self.onlyRankSpan(of: .decision, in: context)
+      #expect(search.status == SpanStatus(code: .error))
+      #expect(rank.status == SpanStatus(code: .error))
+      #expect(search.attributes.get(Key.errorType) == .string(errorType))
+      #expect(rank.attributes.get(Key.errorType) == .string(errorType))
+      let message = String(describing: error)
+      #expect(!context.places.contains { $0.description.contains(message) })
     }
   }
 }

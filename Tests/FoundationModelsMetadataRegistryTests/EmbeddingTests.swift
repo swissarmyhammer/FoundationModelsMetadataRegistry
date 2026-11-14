@@ -28,10 +28,12 @@ struct EmbeddingTests {
     // `commit`'s id or block -- a keyword-only searcher (cosine weighted
     // to zero) must never surface `commit` for it. `FakeEmbedder` maps
     // the query and `commit`'s block to the identical vector, so once
-    // cosine joins fusion it must rank `commit` first.
+    // cosine joins fusion it must rank `commit` first. `status` shares no
+    // keyword with the query either: its orthogonal vector gives a real
+    // cosine of `0.0`, which ranks, but below `commit`.
     let commit = FixtureItem(
       id: "commit", block: "records a snapshot of staged changes to the repository history")
-    let status = FixtureItem(id: "status", block: "reports the current state of the working tree")
+    let status = FixtureItem(id: "status", block: "reports the current state of the index")
     let query = "save my work"
 
     let embedder = FakeEmbedder(
@@ -152,14 +154,44 @@ struct EmbeddingTests {
     #expect(cosineMatches.first?.id == "commit")
 
     // A keyword query aimed at the item that carried no embedding must
-    // still surface it through BM25 + trigram, with cosine reported as
-    // absent (0.0). The first search above caught that item up through
-    // `workingEmbedder`, which maps its unregistered block to the
-    // all-zero vector -- the same "contributes nothing" value.
+    // still surface it through BM25 + trigram. The first search above
+    // caught that item up through `workingEmbedder`, which maps its
+    // unregistered block to the all-zero vector. That vector gives a real
+    // cosine of `0.0`, which ranks, but below the keyword match.
     let keywordMatches = try await searcher.search(intent: "release health", limit: 5)
     let firstKeywordMatch = try #require(keywordMatches.first)
     #expect(firstKeywordMatch.id == "status")
     #expect(firstKeywordMatch.signals?.cosine == 0.0)
+  }
+
+  /// Bounded because the gate has no timeout of its own: an update that
+  /// never starts its embed never signals the gate, and this test must then
+  /// fail rather than wait forever.
+  @Test(.timeLimit(.minutes(1)))
+  func itemWithNoEmbeddingAndNoKeywordMatchGetsNoCosineRank() async throws {
+    let commit = FixtureItem(id: "commit", block: "records a snapshot of staged changes")
+    let branch = FixtureItem(id: "branch", block: "lists branches")
+    let query = "save my work"
+    let gate = EmbedGate()
+    // Only the embed of `branch` is gated. Thus `branch` has no embedding
+    // while the search below runs, and `commit` has one.
+    let embedder = GatedEmbedder(
+      vectorsByText: [query: [1, 0], commit.block: [1, 0], branch.block: [0, 1]],
+      gate: gate,
+      gatedTexts: [branch.block],
+    )
+    let searcher = MetadataSearcher(items: [commit], embedder: embedder)
+    _ = try await searcher.search(intent: query, limit: 5)
+    let updateTask = Task { await searcher.update(items: [commit, branch]) }
+    await gate.waitForStart()
+
+    let matches = try await searcher.search(intent: query, limit: 5)
+    await gate.release()
+    await updateTask.value
+
+    // `branch` shares no keyword with the query and has no embedding, so
+    // no signal ranks it.
+    #expect(matches.map(\.id) == ["commit"])
   }
 
   // MARK: - Hash-keyed incremental embed
