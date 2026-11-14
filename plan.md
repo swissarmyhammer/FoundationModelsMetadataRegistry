@@ -312,29 +312,36 @@ Mechanics, lifted from the shipped `Librarian` and generalized:
   `RoutedLLM.makeGuidedSession(_:instructions:)` in production — lifted from Multitool
   and now shipped here, for Multitool to import back (M5).
 
-## 6a. Decision tier — the probability reranker *(added 2026-11-14 — decision #17)*
+## 6a. Decision tier — the probability ranker *(added 2026-11-14 — decision #17; changed 2026-11-14: the model scores the whole catalog)*
 
 The decision tier ranks the relevance of catalog items with a
 FoundationModelsDecision `DecisionModel`. `SearchMode.decision` selects it. The
-tier has two stages:
+model scores the WHOLE catalog, not only the retrieval candidates, so it can
+find an item that the retrieval tier does not find. The tier takes the index
+snapshot before its first suspension, and then has two steps:
 
-1. **Retrieval.** The retrieval tier (§5) ranks the catalog and gives the first
-   `candidateCount` candidates (BM25, trigram and cosine, fused by RRF).
+1. **Retrieval.** The retrieval tier (§5) ranks the same snapshot, with the
+   catalog size as its limit (BM25, trigram and cosine, fused by RRF). The
+   decision tier uses this result only to attach the `Signals` of each match
+   and to order equal scores.
 2. **Decision.** One `DecisionSession` on the model, whose state is
-   `.text(intent)`, answers one batch of questions: one yes-or-no `Question` for
-   each candidate. Because the state is the intent, a local model reads the
-   intent one time and uses it again for each question. The score of each
-   candidate is its probability of "yes", P(yes). The tier removes each
-   candidate whose P(yes) is below `minimumProbability`, sorts the remaining
-   candidates by P(yes), and returns at most `limit` of them. For equal P(yes),
-   the retrieval order stays. Thus an intent that no candidate satisfies gives
-   an empty result.
+   `.text(intent)`, answers one yes-or-no `Question` for each catalog item, in
+   catalog order. The session gets the questions in batches of at most
+   `batchSize`. All batches go to the one session, so a local model reads the
+   intent one time and uses it again for each question. The score of each item
+   is its probability of "yes", P(yes). The tier removes each item whose P(yes)
+   is below `minimumProbability`, sorts the remaining items by P(yes), and
+   returns at most `limit` of them. For equal P(yes), the retrieval order comes
+   first, and then the catalog order of the items that the retrieval tier does
+   not rank. Thus an intent that no item satisfies gives an empty result.
 
-An empty catalog, `limit <= 0`, or an intent that the retrieval tier finds no
-candidate for gives an empty result, and the tier asks the model nothing. Each
-`Match` keeps the retrieval `Signals` of its candidate, and its `score` is its
-P(yes). A `.decision` search on a searcher that has no decision tier throws
-`DecisionTierUnavailable`. It does not use a different tier in its place.
+An empty catalog or `limit <= 0` gives an empty result, and the tier asks the
+model nothing. Each `Match` keeps the retrieval `Signals` of its item. An item
+that the retrieval tier does not rank gets the `Signals` value that the
+retrieval tier uses for "no signal": `0.0` for each signal. The `score` of each
+`Match` is its P(yes). A `.decision` search on a searcher that has no decision
+tier throws `DecisionTierUnavailable`. It does not use a different tier in its
+place.
 
 **`DecisionConfig`.** The caller gives the tier to
 `MetadataSearcher.init(..., decision:)`. The initializer is:
@@ -342,19 +349,22 @@ P(yes). A `.decision` search on a searcher that has no decision tier throws
 ```swift
 public init(
   model: any DecisionModel,
-  candidateCount: Int = defaultCandidateCount,           // 20
+  batchSize: Int = defaultBatchSize,                      // 64
   minimumProbability: Double = defaultMinimumProbability, // 0.5
   question: @escaping @Sendable (String, String) -> Question = DecisionConfig.relevanceQuestion,
 )
 ```
 
-- `model` gives P(yes) for each candidate.
-- `candidateCount` is the count of retrieval candidates that the model scores
-  for each search. A value below 1 becomes 1.
+- `model` gives P(yes) for each catalog item.
+- `batchSize` is the largest count of questions in one
+  `DecisionSession.decide` call. A catalog larger than `batchSize` goes to the
+  session in more than one call. A value below 1 becomes 1. The earlier
+  `candidateCount` property is gone, with no alias: the model scores the whole
+  catalog.
 - `minimumProbability` is the lowest P(yes) that a match must have. A value
   outside `0...1` becomes the nearest end of that range.
-- `question` makes the yes-or-no question for one candidate from its id and its
-  block. The default, `DecisionConfig.relevanceQuestion(id:block:)`, asks "Does
+- `question` makes the yes-or-no question for one catalog item from its id and
+  its block. The default, `DecisionConfig.relevanceQuestion(id:block:)`, asks "Does
   this catalog entry do what the request asks?" Its criteria say that "yes"
   means the entry does the requested task, and that "no" means the entry is
   unrelated, or only shares words with the request.
@@ -367,13 +377,13 @@ a `DecisionConfig`, else the selection tier (§6) when it has a
 
 - The search span holds `search.mode` `decision` for a `.decision` searcher,
   and `search.tier` `decision` when the decision tier answered.
-- `search.rankers` holds the retrieval signals that gave the candidates, then
-  `decision` when the model ranked them.
-- The retrieval stage keeps its own rank span, with `rank.ranker` `hybrid`.
-  The call to the model runs in one more rank span, with `rank.ranker`
-  `decision` and the count of questions as `rank.candidate_count`.
+- `search.rankers` holds the retrieval signals, then `decision`.
+- The retrieval step keeps its own rank span, with `rank.ranker` `hybrid`.
+  The calls to the model run in one more rank span, with `rank.ranker`
+  `decision` and the catalog size as `rank.candidate_count`. The questions of
+  all batches go in that one span.
 - The `rank.duration` timer records one value with the `ranker` dimension
-  `decision` for each call to the model, also when the model throws.
+  `decision` for each search that asks the model, also when the model throws.
 - The `search.duration` timer records the `tier` dimension `decision`. A
   `.decision` search on a searcher that has no decision tier records the
   `tier` dimension `none`.
@@ -746,9 +756,10 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
     use the pool, so the registry cannot load a second copy of a model that the
     router already holds.
 17. *(2026-11-14 — extends decision #6 and §7: `SearchMode` gets a fourth case)*
-    **The registry gets a decision tier.** `SearchMode.decision` reranks the
-    retrieval candidates by the P(yes) that a FoundationModelsDecision
-    `DecisionModel` gives for one yes-or-no question about each candidate. A
+    **The registry gets a decision tier.** `SearchMode.decision` ranks the
+    whole catalog by the P(yes) that a FoundationModelsDecision
+    `DecisionModel` gives for one yes-or-no question about each catalog item,
+    in batches of at most `DecisionConfig.batchSize` questions. A
     `DecisionConfig` configures the tier, and `.auto` selects it before the
     selection tier. §6a describes the tier. The manifest declares a third
     family package, `FoundationModelsDecision`, and the library target uses its
@@ -764,8 +775,14 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
     Why: the selection tier asks a model to write the ids of the matches. The
     decision tier asks a model one yes-or-no question for each candidate and
     reads the probability of "yes". That probability gives a score for each
-    candidate, and a threshold removes the candidates that do not satisfy the
-    intent. The benchmark tells which tier ranks the catalog better.
+    item, and a threshold removes the items that do not satisfy the intent.
+    The benchmark tells which tier ranks the catalog better.
+
+    *(2026-11-14)* After the first benchmark run, the user chose the
+    whole-catalog scope: the decision model scores each catalog item, not only
+    the first 20 retrieval candidates, because retrieval recall@5 on
+    paraphrase intents was 0.20. `DecisionConfig.batchSize` (default 64)
+    replaces `candidateCount`, which is gone with no alias.
 
     **The first benchmark run (2026-11-14).** The run measured all six
     configurations on an Apple M5 Max with macOS 27.2, at commit `65dc2a0`,

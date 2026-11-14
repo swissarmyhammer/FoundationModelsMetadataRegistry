@@ -3,62 +3,64 @@ import FoundationModelsDecision
 /// The configuration of the decision tier of a `MetadataSearcher`.
 ///
 /// The decision tier ranks the relevance of catalog items with a
-/// FoundationModelsDecision `DecisionModel`. The retrieval tier gives the
-/// first `candidateCount` candidates. The model then gives the probability
-/// of "yes" for one yes-or-no `question` about each candidate, in a decision
-/// session whose state is the intent. A candidate with a probability below
-/// `minimumProbability` is not a match.
+/// FoundationModelsDecision `DecisionModel`. The model gives the probability
+/// of "yes" for one yes-or-no `question` about each item of the whole
+/// catalog, in one decision session whose state is the intent. The session
+/// gets the questions in batches of at most `batchSize`. An item with a
+/// probability below `minimumProbability` is not a match.
 ///
 /// The library takes `any DecisionModel`, as `SelectionConfig` takes
 /// `any LanguageModel`. The caller supplies the model, for example a pooled
 /// decision model from the `FoundationModelsDecisionPooled` product, which
 /// the caller links in its own package.
 public struct DecisionConfig: Sendable {
-  /// The default number of retrieval candidates that the model scores for
-  /// each search.
-  public static let defaultCandidateCount = 20
+  /// The default largest count of questions in one call to the decision
+  /// session.
+  public static let defaultBatchSize = 64
 
   /// The default lowest probability of "yes" that a match must have.
   public static let defaultMinimumProbability = 0.5
 
-  /// The lowest candidate count that `init` keeps.
-  static let lowestCandidateCount = 1
+  /// The lowest batch size that `init` keeps.
+  static let lowestBatchSize = 1
 
   /// The range of a probability, which `init` clamps `minimumProbability`
   /// to.
   static let probabilityRange = 0.0...1.0
 
-  /// The model that gives P(yes) for each candidate.
+  /// The model that gives P(yes) for each catalog item.
   public let model: any DecisionModel
 
-  /// How many retrieval candidates the model scores for each search.
-  public let candidateCount: Int
+  /// The largest count of questions in one call to the decision session.
+  /// A search asks one question for each catalog item, so a catalog larger
+  /// than this value goes to the session in more than one call.
+  public let batchSize: Int
 
-  /// A candidate with a lower P(yes) is not a match.
+  /// An item with a lower P(yes) is not a match.
   public let minimumProbability: Double
 
-  /// The yes-or-no question for one candidate block. The state of the
-  /// decision session is the intent.
+  /// The yes-or-no question for the block of one catalog item. The state
+  /// of the decision session is the intent.
   public let question: @Sendable (_ id: String, _ block: String) -> Question
 
   /// Makes a decision tier configuration.
   ///
   /// - Parameters:
-  ///   - model: the model that gives P(yes) for each candidate.
-  ///   - candidateCount: how many retrieval candidates the model scores for
-  ///     each search. A value below 1 becomes 1.
+  ///   - model: the model that gives P(yes) for each catalog item.
+  ///   - batchSize: the largest count of questions in one call to the
+  ///     decision session. A value below 1 becomes 1.
   ///   - minimumProbability: the lowest P(yes) that a match must have. A
   ///     value outside `0...1` becomes the nearest end of that range.
-  ///   - question: makes the yes-or-no question for one candidate from its
-  ///     id and its block. Defaults to `relevanceQuestion(id:block:)`.
+  ///   - question: makes the yes-or-no question for one catalog item from
+  ///     its id and its block. Defaults to `relevanceQuestion(id:block:)`.
   public init(
     model: any DecisionModel,
-    candidateCount: Int = defaultCandidateCount,
+    batchSize: Int = defaultBatchSize,
     minimumProbability: Double = defaultMinimumProbability,
     question: @escaping @Sendable (String, String) -> Question = DecisionConfig.relevanceQuestion,
   ) {
     self.model = model
-    self.candidateCount = max(candidateCount, Self.lowestCandidateCount)
+    self.batchSize = max(batchSize, Self.lowestBatchSize)
     self.minimumProbability = min(
       max(minimumProbability, Self.probabilityRange.lowerBound),
       Self.probabilityRange.upperBound,

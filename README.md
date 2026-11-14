@@ -53,10 +53,11 @@ loads nothing. The first search loads the model and embeds the catalog.
 Add a `SelectionConfig` to let an LLM select verbatim ids
 from catalogs too large for one prompt.
 
-Add a `DecisionConfig` to rerank the retrieval candidates with a decision model.
-The retrieval tier gives the first 20 candidates. The model then gives the
-probability of "yes" for one yes-or-no question about each candidate. The
-matches are the candidates with a probability of 0.5 or more, sorted by that
+Add a `DecisionConfig` to rank the whole catalog with a decision model. The
+model gives the probability of "yes" for one yes-or-no question about each
+catalog item, also for an item that the retrieval tier does not find. The
+questions go to one decision session in batches of at most `batchSize`. The
+matches are the items with a probability of 0.5 or more, sorted by that
 probability. `PooledDecisionModel` is in the `FoundationModelsDecisionPooled`
 product of the FoundationModelsDecision package. This package does not link
 that product, so add it to your own package:
@@ -64,16 +65,16 @@ that product, so add it to your own package:
 ```swift
 import FoundationModelsDecisionPooled
 
-let reranked = MetadataSearcher(
+let decided = MetadataSearcher(
     items: commands,
     mode: .decision,
     decision: DecisionConfig(model: PooledDecisionModel(ref: "mlx-community/Qwen3-4B-4bit")),
 )
 ```
 
-`DecisionConfig(model:candidateCount:minimumProbability:question:)` has the
-defaults `candidateCount: 20` and `minimumProbability: 0.5`. A `.decision` search
-without a `DecisionConfig` throws `DecisionTierUnavailable`.
+`DecisionConfig(model:batchSize:minimumProbability:question:)` has the defaults
+`batchSize: 64` and `minimumProbability: 0.5`. A `.decision` search without a
+`DecisionConfig` throws `DecisionTierUnavailable`.
 
 ## Install
 

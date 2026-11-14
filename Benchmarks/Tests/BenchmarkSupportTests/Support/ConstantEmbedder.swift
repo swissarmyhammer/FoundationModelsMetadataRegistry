@@ -5,8 +5,7 @@ import os
 /// the same vector for each text.
 ///
 /// Each item then has a cosine of 1 to each intent, so the retrieval tier
-/// ranks each catalog item, and a decision tier whose candidate count is the
-/// catalog size scores each item. The first call can wait a fixed time
+/// ranks each catalog item. The first call can wait a fixed time
 /// first. The first search embeds the catalog, so that wait is in the
 /// warm-up search only.
 struct ConstantEmbedder: PooledEmbedding {

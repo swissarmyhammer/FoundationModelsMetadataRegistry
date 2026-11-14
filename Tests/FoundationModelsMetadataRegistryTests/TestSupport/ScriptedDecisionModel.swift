@@ -24,7 +24,7 @@ enum ScriptedDecisionModelError: Error, Equatable {
 }
 
 /// The log of the batches that each copy of one ``ScriptedDecisionModel``
-/// received.
+/// received, and of the executors that the copies made.
 ///
 /// A class, because all copies of one model and all of its executors share
 /// one log. The mutable state is under one lock, so the class is `Sendable`.
@@ -32,14 +32,26 @@ final class ScriptedDecisionLog: Sendable {
   /// The batches that the model received, in order, under one lock.
   private let recordedBatches = OSAllocatedUnfairLock<[ScriptedDecisionBatch]>(initialState: [])
 
+  /// The count of executors that the model made, under one lock.
+  private let recordedExecutorCount = OSAllocatedUnfairLock(initialState: 0)
+
   /// The batches that the model received, in order.
   var batches: [ScriptedDecisionBatch] { recordedBatches.withLock { $0 } }
+
+  /// The count of executors that the model made. Each `DecisionSession`
+  /// makes one executor, so this is the count of sessions.
+  var executorCount: Int { recordedExecutorCount.withLock { $0 } }
 
   /// Adds `batch` to the log.
   ///
   /// - Parameter batch: the batch that the model received.
   func record(_ batch: ScriptedDecisionBatch) {
     recordedBatches.withLock { $0.append(batch) }
+  }
+
+  /// Adds one executor to the count of executors.
+  func recordExecutor() {
+    recordedExecutorCount.withLock { $0 += 1 }
   }
 }
 
@@ -96,11 +108,17 @@ struct ScriptedDecisionModel: DecisionModel {
   /// The batches that this model received, in order.
   var batches: [ScriptedDecisionBatch] { log.batches }
 
-  /// Makes an executor that answers from this model.
+  /// The count of executors, and thus of decision sessions, that this
+  /// model made.
+  var executorCount: Int { log.executorCount }
+
+  /// Records one executor in the log, and makes an executor that answers
+  /// from this model.
   ///
   /// - Returns: a new `ScriptedDecisionExecutor`.
   func makeExecutor() -> any DecisionModelExecutor {
-    ScriptedDecisionExecutor(model: self)
+    log.recordExecutor()
+    return ScriptedDecisionExecutor(model: self)
   }
 }
 

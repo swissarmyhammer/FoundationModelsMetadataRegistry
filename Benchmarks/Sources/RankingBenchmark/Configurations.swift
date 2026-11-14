@@ -88,8 +88,8 @@ enum Configurations {
     }
   }
 
-  /// Makes a `.decision` configuration with the default candidate count,
-  /// minimum probability and question.
+  /// Makes a `.decision` configuration with the default batch size, minimum
+  /// probability and question.
   ///
   /// - Parameters:
   ///   - name: the name of the configuration.

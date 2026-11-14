@@ -199,7 +199,7 @@ extension MetadataSearcher {
   ///     yields an empty result rather than throwing or crashing.
   /// - Returns: `.retrieval`'s fused, `[0, 1]`-normalized matches;
   ///   `.selection`'s verbatim matches when a selection tier is configured
-  ///   (plan.md §6); `.decision`'s retrieval candidates reranked by P(yes)
+  ///   (plan.md §6); `.decision`'s whole catalog ranked by P(yes)
   ///   when a decision tier is configured; `.auto`'s resolution of
   ///   whichever of those applies (plan.md §7).
   /// - Throws: `SelectionTierUnavailable` when `mode == .selection` and no
@@ -363,7 +363,7 @@ extension MetadataSearcher {
   /// The call to the tier runs in one `RegistryTelemetry.SpanName.rank`
   /// span, with the `selection` ranker and the snapshot size as the
   /// candidate count. The tier waits on a model session, so the span opens
-  /// through `RegistryTelemetry.withTracedRank(_:candidateCount:_:)`
+  /// through `RegistryTelemetry.withTracedRank(_:rankedCount:_:)`
   /// (rule 8). The call records one
   /// `RegistryTelemetry.MetricName.rankDuration` value with the
   /// `selection` ranker, also when the session throws.
@@ -383,7 +383,7 @@ extension MetadataSearcher {
   ) async throws -> TierAnswer {
     let snapshot = selection.snapshot
     let selectionMatches = try await RegistryTelemetry.withTracedRank(
-      .selection, candidateCount: snapshot.count
+      .selection, rankedCount: snapshot.count
     ) {
       try await selection.tier.search(intent: intent, limit: limit)
     }

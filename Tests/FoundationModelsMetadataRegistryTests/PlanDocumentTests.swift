@@ -72,10 +72,12 @@ struct PlanDocumentTests {
   private static let lineSeparator: Character = "\n"
 
   /// The names that the decision tier section and its resolved decision
-  /// must spell: the configuration type and the search mode of the tier.
+  /// must spell: the configuration type, the search mode of the tier, and
+  /// the batch size that splits the questions about the whole catalog.
   private static let decisionTierNames = [
     "DecisionConfig",
     "SearchMode.decision",
+    "batchSize",
   ]
 
   @Test("plan.md names the configuration and the search mode of the decision tier")

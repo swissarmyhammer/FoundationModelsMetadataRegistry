@@ -44,8 +44,8 @@ private struct UnansweringDecisionModel: DecisionModel {
 /// applies, and the default relevance question.
 @Suite("DecisionConfig")
 struct DecisionConfigTests {
-  /// The candidate count of the default configuration.
-  static let expectedDefaultCandidateCount = 20
+  /// The batch size of the default configuration.
+  static let expectedDefaultBatchSize = 64
 
   /// The minimum probability of the default configuration.
   static let expectedDefaultMinimumProbability = 0.5
@@ -56,8 +56,8 @@ struct DecisionConfigTests {
   /// A probability above the range `0...1`.
   static let probabilityAboveRange = 2.0
 
-  /// The lowest candidate count that `init` keeps.
-  static let lowestCandidateCount = 1
+  /// The lowest batch size that `init` keeps.
+  static let lowestBatchSize = 1
 
   /// The id of the catalog entry in the question tests.
   static let entryID = "git-commit"
@@ -68,16 +68,16 @@ struct DecisionConfigTests {
   /// Makes a configuration over a model that answers no question.
   ///
   /// - Parameters:
-  ///   - candidateCount: the candidate count to give to `init`.
+  ///   - batchSize: the batch size to give to `init`.
   ///   - minimumProbability: the minimum probability to give to `init`.
   /// - Returns: the new configuration.
   static func makeConfig(
-    candidateCount: Int = DecisionConfig.defaultCandidateCount,
+    batchSize: Int = DecisionConfig.defaultBatchSize,
     minimumProbability: Double = DecisionConfig.defaultMinimumProbability,
   ) -> DecisionConfig {
     DecisionConfig(
       model: UnansweringDecisionModel(),
-      candidateCount: candidateCount,
+      batchSize: batchSize,
       minimumProbability: minimumProbability,
     )
   }
@@ -91,11 +91,10 @@ struct DecisionConfigTests {
     return instructions
   }
 
-  @Test("The default candidate count is 20")
-  func defaultCandidateCount() {
+  @Test("The default batch size is 64")
+  func defaultBatchSize() {
     #expect(
-      DecisionConfig(model: UnansweringDecisionModel()).candidateCount
-        == Self.expectedDefaultCandidateCount)
+      DecisionConfig(model: UnansweringDecisionModel()).batchSize == Self.expectedDefaultBatchSize)
   }
 
   @Test("The default minimum probability is 0.5")
@@ -105,9 +104,9 @@ struct DecisionConfigTests {
         == Self.expectedDefaultMinimumProbability)
   }
 
-  @Test("init clamps a candidate count of 0 to 1")
-  func clampsCandidateCountToOne() {
-    #expect(Self.makeConfig(candidateCount: 0).candidateCount == Self.lowestCandidateCount)
+  @Test("init clamps a batch size of 0 to 1")
+  func clampsBatchSizeToOne() {
+    #expect(Self.makeConfig(batchSize: 0).batchSize == Self.lowestBatchSize)
   }
 
   @Test("init clamps a minimum probability below 0 to 0")

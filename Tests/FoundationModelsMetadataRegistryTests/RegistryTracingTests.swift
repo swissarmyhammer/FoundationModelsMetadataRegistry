@@ -499,10 +499,9 @@ extension RegistryTracingTests {
 
       let search = try Self.onlySpan(named: SpanName.search, in: context)
       let rank = try Self.onlyRankSpan(of: .decision, in: context)
-      let questionCount = try #require(model.batches.first).questions.count
       #expect(rank.parentSpanID == search.spanID)
       #expect(rank.traceID == search.traceID)
-      #expect(rank.attributes.get(Key.rankCandidateCount) == .int64(Int64(questionCount)))
+      #expect(rank.attributes.get(Key.rankCandidateCount) == .int64(Int64(Self.catalog.count)))
     }
   }
 
@@ -531,18 +530,16 @@ extension RegistryTracingTests {
   }
 
   @Test
-  func decisionSearchWithNoCandidateNamesNoDecisionSignalAndOpensNoDecisionRankSpan() async throws {
+  func decisionSearchThatRetrievalFindsNothingForStillRanksTheWholeCatalog() async throws {
     try await TelemetryCapture.run(forbidding: Self.forbidden) { context in
       let searcher = Self.makeDecisionSearcher(Self.makeDecisionModel())
       _ = try await searcher.search(intent: Self.unmatchedQuery, limit: Self.searchLimit)
 
       let search = try Self.onlySpan(named: SpanName.search, in: context)
-      #expect(search.attributes.get(Key.searchTier) == .string("decision"))
-      #expect(search.attributes.get(Key.searchRankers) == .stringArray(["bm25", "trigram"]))
-      let decisionRanks = Self.spans(named: SpanName.rank, in: context).filter {
-        $0.attributes.get(Key.rankRanker) == .string("decision")
-      }
-      #expect(decisionRanks.isEmpty)
+      let rank = try Self.onlyRankSpan(of: .decision, in: context)
+      #expect(
+        search.attributes.get(Key.searchRankers) == .stringArray(["bm25", "trigram", "decision"]))
+      #expect(rank.attributes.get(Key.rankCandidateCount) == .int64(Int64(Self.catalog.count)))
     }
   }
 

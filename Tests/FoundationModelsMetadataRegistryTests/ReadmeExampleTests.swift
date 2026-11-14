@@ -55,10 +55,11 @@ struct ReadmeExampleTests {
   private static let readmeFileName = "README.md"
 
   /// The text that the README must spell for the decision tier: its
-  /// configuration type, its search mode, and the command that runs the
-  /// benchmark that compares the tiers.
+  /// configuration type, its batch size, its search mode, and the command
+  /// that runs the benchmark that compares the tiers.
   private static let decisionTierTexts = [
     "DecisionConfig(",
+    "batchSize",
     "mode: .decision",
     "swift run -c release --package-path Benchmarks RankingBenchmark",
   ]

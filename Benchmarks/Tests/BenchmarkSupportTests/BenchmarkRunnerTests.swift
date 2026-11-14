@@ -25,8 +25,8 @@ struct BenchmarkRunnerTests {
 
   /// A decision configuration over a `LabelDecisionModel`.
   ///
-  /// The embedder gives each item a cosine of 1, and the candidate count is
-  /// the catalog size, so the model scores each catalog item.
+  /// The embedder gives each item a cosine of 1. The decision tier asks the
+  /// model about each catalog item.
   ///
   /// - Parameters:
   ///   - name: the name of the configuration.
@@ -45,7 +45,6 @@ struct BenchmarkRunnerTests {
         embedder: ConstantEmbedder(firstCallDelay: firstEmbedDelay),
         decision: DecisionConfig(
           model: LabelDecisionModel(intents: intents, fails: fails),
-          candidateCount: items.count,
           question: LabelDecisionModel.question,
         ),
       )

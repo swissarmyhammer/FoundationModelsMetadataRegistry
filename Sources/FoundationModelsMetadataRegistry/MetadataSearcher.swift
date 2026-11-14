@@ -50,7 +50,7 @@ public typealias Weights = SignalWeights
 /// `MetadataDiagnostic` cases; otherwise it throws
 /// `SelectionTierUnavailable` (FoundationModelsRanker's error, re-exported)
 /// rather than silently doing something the caller didn't ask for.
-/// `.decision` reranks the retrieval candidates by the P(yes) that a
+/// `.decision` ranks each item of the whole catalog by the P(yes) that a
 /// FoundationModelsDecision `DecisionModel` gives, when a decision tier is
 /// configured (`init(..., decision:)`, see `DecisionConfig`); otherwise it
 /// throws `DecisionTierUnavailable`. `.auto`
@@ -102,8 +102,8 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
   /// This searcher's decision tier configuration, or `nil` when none was
   /// supplied at `init`.
   ///
-  /// The decision tier reranks the retrieval candidates of the live `index`
-  /// at each search, so `update(items:)` keeps this value and builds
+  /// The decision tier ranks each item of the live `index` at each search,
+  /// so `update(items:)` keeps this value and builds
   /// nothing from it.
   let decisionConfig: DecisionConfig?
 
