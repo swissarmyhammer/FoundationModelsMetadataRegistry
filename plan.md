@@ -767,6 +767,22 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
     candidate, and a threshold removes the candidates that do not satisfy the
     intent. The benchmark tells which tier ranks the catalog better.
 
+    **The first benchmark run (2026-11-14).** The run measured all six
+    configurations on an Apple M5 Max with macOS 27.2, at commit `65dc2a0`,
+    with 3 repeats of each intent. The table gives hit@1 and MRR for each
+    kind of intent, the off-topic empty rate, and the p50 and p95 latency of
+    a search. The full report, and the machine and the model revisions, are
+    in [`Benchmarks/Results/2026-11-14/`](Benchmarks/Results/2026-11-14/report.md).
+
+    | Configuration | lexical hit@1 | lexical MRR | paraphrase hit@1 | paraphrase MRR | multiStep hit@1 | multiStep MRR | offTopic empty rate | p50 ms | p95 ms |
+    | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+    | retrieval-keyword | 1.00 | 1.00 | 0.10 | 0.10 | 1.00 | 1.00 | 0.00 | 0.6 | 3.9 |
+    | retrieval-semantic | 1.00 | 1.00 | 0.10 | 0.13 | 1.00 | 1.00 | 0.00 | 7.7 | 10.2 |
+    | selection-qwen3-4b | 1.00 | 1.00 | 0.20 | 0.20 | 0.50 | 0.50 | 1.00 | 449.7 | 501.9 |
+    | selection-apple | 1.00 | 1.00 | 0.83 | 0.83 | 1.00 | 1.00 | 0.93 | 1382.3 | 1511.1 |
+    | decision-qwen3-4b | 0.90 | 0.93 | 0.50 | 0.55 | 0.80 | 0.80 | 0.90 | 877.1 | 1014.7 |
+    | decision-decider-4b | 1.00 | 1.00 | 0.70 | 0.70 | 0.50 | 0.50 | 1.00 | 1234.7 | 1322.6 |
+
 ## 12. Public API (as shipped)
 
 > *(Superseded in part, 2026-08-30 — decision #14. The searcher, `Match`, the
