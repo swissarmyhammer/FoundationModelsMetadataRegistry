@@ -3,8 +3,8 @@ assignees:
 - claude-code
 depends_on:
 - 01M7D75MMFBRTFTF72Y6RAE39K
-position_column: todo
-position_ordinal: '8280'
+position_column: done
+position_ordinal: bb80
 title: 'Add telemetry for the decision tier: tier, signal, ranker, rank span and rank duration'
 ---
 ## What
