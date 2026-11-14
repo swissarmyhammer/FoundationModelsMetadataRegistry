@@ -253,12 +253,11 @@ extension MetadataSearcher {
     case decisionUnavailable
 
     /// The tier of this route, or `nil` for a route that no tier answers.
-    /// The decision tier records the `retrieval` tier until the telemetry
-    /// names a decision tier.
     var tier: RegistryTelemetry.Tier? {
       switch self {
-      case .retrieval, .decision: .retrieval
+      case .retrieval: .retrieval
       case .selection: .selection
+      case .decision: .decision
       case .selectionUnavailable, .decisionUnavailable: nil
       }
     }
@@ -364,9 +363,10 @@ extension MetadataSearcher {
   /// The call to the tier runs in one `RegistryTelemetry.SpanName.rank`
   /// span, with the `selection` ranker and the snapshot size as the
   /// candidate count. The tier waits on a model session, so the span opens
-  /// through `RegistryTelemetry.withTracedSpan(_:attributes:_:)` (rule 8).
-  /// The call records one `RegistryTelemetry.MetricName.rankDuration`
-  /// value with the `selection` ranker, also when the session throws.
+  /// through `RegistryTelemetry.withTracedRank(_:candidateCount:_:)`
+  /// (rule 8). The call records one
+  /// `RegistryTelemetry.MetricName.rankDuration` value with the
+  /// `selection` ranker, also when the session throws.
   ///
   /// - Parameters:
   ///   - selection: the tier to search, paired with the index snapshot it
@@ -382,18 +382,10 @@ extension MetadataSearcher {
     limit: Int,
   ) async throws -> TierAnswer {
     let snapshot = selection.snapshot
-    let attributes: SpanAttributes = [
-      RegistryTelemetry.AttributeKey.rankRanker: .string(
-        RegistryTelemetry.Ranker.selection.rawValue),
-      RegistryTelemetry.AttributeKey.rankCandidateCount: snapshot.count.toSpanAttribute(),
-    ]
-    let selectionMatches = try await RegistryTelemetry.withTracedSpan(
-      RegistryTelemetry.SpanName.rank,
-      attributes: attributes,
-    ) { _ in
-      try await RegistryTelemetry.rankTimer(for: .selection).measure {
-        try await selection.tier.search(intent: intent, limit: limit)
-      }
+    let selectionMatches = try await RegistryTelemetry.withTracedRank(
+      .selection, candidateCount: snapshot.count
+    ) {
+      try await selection.tier.search(intent: intent, limit: limit)
     }
     let matches = selectionMatches.compactMap { match -> Match<Item>? in
       guard let item = snapshot.item(forID: match.id) else { return nil }

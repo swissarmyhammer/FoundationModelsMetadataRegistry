@@ -1,3 +1,4 @@
+import FoundationModelsDecision
 import TelemetryTestSupport
 import Testing
 
@@ -135,6 +136,26 @@ struct TelemetryContentSafetyTests {
     SelectionConfig(model: ScriptedLanguageModel([#"{"ids":["\#(selectedID)"]}"#]))
   }
 
+  /// The P(yes) that the scripted decision model gives for the selected
+  /// candidate. It is above the default minimum probability.
+  private static let selectedProbability = 0.9
+
+  /// Makes a decision configuration whose scripted model gives
+  /// `selectedProbability` for the question about `selectedID`, and `0`
+  /// for each other question. The configuration asks the default
+  /// question, which holds the id and the block of the candidate.
+  ///
+  /// - Parameter fails: whether the model throws for each batch.
+  /// - Returns: the configuration.
+  private static func makeDecisionConfig(fails: Bool = false) -> DecisionConfig {
+    let selected = DecisionConfig.relevanceQuestion(
+      id: selectedID, block: catalog[0].renderBlock())
+    let model = ScriptedDecisionModel(fails: fails) { question in
+      question == selected ? selectedProbability : 0
+    }
+    return DecisionConfig(model: model)
+  }
+
   /// One sample of each case of `MetadataDiagnostic`, with the fixture ids.
   /// A change that adds a case adds a sample here too.
   private static let diagnostics: [MetadataDiagnostic] = [
@@ -183,6 +204,41 @@ struct TelemetryContentSafetyTests {
         selection: SelectionConfig(model: ScriptedLanguageModel(answers: [.failure])),
       )
       await #expect(throws: (any Error).self) {
+        try await searcher.search(intent: Self.query, limit: Self.searchLimit)
+      }
+
+      #expect(context.spans.contains { $0.status?.code == .error })
+    }
+  }
+
+  @Test
+  func decisionSearchKeepsContentOutOfTheTelemetry() async throws {
+    let matches = try await TelemetryCapture.run(forbidding: Marker.all) { _ in
+      let searcher = MetadataSearcher(
+        items: Self.catalog,
+        mode: .decision,
+        embedder: Self.makeEmbedder(),
+        decision: Self.makeDecisionConfig(),
+      )
+      return try await searcher.search(intent: Self.query, limit: Self.searchLimit)
+    }
+
+    #expect(matches.map(\.id) == [Self.selectedID])
+  }
+
+  /// An error path can leak content too: the search span and the rank span
+  /// of the decision model record the failure of the model, and the
+  /// capture checks both.
+  @Test
+  func decisionSearchWhoseModelThrowsKeepsContentOutOfTheTelemetry() async throws {
+    try await TelemetryCapture.run(forbidding: Marker.all) { context in
+      let searcher = MetadataSearcher(
+        items: Self.catalog,
+        mode: .decision,
+        embedder: Self.makeEmbedder(),
+        decision: Self.makeDecisionConfig(fails: true),
+      )
+      await #expect(throws: ScriptedDecisionModelError.scriptedFailure) {
         try await searcher.search(intent: Self.query, limit: Self.searchLimit)
       }
 

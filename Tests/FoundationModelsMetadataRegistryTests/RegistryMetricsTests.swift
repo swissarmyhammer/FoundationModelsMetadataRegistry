@@ -33,9 +33,9 @@ struct RegistryMetricsTests {
   /// The fixed set of values of each dimension key. A dimension key or a
   /// value outside this map breaks the "no content" rule.
   static let allowedDimensionValues: [String: Set<String>] = [
-    Dimension.tier: ["retrieval", "selection", "none"],
+    Dimension.tier: ["retrieval", "selection", "decision", "none"],
     Dimension.outcome: ["success", "error"],
-    Dimension.ranker: ["hybrid", "selection"],
+    Dimension.ranker: ["hybrid", "selection", "decision"],
   ]
 
   /// Returns the count of values of each timer named `label`, keyed by the
@@ -188,6 +188,75 @@ struct RegistryMetricsTests {
       let ranks = Self.valueCounts(ofTimersNamed: MetricName.rankDuration, in: context)
       #expect(ranks == [[Dimension.ranker: "selection"]: 1])
       Self.expectFixedDimensionsAndNoNegativeDuration(in: context)
+    }
+  }
+}
+
+/// The search and rank durations of the decision tier.
+extension RegistryMetricsTests {
+  // MARK: - Decision tier durations
+
+  @Test
+  func decisionSearchRecordsTheDecisionTier() async throws {
+    try await TelemetryCapture.run(forbidding: Fixtures.forbidden) { context in
+      let searcher = Fixtures.makeDecisionSearcher(Fixtures.makeDecisionModel())
+      _ = try await searcher.search(intent: Fixtures.query, limit: Fixtures.searchLimit)
+
+      let searches = Self.valueCounts(ofTimersNamed: MetricName.searchDuration, in: context)
+      #expect(searches == [[Dimension.tier: "decision", Dimension.outcome: "success"]: 1])
+      Self.expectFixedDimensionsAndNoNegativeDuration(in: context)
+    }
+  }
+
+  @Test
+  func decisionSearchRecordsOneHybridAndOneDecisionRankDuration() async throws {
+    try await TelemetryCapture.run(forbidding: Fixtures.forbidden) { context in
+      let searcher = Fixtures.makeDecisionSearcher(Fixtures.makeDecisionModel())
+      _ = try await searcher.search(intent: Fixtures.query, limit: Fixtures.searchLimit)
+
+      let ranks = Self.valueCounts(ofTimersNamed: MetricName.rankDuration, in: context)
+      #expect(ranks == [[Dimension.ranker: "hybrid"]: 1, [Dimension.ranker: "decision"]: 1])
+      Self.expectFixedDimensionsAndNoNegativeDuration(in: context)
+    }
+  }
+
+  @Test
+  func decisionSearchWhoseModelThrowsRecordsTheDecisionTierAndAnError() async throws {
+    try await TelemetryCapture.run(forbidding: Fixtures.forbidden) { context in
+      let searcher = Fixtures.makeDecisionSearcher(Fixtures.makeDecisionModel(fails: true))
+      await #expect(throws: ScriptedDecisionModelError.scriptedFailure) {
+        try await searcher.search(intent: Fixtures.query, limit: Fixtures.searchLimit)
+      }
+
+      let searches = Self.valueCounts(ofTimersNamed: MetricName.searchDuration, in: context)
+      #expect(searches == [[Dimension.tier: "decision", Dimension.outcome: "error"]: 1])
+      Self.expectFixedDimensionsAndNoNegativeDuration(in: context)
+    }
+  }
+
+  @Test
+  func decisionSearchWhoseModelThrowsStillRecordsOneDecisionRankDuration() async throws {
+    try await TelemetryCapture.run(forbidding: Fixtures.forbidden) { context in
+      let searcher = Fixtures.makeDecisionSearcher(Fixtures.makeDecisionModel(fails: true))
+      await #expect(throws: ScriptedDecisionModelError.scriptedFailure) {
+        try await searcher.search(intent: Fixtures.query, limit: Fixtures.searchLimit)
+      }
+
+      let ranks = Self.valueCounts(ofTimersNamed: MetricName.rankDuration, in: context)
+      #expect(ranks == [[Dimension.ranker: "hybrid"]: 1, [Dimension.ranker: "decision"]: 1])
+      Self.expectFixedDimensionsAndNoNegativeDuration(in: context)
+    }
+  }
+
+  @Test
+  func decisionSearchThatRanksNothingRecordsTheDecisionTierAndNoRankDuration() async throws {
+    try await TelemetryCapture.run(forbidding: Fixtures.forbidden) { context in
+      let searcher = Fixtures.makeDecisionSearcher(Fixtures.makeDecisionModel())
+      _ = try await searcher.search(intent: Fixtures.query, limit: 0)
+
+      let searches = Self.valueCounts(ofTimersNamed: MetricName.searchDuration, in: context)
+      #expect(searches == [[Dimension.tier: "decision", Dimension.outcome: "success"]: 1])
+      #expect(Self.valueCounts(ofTimersNamed: MetricName.rankDuration, in: context).isEmpty)
     }
   }
 }
