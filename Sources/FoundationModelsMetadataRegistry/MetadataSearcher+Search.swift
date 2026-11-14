@@ -3,7 +3,8 @@ import Tracing
 
 /// Hot reload, the search entry point and the `.selection` search tier for
 /// `MetadataSearcher` (plan.md §6, §8). The `.retrieval` tier lives in
-/// `MetadataSearcher+RetrievalTier.swift`, and the first-search embed
+/// `MetadataSearcher+RetrievalTier.swift`, the `.decision` tier lives in
+/// `MetadataSearcher+DecisionTier.swift`, and the first-search embed
 /// catch-up lives in `MetadataSearcher+FirstSearchCatchUp.swift`.
 extension MetadataSearcher {
   /// Hot-reloads this searcher's catalog from `items`.
@@ -198,12 +199,14 @@ extension MetadataSearcher {
   ///     yields an empty result rather than throwing or crashing.
   /// - Returns: `.retrieval`'s fused, `[0, 1]`-normalized matches;
   ///   `.selection`'s verbatim matches when a selection tier is configured
-  ///   (plan.md §6); `.auto`'s resolution of whichever of those applies
-  ///   (plan.md §7).
+  ///   (plan.md §6); `.decision`'s retrieval candidates reranked by P(yes)
+  ///   when a decision tier is configured; `.auto`'s resolution of
+  ///   whichever of those applies (plan.md §7).
   /// - Throws: `SelectionTierUnavailable` when `mode == .selection` and no
-  ///   selection tier is configured (`init(..., selection:)`), or when
-  ///   `mode == .decision`, because the decision tier does not rank yet;
-  ///   otherwise whatever the underlying selection session throws.
+  ///   selection tier is configured (`init(..., selection:)`);
+  ///   `DecisionTierUnavailable` when `mode == .decision` and no decision
+  ///   tier is configured (`init(..., decision:)`); otherwise whatever the
+  ///   underlying selection session or decision session throws.
   public func search(intent: String, limit: Int) async throws -> [Match<Item>] {
     let attributes: SpanAttributes = [
       RegistryTelemetry.AttributeKey.searchMode: .string(mode.rawValue),
@@ -240,35 +243,41 @@ extension MetadataSearcher {
     /// The configured selection tier answers.
     case selection(ConfiguredSelectionTier)
 
-    /// `mode` names a tier that this searcher cannot answer with: `.selection`
-    /// with no selection tier configured, or `.decision`, whose ranking is
-    /// not in this searcher yet.
-    case unavailable
+    /// The configured decision tier answers.
+    case decision(DecisionConfig)
 
-    /// The tier of this route, or `nil` for `unavailable`.
+    /// `mode` is `.selection`, and no selection tier is configured.
+    case selectionUnavailable
+
+    /// `mode` is `.decision`, and no decision tier is configured.
+    case decisionUnavailable
+
+    /// The tier of this route, or `nil` for a route that no tier answers.
+    /// The decision tier records the `retrieval` tier until the telemetry
+    /// names a decision tier.
     var tier: RegistryTelemetry.Tier? {
       switch self {
-      case .retrieval: .retrieval
+      case .retrieval, .decision: .retrieval
       case .selection: .selection
-      case .unavailable: nil
+      case .selectionUnavailable, .decisionUnavailable: nil
       }
     }
   }
 
-  /// The tier that `mode` selects now: `.auto` selects the selection tier
-  /// when one is configured, and the retrieval tier when none is. `.decision`
-  /// selects no tier, and `.auto` does not select the decision tier, until
-  /// the decision tier ranks.
+  /// The tier that `mode` selects now: `.auto` selects the decision tier
+  /// when one is configured, else the selection tier when one is
+  /// configured, else the retrieval tier.
   private var tierRoute: TierRoute {
     switch mode {
     case .retrieval:
       .retrieval
     case .selection:
-      selectionTier.map(TierRoute.selection) ?? .unavailable
+      selectionTier.map(TierRoute.selection) ?? .selectionUnavailable
     case .decision:
-      .unavailable
+      decisionConfig.map(TierRoute.decision) ?? .decisionUnavailable
     case .auto:
-      selectionTier.map(TierRoute.selection) ?? .retrieval
+      decisionConfig.map(TierRoute.decision) ?? selectionTier.map(TierRoute.selection)
+        ?? .retrieval
     }
   }
 
@@ -315,17 +324,23 @@ extension MetadataSearcher {
   ///   - intent: the search query.
   ///   - limit: the maximum number of matches to return.
   /// - Returns: the answer of the tier.
-  /// - Throws: `SelectionTierUnavailable` when `route` is `unavailable`;
-  ///   otherwise whatever the underlying selection session throws.
+  /// - Throws: `SelectionTierUnavailable` when `route` is
+  ///   `selectionUnavailable`; `DecisionTierUnavailable` when `route` is
+  ///   `decisionUnavailable`; otherwise whatever the underlying selection
+  ///   session or decision session throws.
   private func tierAnswer(_ route: TierRoute, intent: String, limit: Int) async throws -> TierAnswer
   {
     switch route {
     case .retrieval:
-      return await retrievalSearch(intent: intent, limit: limit)
+      return await retrievalSearch(intent: intent, limit: limit, over: index)
     case .selection(let selection):
       return try await Self.selectionSearch(selection, intent: intent, limit: limit)
-    case .unavailable:
+    case .decision(let config):
+      return try await decisionSearch(config, intent: intent, limit: limit)
+    case .selectionUnavailable:
       throw SelectionTierUnavailable()
+    case .decisionUnavailable:
+      throw DecisionTierUnavailable()
     }
   }
 

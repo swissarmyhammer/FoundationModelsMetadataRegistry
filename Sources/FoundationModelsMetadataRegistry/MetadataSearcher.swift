@@ -50,7 +50,8 @@ public typealias Weights = SignalWeights
 /// rather than silently doing something the caller didn't ask for.
 /// `.decision` reranks the retrieval candidates by the P(yes) that a
 /// FoundationModelsDecision `DecisionModel` gives, when a decision tier is
-/// configured (`init(..., decision:)`, see `DecisionConfig`). `.auto`
+/// configured (`init(..., decision:)`, see `DecisionConfig`); otherwise it
+/// throws `DecisionTierUnavailable`. `.auto`
 /// resolves to `.decision` when a decision tier is configured, else to
 /// `.selection` when a selection tier is configured, else to `.retrieval`
 /// (plan.md §7 "selection when a model is configured, else retrieval", with

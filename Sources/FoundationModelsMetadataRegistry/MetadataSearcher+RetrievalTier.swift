@@ -21,20 +21,26 @@ extension MetadataSearcher {
   /// an empty catalog) ranks nothing, so it opens no span, records no rank
   /// duration and names no signal.
   ///
-  /// Internal, not private, because `search(intent:limit:)` lives in its
-  /// own file.
+  /// Internal, not private, because `search(intent:limit:)` and the
+  /// decision tier live in their own files.
+  ///
+  /// The caller gives the index snapshot to rank. Each `Match` takes its
+  /// block and its `item` from that snapshot, so a concurrent
+  /// `update(items:)` during the cosine embed cannot mix two catalogs.
   ///
   /// - Parameters:
   ///   - intent: the search query.
   ///   - limit: the maximum number of matches to return.
+  ///   - index: the index snapshot to rank, usually the live `index`.
   /// - Returns: the fused matches, with the `retrieval` tier and the
   ///   signals that ranked them.
-  func retrievalSearch(intent: String, limit: Int) async -> TierAnswer {
+  func retrievalSearch(intent: String, limit: Int, over index: MetadataIndex<Item>) async
+    -> TierAnswer
+  {
     guard limit > 0, !index.ids.isEmpty else {
       return TierAnswer(tier: .retrieval, signals: [], matches: [])
     }
 
-    let index = index
     let weights = weights
     let cosineScores = await Self.computeCosineScores(
       intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic,

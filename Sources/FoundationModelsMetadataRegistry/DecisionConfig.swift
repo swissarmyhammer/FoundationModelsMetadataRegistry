@@ -87,3 +87,14 @@ public struct DecisionConfig: Sendable {
     )
   }
 }
+
+/// The error that `MetadataSearcher.search(intent:limit:)` throws when the
+/// mode is `.decision` and the searcher has no decision tier.
+///
+/// Give a `DecisionConfig` to `MetadataSearcher.init(..., decision:)` to
+/// configure the decision tier. A `.decision` search with no decision tier
+/// fails, and does not use a different tier in its place.
+public struct DecisionTierUnavailable: Error, Sendable, Equatable {
+  /// Makes the error.
+  public init() {}
+}

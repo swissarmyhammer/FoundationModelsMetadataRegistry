@@ -185,7 +185,8 @@ let package = Package(
       dependencies: [
         .target(name: packageName),
         // `DecisionConfigTests` makes a `DecisionModel` that answers
-        // no question.
+        // no question, and `DecisionTierTests` searches with a
+        // `ScriptedDecisionModel` that gives P(yes) from a script.
         .product(name: foundationModelsDecisionPackage, package: foundationModelsDecisionPackage),
         // `RegistryTelemetryTests` binds an in-memory tracer to a
         // task and reads which tracer the library resolves.

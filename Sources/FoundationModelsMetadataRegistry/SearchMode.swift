@@ -27,7 +27,8 @@ public enum SearchMode: String, Sendable {
   /// candidates whose probability is not below
   /// `DecisionConfig.minimumProbability`, in the order of that probability.
   /// The decision tier is configured with
-  /// `MetadataSearcher.init(..., decision:)`.
+  /// `MetadataSearcher.init(..., decision:)`. Requesting this mode without
+  /// a configured decision tier throws `DecisionTierUnavailable`.
   case decision
 
   /// Decision when a decision tier is configured, else selection when a
