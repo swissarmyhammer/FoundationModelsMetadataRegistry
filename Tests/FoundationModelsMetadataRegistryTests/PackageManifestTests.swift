@@ -25,14 +25,20 @@ import Testing
 /// decision: the manifest also declares the three telemetry API packages,
 /// swift-distributed-tracing, swift-log and swift-metrics, and the library
 /// target links their `Tracing`, `Logging` and `Metrics` products. The
-/// manifest declares these five packages and no other. A later edit that
+/// decision tier adds the FoundationModelsDecision package, and the library
+/// target links its core `FoundationModelsDecision` product only. The
+/// manifest declares these six packages and no other. A later edit that
 /// adds one of the live-Router packages back fails this suite too.
+///
+/// No target of this package may name the `FoundationModelsDecisionPooled`
+/// product, because it compiles MLX and llama.cpp. The library takes
+/// `any DecisionModel`, and the caller supplies the model.
 ///
 /// The telemetry packages are APIs, not a backend. A library of the family
 /// must not depend on swift-otel, because only an executable bootstraps the
 /// backend. So no target of this package may name a swift-otel product.
 ///
-/// The five entries are not the whole resolved graph. FoundationModelsExtras
+/// The six entries are not the whole resolved graph. FoundationModelsExtras
 /// declares its own dependencies, and SwiftPM resolves all of them. So the
 /// suite also pins the products of the FoundationModelsExtras package. The
 /// library target and the example targets name the core
@@ -84,6 +90,23 @@ struct PackageManifestTests {
   /// decision #16).
   private static let extrasPackageName = "FoundationModelsExtras"
 
+  /// The package that supplies the decision tier model protocol
+  /// (`DecisionModel`) and its questions.
+  private static let decisionPackageName = "FoundationModelsDecision"
+
+  /// The core product of the FoundationModelsDecision package: the one
+  /// product of that package that the library target names.
+  ///
+  /// Its name is the same text as `decisionPackageName`, but it is a
+  /// product name, not a package name, so it has its own constant.
+  private static let decisionCoreProductName = "FoundationModelsDecision"
+
+  /// The product of the FoundationModelsDecision package that holds the
+  /// pooled decision model. It compiles MLX and llama.cpp, so no target of
+  /// this package names it. A caller that wants the pooled model links it
+  /// in its own package.
+  private static let decisionPooledProductName = "FoundationModelsDecisionPooled"
+
   /// The package that supplies the tracing API (`Tracing`).
   private static let tracingPackageName = "swift-distributed-tracing"
 
@@ -94,11 +117,13 @@ struct PackageManifestTests {
   private static let metricsPackageName = "swift-metrics"
 
   /// The packages this library depends on, and no other: the two packages
-  /// of plan.md decision #16, and the three telemetry API packages of the
+  /// of plan.md decision #16, the FoundationModelsDecision package of the
+  /// decision tier, and the three telemetry API packages of the
   /// OpenTelemetry design of 2026-09-28.
   private static let allowedPackageNames = [
     rankerPackageName,
     extrasPackageName,
+    decisionPackageName,
     tracingPackageName,
     logPackageName,
     metricsPackageName,
@@ -187,12 +212,12 @@ struct PackageManifestTests {
   /// Reads the manifest, never `Package.resolved`: the resolution file is
   /// in `.gitignore`, so a fresh clone and CI have none to read.
   ///
-  /// The five entries are not the whole resolved graph, because
+  /// The six entries are not the whole resolved graph, because
   /// FoundationModelsExtras declares its own dependencies.
   /// `namesOnlyTheCoreExtrasProduct()` pins the part of that graph that
   /// the build compiles.
   @Test(
-    "Package.swift depends on the Ranker, Extras and the three telemetry API packages and nothing else"
+    "Package.swift depends on the Ranker, Extras, Decision and the three telemetry API packages and nothing else"
   )
   func dependsOnTheAllowedPackagesAlone() throws {
     let declared = try ManifestEntries.packageNames()
@@ -255,6 +280,34 @@ struct PackageManifestTests {
       """
       The \(Self.libraryTargetName) target must name \(Self.extrasCoreProductName), which holds \
       the model pool (plan.md decision #16); found: \(libraryExtras)
+      """,
+    )
+  }
+
+  @Test("No target names the FoundationModelsDecisionPooled product")
+  func namesNoPooledDecisionProduct() throws {
+    let pooled = try ManifestEntries.targetProductEntries()
+      .filter { $0.product.name == Self.decisionPooledProductName }
+      .map { $0.target ?? "no target" }
+    #expect(
+      pooled.isEmpty,
+      """
+      No target of this package may name \(Self.decisionPooledProductName) — it compiles MLX \
+      and llama.cpp, and the library takes any DecisionModel; found in: \(pooled)
+      """,
+    )
+  }
+
+  @Test("The library target links the core FoundationModelsDecision product")
+  func linksTheCoreDecisionProduct() throws {
+    let linked = try Self.products(ofTarget: Self.libraryTargetName)
+    #expect(
+      linked.contains {
+        $0.name == Self.decisionCoreProductName && $0.package == Self.decisionPackageName
+      },
+      """
+      The \(Self.libraryTargetName) target must link \(Self.decisionCoreProductName), which \
+      holds DecisionModel and Question; found: \(linked.map(\.name))
       """,
     )
   }

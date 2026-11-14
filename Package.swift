@@ -61,6 +61,26 @@ let foundationModelsRankerPackage = "FoundationModelsRanker"
 /// `foundationModelsRankerPackage`.
 let foundationModelsExtrasPackage = "FoundationModelsExtras"
 
+/// The name of the FoundationModelsDecision dependency package, and also
+/// the name of its core product, the one product of it that the library
+/// uses.
+///
+/// The decision tier ranks the relevance of catalog items with a
+/// `DecisionModel` of this package: the model gives the probability of
+/// "yes" for one yes-or-no `Question` about each candidate. The core
+/// product holds `DecisionModel`, `DecisionSession` and `Question`, and it
+/// has no package dependencies. `DecisionConfig` takes `any DecisionModel`,
+/// as `SelectionConfig` takes `any LanguageModel`.
+///
+/// Use this core product only. Do not use `FoundationModelsDecisionPooled`:
+/// it compiles MLX and llama.cpp. A caller that wants a pooled decision
+/// model links that product in its own package, and gives the model to
+/// `DecisionConfig`.
+///
+/// Wired as a remote dependency (`main` branch), for the same reason as
+/// `foundationModelsRankerPackage`.
+let foundationModelsDecisionPackage = "FoundationModelsDecision"
+
 /// The name of the swift-distributed-tracing package: the tracing API
 /// (`Tracing`) of the OpenTelemetry design of 2026-09-28.
 ///
@@ -100,23 +120,25 @@ let swiftMetricsPackage = "swift-metrics"
 let appleOrg = "https://github.com/apple/"
 
 /// The GitHub organization URL base the swissarmyhammer-family dependencies
-/// (`foundationModelsRankerPackage` and `foundationModelsExtrasPackage`)
-/// resolve under — extracted so the org and the package name stay separate
-/// names rather than one literal URL.
+/// (`foundationModelsRankerPackage`, `foundationModelsExtrasPackage` and
+/// `foundationModelsDecisionPackage`) resolve under — extracted so the org
+/// and the package name stay separate names rather than one literal URL.
 let swissArmyHammerOrg = "git@github.com:swissarmyhammer/"
 
 /// The SwiftPM manifest for FoundationModelsMetadataRegistry.
 ///
 /// A single library target over FoundationModelsRanker, the core
-/// FoundationModelsExtras product and the `Tracing`, `Logging` and `Metrics`
-/// APIs, and a Swift Testing unit test target. The runnable examples are in
-/// the separate `Examples/` package, which this manifest does not name.
+/// FoundationModelsExtras product, the core FoundationModelsDecision product
+/// and the `Tracing`, `Logging` and `Metrics` APIs, and a Swift Testing unit
+/// test target. The runnable examples are in the separate `Examples/`
+/// package, which this manifest does not name.
 let package = Package(
   name: packageName,
   // Commit to macOS 27 / FoundationModels v2, no pre-27 fallback (plan.md
-  // §10). FoundationModelsRanker and FoundationModelsExtras declare the same
-  // floor, and the three telemetry API packages declare no higher floor, so
-  // no dependency imposes a higher one.
+  // §10). FoundationModelsRanker, FoundationModelsExtras and
+  // FoundationModelsDecision declare the same floor, and the three telemetry
+  // API packages declare no higher floor, so no dependency imposes a higher
+  // one.
   platforms: [
     .macOS("27.0")
   ],
@@ -129,6 +151,7 @@ let package = Package(
   dependencies: [
     .package(url: "\(swissArmyHammerOrg)\(foundationModelsRankerPackage).git", branch: "main"),
     .package(url: "\(swissArmyHammerOrg)\(foundationModelsExtrasPackage).git", branch: "main"),
+    .package(url: "\(swissArmyHammerOrg)\(foundationModelsDecisionPackage).git", branch: "main"),
     .package(url: "\(appleOrg)\(swiftDistributedTracingPackage).git", from: "1.5.0"),
     .package(url: "\(appleOrg)\(swiftLogPackage).git", from: "1.15.1"),
     .package(url: "\(appleOrg)\(swiftMetricsPackage).git", from: "2.11.0"),
@@ -139,6 +162,9 @@ let package = Package(
       dependencies: [
         .product(name: foundationModelsRankerPackage, package: foundationModelsRankerPackage),
         .product(name: foundationModelsExtrasPackage, package: foundationModelsExtrasPackage),
+        // The core decision product only: `DecisionModel` and
+        // `Question` for `DecisionConfig`.
+        .product(name: foundationModelsDecisionPackage, package: foundationModelsDecisionPackage),
         // The telemetry APIs, and no backend: the spans, the logger
         // and the metrics that `RegistryTelemetry` names.
         .product(name: "Tracing", package: swiftDistributedTracingPackage),
@@ -158,6 +184,9 @@ let package = Package(
       name: "\(packageName)Tests",
       dependencies: [
         .target(name: packageName),
+        // `DecisionConfigTests` makes a `DecisionModel` that answers
+        // no question.
+        .product(name: foundationModelsDecisionPackage, package: foundationModelsDecisionPackage),
         // `RegistryTelemetryTests` binds an in-memory tracer to a
         // task and reads which tracer the library resolves.
         .product(name: "Tracing", package: swiftDistributedTracingPackage),

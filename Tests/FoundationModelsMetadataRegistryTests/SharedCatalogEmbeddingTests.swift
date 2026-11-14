@@ -3,7 +3,7 @@ import Testing
 @testable import FoundationModelsMetadataRegistry
 
 /// Tests for `SharedCatalogEmbedding` and `MetadataSearcher.init(sharing:
-/// mode:weights:selection:onDiagnostic:)` (plan.md §5, §8): two or more
+/// mode:weights:selection:decision:onDiagnostic:)` (plan.md §5, §8): two or more
 /// searchers that are built synchronously over one index share one
 /// first-search embed of the catalog. Every embedder here is a scripted fake
 /// behind the `PooledEmbedding` seam.

@@ -201,8 +201,9 @@ extension MetadataSearcher {
   ///   (plan.md §6); `.auto`'s resolution of whichever of those applies
   ///   (plan.md §7).
   /// - Throws: `SelectionTierUnavailable` when `mode == .selection` and no
-  ///   selection tier is configured (`init(..., selection:)`); otherwise
-  ///   whatever the underlying selection session throws.
+  ///   selection tier is configured (`init(..., selection:)`), or when
+  ///   `mode == .decision`, because the decision tier does not rank yet;
+  ///   otherwise whatever the underlying selection session throws.
   public func search(intent: String, limit: Int) async throws -> [Match<Item>] {
     let attributes: SpanAttributes = [
       RegistryTelemetry.AttributeKey.searchMode: .string(mode.rawValue),
@@ -239,7 +240,9 @@ extension MetadataSearcher {
     /// The configured selection tier answers.
     case selection(ConfiguredSelectionTier)
 
-    /// `mode` is `.selection`, and no selection tier is configured.
+    /// `mode` names a tier that this searcher cannot answer with: `.selection`
+    /// with no selection tier configured, or `.decision`, whose ranking is
+    /// not in this searcher yet.
     case unavailable
 
     /// The tier of this route, or `nil` for `unavailable`.
@@ -253,13 +256,17 @@ extension MetadataSearcher {
   }
 
   /// The tier that `mode` selects now: `.auto` selects the selection tier
-  /// when one is configured, and the retrieval tier when none is.
+  /// when one is configured, and the retrieval tier when none is. `.decision`
+  /// selects no tier, and `.auto` does not select the decision tier, until
+  /// the decision tier ranks.
   private var tierRoute: TierRoute {
     switch mode {
     case .retrieval:
       .retrieval
     case .selection:
       selectionTier.map(TierRoute.selection) ?? .unavailable
+    case .decision:
+      .unavailable
     case .auto:
       selectionTier.map(TierRoute.selection) ?? .retrieval
     }

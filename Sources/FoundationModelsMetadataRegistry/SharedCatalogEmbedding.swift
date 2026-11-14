@@ -4,12 +4,12 @@ import FoundationModelsExtras
 /// (plan.md §5, §8).
 ///
 /// A consumer that must build its searchers with no `await` uses
-/// `MetadataSearcher.init(index:mode:weights:embedder:selection:onDiagnostic:)`
+/// `MetadataSearcher.init(index:mode:weights:embedder:selection:decision:onDiagnostic:)`
 /// over a not-yet-embedded index. Each searcher built that way embeds the
 /// whole catalog at its own first search, so two searchers over one catalog
 /// embed it two times. Build one `SharedCatalogEmbedding` from the index and
 /// the embedder, and give it to each searcher through
-/// `MetadataSearcher.init(sharing:mode:weights:selection:onDiagnostic:)`.
+/// `MetadataSearcher.init(sharing:mode:weights:selection:decision:onDiagnostic:)`.
 /// Then the catalog is embedded one time in total:
 ///
 /// ```swift
@@ -56,7 +56,7 @@ public actor SharedCatalogEmbedding<Item: SearchableMetadata> {
   /// Makes a shared catalog embed over `index`, synchronously.
   ///
   /// Nothing is embedded here. The first search of a searcher built with
-  /// `MetadataSearcher.init(sharing:mode:weights:selection:onDiagnostic:)`
+  /// `MetadataSearcher.init(sharing:mode:weights:selection:decision:onDiagnostic:)`
   /// over this value starts the catalog embed.
   ///
   /// - Parameters:
@@ -118,7 +118,7 @@ extension MetadataSearcher {
   /// Use this initializer when two or more searchers must search one
   /// catalog with different `mode`s or `weights`, and must be built with no
   /// `await`. Each searcher built with `init(index:mode:weights:embedder:
-  /// selection:onDiagnostic:)` embeds the catalog at its own first search.
+  /// selection:decision:onDiagnostic:)` embeds the catalog at its own first search.
   /// Searchers built with this initializer over one `shared` value cause
   /// one catalog embed in total.
   ///
@@ -143,6 +143,8 @@ extension MetadataSearcher {
   ///     Defaults to `1.0` for every signal.
   ///   - selection: this searcher's selection tier configuration (plan.md
   ///     §6), or `nil` (the default) to leave `.selection` unavailable.
+  ///   - decision: this searcher's decision tier configuration, or `nil`
+  ///     (the default) to leave `.decision` unavailable.
   ///   - onDiagnostic: called for every diagnostic emitted while searching.
   ///     The shared catalog embed reports `.embedCatchUp` through the
   ///     `onDiagnostic` of `shared`, not through this one. Defaults to
@@ -152,6 +154,7 @@ extension MetadataSearcher {
     mode: SearchMode = .auto,
     weights: Weights = Weights(),
     selection: SelectionConfig? = nil,
+    decision: DecisionConfig? = nil,
     onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
   ) {
     self.init(
@@ -161,6 +164,7 @@ extension MetadataSearcher {
       embedder: shared.embedder,
       sharedEmbedding: shared,
       selection: selection,
+      decision: decision,
       onDiagnostic: onDiagnostic,
     )
   }
