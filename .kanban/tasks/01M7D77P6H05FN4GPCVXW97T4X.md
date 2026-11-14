@@ -4,8 +4,8 @@ assignees:
 depends_on:
 - 01M7D77383S3CZC298PG6T01GM
 - 01M7D75XHXQ65ZJ3WTZS1BAJVG
-position_column: todo
-position_ordinal: '8680'
+position_column: done
+position_ordinal: bf80
 title: Run the ranking benchmark on real models and commit the report
 ---
 ## What
