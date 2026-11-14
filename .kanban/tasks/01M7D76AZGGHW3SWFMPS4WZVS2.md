@@ -1,8 +1,8 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8380'
+position_column: doing
+position_ordinal: '8180'
 title: 'Create the Benchmarks package: labeled relevance fixture and ranking metrics'
 ---
 ## What

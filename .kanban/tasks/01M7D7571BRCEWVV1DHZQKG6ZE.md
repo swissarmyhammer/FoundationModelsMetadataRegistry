@@ -1,8 +1,8 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '80'
+position_column: done
+position_ordinal: b880
 title: Add DecisionConfig, the .decision search mode and the FoundationModelsDecision dependency
 ---
 ## What

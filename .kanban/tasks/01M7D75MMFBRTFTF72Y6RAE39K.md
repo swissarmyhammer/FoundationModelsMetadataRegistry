@@ -3,8 +3,8 @@ assignees:
 - claude-code
 depends_on:
 - 01M7D7571BRCEWVV1DHZQKG6ZE
-position_column: todo
-position_ordinal: '8180'
+position_column: done
+position_ordinal: b980
 title: 'Implement the decision tier: rerank retrieval candidates by P(yes) from a DecisionModel'
 ---
 ## What
