@@ -3,8 +3,8 @@ assignees:
 - claude-code
 depends_on:
 - 01M7D75XHXQ65ZJ3WTZS1BAJVG
-position_column: todo
-position_ordinal: '8580'
+position_column: done
+position_ordinal: bc80
 title: Document the decision tier in README.md and plan.md
 ---
 ## What
