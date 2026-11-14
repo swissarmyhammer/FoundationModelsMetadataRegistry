@@ -71,6 +71,23 @@ struct PlanDocumentTests {
   /// The line separator the plan is split on.
   private static let lineSeparator: Character = "\n"
 
+  /// The names that the decision tier section and its resolved decision
+  /// must spell: the configuration type and the search mode of the tier.
+  private static let decisionTierNames = [
+    "DecisionConfig",
+    "SearchMode.decision",
+  ]
+
+  @Test("plan.md names the configuration and the search mode of the decision tier")
+  func namesTheDecisionTier() throws {
+    let plan = try RepositoryFiles.text(at: Self.planFileName)
+    let missing = Self.decisionTierNames.filter { !plan.contains($0) }
+    #expect(
+      missing.isEmpty,
+      "plan.md must describe the decision tier by these names; it does not spell: \(missing)",
+    )
+  }
+
   @Test("Every plan.md section that names a retired Router name marks it superseded")
   func marksEveryRetiredRouterNameAsSuperseded() throws {
     let offenders = try Self.sectionsMissingTheSupersededMarker()

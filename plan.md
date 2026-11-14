@@ -38,7 +38,10 @@ embedders come from [`../FoundationModelsRouter`](../FoundationModelsRouter/plan
 > `integration-package-path` input again. Everything decision #14 says about
 > the Router removal still holds; the one line of it that no longer does is
 > "the repository has no integration suite", and decision #15 says what stands
-> there instead.
+> there instead. Since 2026-09-30 (decision #16), one suite of the package,
+> `PooledEmbedderRealModelTests`, loads the MLX embedding model
+> `mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ` through a `PooledEmbedder`, so
+> "no MLX, no tiny `mlx-community` model" above is history.
 >
 > **Update 2026-09-26 — decision #16.** The package now has two dependencies:
 > `FoundationModelsRanker` and the core `FoundationModelsExtras` product, which
@@ -309,7 +312,89 @@ Mechanics, lifted from the shipped `Librarian` and generalized:
   `RoutedLLM.makeGuidedSession(_:instructions:)` in production — lifted from Multitool
   and now shipped here, for Multitool to import back (M5).
 
+## 6a. Decision tier — the probability reranker *(added 2026-11-14 — decision #17)*
+
+The decision tier ranks the relevance of catalog items with a
+FoundationModelsDecision `DecisionModel`. `SearchMode.decision` selects it. The
+tier has two stages:
+
+1. **Retrieval.** The retrieval tier (§5) ranks the catalog and gives the first
+   `candidateCount` candidates (BM25, trigram and cosine, fused by RRF).
+2. **Decision.** One `DecisionSession` on the model, whose state is
+   `.text(intent)`, answers one batch of questions: one yes-or-no `Question` for
+   each candidate. Because the state is the intent, a local model reads the
+   intent one time and uses it again for each question. The score of each
+   candidate is its probability of "yes", P(yes). The tier removes each
+   candidate whose P(yes) is below `minimumProbability`, sorts the remaining
+   candidates by P(yes), and returns at most `limit` of them. For equal P(yes),
+   the retrieval order stays. Thus an intent that no candidate satisfies gives
+   an empty result.
+
+An empty catalog, `limit <= 0`, or an intent that the retrieval tier finds no
+candidate for gives an empty result, and the tier asks the model nothing. Each
+`Match` keeps the retrieval `Signals` of its candidate, and its `score` is its
+P(yes). A `.decision` search on a searcher that has no decision tier throws
+`DecisionTierUnavailable`. It does not use a different tier in its place.
+
+**`DecisionConfig`.** The caller gives the tier to
+`MetadataSearcher.init(..., decision:)`. The initializer is:
+
+```swift
+public init(
+  model: any DecisionModel,
+  candidateCount: Int = defaultCandidateCount,           // 20
+  minimumProbability: Double = defaultMinimumProbability, // 0.5
+  question: @escaping @Sendable (String, String) -> Question = DecisionConfig.relevanceQuestion,
+)
+```
+
+- `model` gives P(yes) for each candidate.
+- `candidateCount` is the count of retrieval candidates that the model scores
+  for each search. A value below 1 becomes 1.
+- `minimumProbability` is the lowest P(yes) that a match must have. A value
+  outside `0...1` becomes the nearest end of that range.
+- `question` makes the yes-or-no question for one candidate from its id and its
+  block. The default, `DecisionConfig.relevanceQuestion(id:block:)`, asks "Does
+  this catalog entry do what the request asks?" Its criteria say that "yes"
+  means the entry does the requested task, and that "no" means the entry is
+  unrelated, or only shares words with the request.
+
+**The `.auto` order.** `.auto` selects the decision tier when the searcher has
+a `DecisionConfig`, else the selection tier (§6) when it has a
+`SelectionConfig`, else the retrieval tier.
+
+**Telemetry.** The decision tier uses the vocabulary of `RegistryTelemetry`:
+
+- The search span holds `search.mode` `decision` for a `.decision` searcher,
+  and `search.tier` `decision` when the decision tier answered.
+- `search.rankers` holds the retrieval signals that gave the candidates, then
+  `decision` when the model ranked them.
+- The retrieval stage keeps its own rank span, with `rank.ranker` `hybrid`.
+  The call to the model runs in one more rank span, with `rank.ranker`
+  `decision` and the count of questions as `rank.candidate_count`.
+- The `rank.duration` timer records one value with the `ranker` dimension
+  `decision` for each call to the model, also when the model throws.
+- The `search.duration` timer records the `tier` dimension `decision`. A
+  `.decision` search on a searcher that has no decision tier records the
+  `tier` dimension `none`.
+- No span, log record or metric holds the intent, a block or a question.
+
+**Why the library links only the core `FoundationModelsDecision` product.**
+That product holds `DecisionModel`, `DecisionSession` and `Question`, and it
+has no package dependencies. `DecisionConfig` takes `any DecisionModel`, as
+`SelectionConfig` takes `any LanguageModel`, so the library does not need a
+model runtime. The `FoundationModelsDecisionPooled` product holds
+`PooledDecisionModel`, and it compiles MLX and llama.cpp. A caller that wants a
+pooled decision model links that product in its own package and gives the model
+to `DecisionConfig`. Thus a caller that uses only the retrieval tier does not
+compile a model runtime.
+
 ## 7. Modes
+
+*(Extended 2026-11-14 — decision #17: `SearchMode` has a fourth case,
+`.decision`, and `.auto` selects the decision tier first. §6a describes the
+tier and the `.auto` order. The code block below shows the three cases of the
+first design.)*
 
 ```swift
 public enum SearchMode: Sendable {
@@ -660,6 +745,27 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
     share it, with a work queue for each model. The router and the registry both
     use the pool, so the registry cannot load a second copy of a model that the
     router already holds.
+17. *(2026-11-14 — extends decision #6 and §7: `SearchMode` gets a fourth case)*
+    **The registry gets a decision tier.** `SearchMode.decision` reranks the
+    retrieval candidates by the P(yes) that a FoundationModelsDecision
+    `DecisionModel` gives for one yes-or-no question about each candidate. A
+    `DecisionConfig` configures the tier, and `.auto` selects it before the
+    selection tier. §6a describes the tier. The manifest declares a third
+    family package, `FoundationModelsDecision`, and the library target uses its
+    core product only.
+
+    **The decision tier and the selection tier stay together for a short
+    time.** The `Benchmarks/` package compares the retrieval, selection and
+    decision tiers on a labeled fixture. When the benchmark result is
+    available, the tier that loses is deleted. ARCHITECTURE.md says that the
+    package keeps no backward compatibility, so the deletion keeps no
+    deprecated alias and no shim for the tier that loses.
+
+    Why: the selection tier asks a model to write the ids of the matches. The
+    decision tier asks a model one yes-or-no question for each candidate and
+    reads the probability of "yes". That probability gives a score for each
+    candidate, and a threshold removes the candidates that do not satisfy the
+    intent. The benchmark tells which tier ranks the catalog better.
 
 ## 12. Public API (as shipped)
 
