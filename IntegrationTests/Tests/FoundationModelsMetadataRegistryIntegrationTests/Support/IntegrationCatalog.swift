@@ -76,8 +76,8 @@ enum IntegrationCatalog {
   /// from every starting catalog, so its id can only come back after an
   /// `update(items:)` that put it in.
   static let addOnly = IntegrationItem(
-    id: "sharpenSkates",
-    block: "Hones dull hockey skate blades on the whetstone.",
+    id: "bakeBread",
+    block: "Kneads sourdough dough then bakes crusty loaves.",
   )
 
   /// The entry reserved for the remove half of a hot-reload scenario: present

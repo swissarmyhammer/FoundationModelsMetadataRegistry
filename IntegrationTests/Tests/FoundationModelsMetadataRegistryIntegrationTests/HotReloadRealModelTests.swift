@@ -62,14 +62,20 @@ struct HotReloadRealModelTests {
   static let reloadedCatalog: [IntegrationItem] =
     IntegrationCatalog.base + [IntegrationCatalog.addOnly]
 
-  /// The intent that reads the added id back, used verbatim from `^nwt7nz4`.
+  /// The intent that reads the added id back.
   ///
-  /// It returned `sharpenSkates` on 5 of 5 runs against `reloadedCatalog`
-  /// when this suite was written. This is a measured intent, not an
-  /// illustrative one: an intent substituted here without its own
-  /// measurement would put an unmeasured claim in a suite whose whole value
-  /// is that every claim in it was measured first.
-  static let addIntent = "Sharpen my dull hockey skate blades."
+  /// It returned `bakeBread` on 6 of 6 runs against `reloadedCatalog` on
+  /// 2026-11-15. This is a measured intent, not an illustrative one: an
+  /// intent substituted here without its own measurement would put an
+  /// unmeasured claim in a suite whose whole value is that every claim in it
+  /// was measured first.
+  ///
+  /// The safety guardrails of Apple Intelligence stopped each run of two
+  /// earlier entries and their intents: sharpening hockey skate blades, and
+  /// waxing cross-country skis. The remove intent passed in the same runs.
+  /// If the guardrails stop this intent too, replace the entry and the
+  /// intent together, and measure the new pair before you commit it.
+  static let addIntent = "Bake me a loaf of sourdough bread."
 
   /// The intent that reads the removed id back, used verbatim from
   /// `^nwt7nz4`.
