@@ -47,6 +47,10 @@ public actor SharedCatalogEmbedding<Item: SearchableMetadata> {
   /// each sharing searcher.
   nonisolated let embedder: any PooledEmbedding
 
+  /// The stored catalog that each sharing searcher saves to, or `nil` for
+  /// a shared embed with no persistence.
+  nonisolated let store: (any CatalogSaving<Item>)?
+
   /// Called with `.embedCatchUp` one time, when the catalog embed starts.
   let onDiagnostic: @Sendable (MetadataDiagnostic) -> Void
 
@@ -74,8 +78,25 @@ public actor SharedCatalogEmbedding<Item: SearchableMetadata> {
     embedder: any PooledEmbedding,
     onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
   ) {
+    self.init(index: index, embedder: embedder, store: nil, onDiagnostic: onDiagnostic)
+  }
+
+  /// The initializer that each other initializer calls.
+  ///
+  /// - Parameters:
+  ///   - index: the catalog index that the sharing searchers search.
+  ///   - embedder: the embedder for the catalog, the queries and the reloads.
+  ///   - store: the stored catalog that the sharing searchers save to, or `nil`.
+  ///   - onDiagnostic: called with `.embedCatchUp` one time.
+  init(
+    index: MetadataIndex<Item>,
+    embedder: any PooledEmbedding,
+    store: (any CatalogSaving<Item>)?,
+    onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void,
+  ) {
     self.index = index
     self.embedder = embedder
+    self.store = store
     self.onDiagnostic = onDiagnostic
     catalogEmbed = .pending
   }
@@ -89,7 +110,7 @@ public actor SharedCatalogEmbedding<Item: SearchableMetadata> {
   /// cancelled when a caller is cancelled, so one cancelled search does not
   /// cancel the embed that the other searchers wait for. Each sharing
   /// searcher merges the batch into its own index with
-  /// `MetadataIndex.EmbeddedBatch.merged(into:)`.
+  /// `MetadataIndex.merge(_:)`.
   ///
   /// - Returns: the one embedded batch, or `nil` when no entry of `index`
   ///   was pending or the embed failed.
@@ -163,6 +184,7 @@ extension MetadataSearcher {
       weights: weights,
       embedder: shared.embedder,
       sharedEmbedding: shared,
+      store: shared.store,
       selection: selection,
       decision: decision,
       onDiagnostic: onDiagnostic,

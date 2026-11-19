@@ -1,25 +1,29 @@
+import Foundation
+
 /// A tokenized, two-field search index over a catalog of `SearchableMetadata` items.
 ///
-/// Built per plan.md §1, §4 (decision #10: no persistence, no database —
-/// everything lives in memory and is rebuilt wholesale from the caller's
-/// items). Each item's `id` and rendered texts are precomputed
-/// once at `init` into the data the retrieval tier scores against: one
-/// FoundationModelsRanker `RankedDocument` (`id` as the primary field,
-/// `renderIndexedText(from:)` as the body field — the two-field weighting
-/// `CodeContextKit`'s `SearchCorpusSnapshot` established, applied to the
-/// `id`/block fields
-/// plan.md §4 defines) holding the BM25/trigram statistics `HybridRanker`'s
-/// per-signal scorers consume, the `renderEmbeddedText(from:)` text an
-/// embedder is handed, and an embedding storage slot filled at
-/// index-build/update time (plan.md §5, §8). Precomputing at `init` rather
-/// than per query is what makes repeated `search()` calls cheap —
-/// tokenizing/trigramming happens once per item, not once per query.
+/// Built per plan.md §1, §4 and §5 "Scale". Each item's `id` and rendered
+/// texts are precomputed one time, when the item is added or changed, into the
+/// data the retrieval tier scores against: the same BM25 and trigram
+/// statistics as one FoundationModelsRanker `RankedDocument` (`id` as the
+/// primary field, `renderIndexedText(from:)` as the body field), kept as
+/// sorted ids of two interned vocabularies (`DocumentFeatures`, `Lexicon`);
+/// the verbatim block; the digests of the three rendered texts; and an
+/// embedding slot in a contiguous matrix (`EmbeddingMatrix`). Precomputing at
+/// add time rather than per query is what makes repeated `search()` calls
+/// cheap — tokenizing/trigramming happens one time for each item, not one
+/// time for each query.
+///
+/// Each entry lives in a slot. A removed entry frees its slot, and a later
+/// entry takes it, so a change of some items does not move the others.
+/// `ids` gives the catalog order, which is also the tie-break order of the
+/// retrieval tier.
 ///
 /// `MetadataIndex` never interprets an item's text — it only tokenizes
 /// and trigrams the opaque text the item renders, and hands back
 /// `renderBlock()`'s output verbatim.
 public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
-  /// One catalog entry's precomputed search data, keyed by `id` in `entriesByID`.
+  /// One catalog entry's precomputed search data.
   struct Entry: Sendable {
     /// The catalog item itself.
     let item: Item
@@ -31,53 +35,49 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
     /// prompt").
     let block: String
 
-    /// `item.renderEmbeddedText(from:)`, captured once at build time.
-    ///
-    /// The text `pendingEmbeddings()` hands the embedder for this entry
-    /// — the block itself unless the item overrode it.
-    let embeddedText: String
-
-    /// This entry's precomputed BM25/trigram statistics, stored as one `RankedDocument`.
-    ///
-    /// `RankedDocument(primaryText: item.id, bodyText: indexedText)` is
-    /// the per-document input FoundationModelsRanker's `HybridRanker`
-    /// scores its BM25 and trigram signals against — `indexedText` being
-    /// `item.renderIndexedText(from:)`, the block itself unless the item
-    /// overrode it. The indexed text is not stored beyond this: nothing
-    /// reads it back, since these statistics are what the signals score.
-    let rankedDocument: RankedDocument
-
     /// SHA-256 digests of this entry's three rendered texts.
     ///
-    /// `digests.embeddedText` is the "text-hash" half of the
-    /// `(id, embedded-text-hash)` key
-    /// `MetadataIndex.build(items:embedder:previous:onDiagnostic:)`
-    /// reuses embeddings by, and the whole value is what
-    /// `hasIdenticalContent(to:)` compares (plan.md §8). See
+    /// `digests.embeddedText` is the key that a stored embedding is reused
+    /// by, and the whole value is what `hasIdenticalContent(to:)` and the
+    /// hash guard of an update compare (plan.md §8). See
     /// `RenderedTextDigests`.
     let digests: RenderedTextDigests
 
-    /// This entry's embedding, or `nil` until it is filled in.
-    ///
-    /// Filled by `MetadataIndex.build(items:embedder:previous:
-    /// onDiagnostic:)` (plan.md §5 "Embedding storage slots"; §8
-    /// incremental re-embedding).
-    let embedding: [Float]?
+    /// The BM25 and trigram statistics of this entry, as interned ids.
+    let features: DocumentFeatures
   }
 
-  /// The indexed ids, in first-seen order, with duplicates already resolved per the first-wins policy.
+  /// The indexed ids, in catalog order, with duplicates already resolved per the first-wins policy.
   ///
   /// Exactly the set of ids `item(forID:)`/`block(forID:)`/etc. can
   /// resolve.
-  public let ids: [String]
+  public private(set) var ids: [String] = []
 
-  /// Precomputed search data, keyed by `id`.
-  let entriesByID: [String: Entry]
+  /// The slot of each id of `ids`, at the same position.
+  private(set) var slotOrder: [Int] = []
+
+  /// The slot of each id.
+  private(set) var slotByID: [String: Int] = [:]
+
+  /// The entries, by slot. A free slot holds `nil`.
+  private(set) var entries: [Entry?] = []
+
+  /// The free slots, which the next new entries take.
+  private var freeSlots: [Int] = []
+
+  /// The interned vocabularies and the BM25 counters of the live entries.
+  var lexicon = Lexicon()
+
+  /// The stored embeddings, by slot.
+  private(set) var vectors = EmbeddingMatrix()
 
   /// The number of entries in this index after duplicate ids are dropped.
   public var count: Int {
     ids.count
   }
+
+  /// Makes an empty index.
+  init() {}
 
   /// Builds an in-memory index from `items`.
   ///
@@ -97,65 +97,17 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
     items: [Item],
     onDiagnostic: @Sendable (MetadataDiagnostic) -> Void = { MetadataDiagnostic.log($0) },
   ) {
-    var ids: [String] = []
-    var entriesByID: [String: Entry] = [:]
-    ids.reserveCapacity(items.count)
-    entriesByID.reserveCapacity(items.count)
-
-    for item in items {
-      guard entriesByID[item.id] == nil else {
-        onDiagnostic(.duplicateId(id: item.id))
-        continue
-      }
-      entriesByID[item.id] = Self.buildEntry(item: item)
-      ids.append(item.id)
-    }
-
-    self.ids = ids
-    self.entriesByID = entriesByID
-  }
-
-  /// Precomputes one catalog item's search data.
-  ///
-  /// Renders the item's block once and derives its indexed and embedded
-  /// texts from that one render, then precomputes its `RankedDocument`
-  /// (tokenizing/trigramming `item.id` and the indexed text —
-  /// FoundationModelsRanker's per-document BM25/trigram statistics) and
-  /// the three texts' content digests.
-  ///
-  /// - Parameter item: the catalog item to precompute an `Entry` for.
-  /// - Returns: the precomputed entry, ready to store under `item.id`.
-  private static func buildEntry(item: Item) -> Entry {
-    let block = item.renderBlock()
-    let indexedText = item.renderIndexedText(from: block)
-    let embeddedText = item.renderEmbeddedText(from: block)
-    return Entry(
-      item: item,
-      block: block,
-      embeddedText: embeddedText,
-      rankedDocument: RankedDocument(primaryText: item.id, bodyText: indexedText),
-      digests: RenderedTextDigests(
-        block: block, indexedText: indexedText, embeddedText: embeddedText),
-      embedding: nil,
-    )
+    replaceAll(with: items, onDiagnostic: onDiagnostic)
   }
 
   // MARK: - Lookup
 
-  /// Looks up one precomputed field of the `Entry` stored under `id`.
+  /// The entry stored under `id`, or `nil` if `id` isn't indexed.
   ///
-  /// Returns `nil` if `id` isn't indexed (never indexed, or dropped as a
-  /// duplicate). Every public lookup method below is a one-line
-  /// specialization of this accessor over a single `Entry` key path —
-  /// the copy-paste `entriesByID[id]?.field` pattern lived here once per
-  /// lookup before being unified.
-  ///
-  /// - Parameters:
-  ///   - forID: the id to look up.
-  ///   - keyPath: the `Entry` field to project out.
-  /// - Returns: the projected field, or `nil` if `id` isn't indexed.
-  private func value<T>(forID id: String, keyPath: KeyPath<Entry, T>) -> T? {
-    entriesByID[id]?[keyPath: keyPath]
+  /// - Parameter id: the id to look up.
+  /// - Returns: the entry, or `nil`.
+  func entry(forID id: String) -> Entry? {
+    slotByID[id].flatMap { entries[$0] }
   }
 
   /// The catalog item stored under `id`.
@@ -166,7 +118,7 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
   /// - Parameter forID: the id to look up.
   /// - Returns: the catalog item, or `nil` if `id` isn't indexed.
   public func item(forID id: String) -> Item? {
-    value(forID: id, keyPath: \.item)
+    entry(forID: id)?.item
   }
 
   /// The rendered block stored under `id`, verbatim from its build-time render.
@@ -176,35 +128,145 @@ public struct MetadataIndex<Item: SearchableMetadata>: Sendable {
   /// - Parameter forID: the id to look up.
   /// - Returns: the rendered block, or `nil` if `id` isn't indexed.
   public func block(forID id: String) -> String? {
-    value(forID: id, keyPath: \.block)
+    entry(forID: id)?.block
   }
 
-  /// The precomputed `RankedDocument` stored under `id`.
+  /// The BM25/trigram statistics of `id`, as one FoundationModelsRanker `RankedDocument`.
   ///
-  /// This is the BM25/trigram statistics FoundationModelsRanker's
-  /// `HybridRanker` scores this entry with (`id` as its primary field,
-  /// the rendered indexed text as its body field).
+  /// The index keeps these statistics as interned ids, so this method makes
+  /// the `RankedDocument` again from the stored item and block (`id` as its
+  /// primary field, the rendered indexed text as its body field). The
+  /// retrieval tier scores the same statistics.
   ///
   /// Returns `nil` if `id` isn't indexed.
   ///
   /// - Parameter forID: the id to look up.
-  /// - Returns: the precomputed per-document statistics, or `nil` if
-  ///   `id` isn't indexed.
+  /// - Returns: the per-document statistics, or `nil` if `id` isn't indexed.
   public func rankedDocument(forID id: String) -> RankedDocument? {
-    value(forID: id, keyPath: \.rankedDocument)
+    guard let entry = entry(forID: id) else { return nil }
+    return RankedDocument(
+      primaryText: id, bodyText: entry.item.renderIndexedText(from: entry.block))
   }
 
   /// The embedding stored for `id`, or `nil` if `id` isn't indexed or not yet embedded.
   ///
   /// `nil` until `MetadataIndex.build(items:embedder:previous:
-  /// onDiagnostic:)`, or a `MetadataSearcher` catch-up merging through
-  /// `mergingEmbeddings(ids:vectors:embeddedFrom:into:)`, fills this
-  /// storage slot.
+  /// onDiagnostic:)`, or a `MetadataSearcher` catch-up merging an embedded
+  /// batch, fills this storage slot.
   ///
   /// - Parameter forID: the id to look up.
   /// - Returns: the stored embedding, or `nil` if `id` isn't indexed or
   ///   not yet embedded.
   public func embedding(forID id: String) -> [Float]? {
-    value(forID: id, keyPath: \.embedding) ?? nil
+    slotByID[id].flatMap { vectors.vector(slot: $0) }
+  }
+
+  /// Whether at least one entry carries an embedding.
+  var hasEmbeddings: Bool {
+    vectors.count > 0
+  }
+
+  // MARK: - Slots
+
+  /// Stores `entry` under its id: in the same slot when the id is indexed,
+  /// else in a free slot at the end of the catalog order.
+  ///
+  /// The vector of a replaced entry stays when the embedded text did not
+  /// change, and is cleared otherwise. The lexicon counters follow.
+  ///
+  /// - Parameters:
+  ///   - entry: the entry to store.
+  ///   - vector: the vector for a new entry, or `nil`. A replaced entry
+  ///     ignores it.
+  mutating func store(_ entry: Entry, vector: [Float]? = nil) {
+    let id = entry.item.id
+    if let slot = slotByID[id], let old = entries[slot] {
+      lexicon.uncount(old.features)
+      lexicon.count(entry.features)
+      entries[slot] = entry
+      if old.digests.embeddedText != entry.digests.embeddedText {
+        vectors.set(nil, slot: slot)
+      }
+      return
+    }
+    let slot: Int
+    if let free = freeSlots.popLast() {
+      slot = free
+      entries[slot] = entry
+    } else {
+      slot = entries.count
+      entries.append(entry)
+    }
+    slotByID[id] = slot
+    ids.append(id)
+    slotOrder.append(slot)
+    lexicon.count(entry.features)
+    vectors.set(vector, slot: slot)
+  }
+
+  /// Removes the entries of `removed` and frees their slots.
+  ///
+  /// An id that isn't indexed is ignored.
+  ///
+  /// - Parameter removed: the ids to remove.
+  /// - Returns: the ids that were indexed and are now removed, in catalog
+  ///   order.
+  @discardableResult
+  mutating func remove(_ removed: Set<String>) -> [String] {
+    guard !removed.isEmpty else { return [] }
+    var removedInOrder: [String] = []
+    var keptIDs: [String] = []
+    var keptSlots: [Int] = []
+    keptIDs.reserveCapacity(ids.count)
+    keptSlots.reserveCapacity(ids.count)
+    for (id, slot) in zip(ids, slotOrder) {
+      guard removed.contains(id) else {
+        keptIDs.append(id)
+        keptSlots.append(slot)
+        continue
+      }
+      removedInOrder.append(id)
+      if let old = entries[slot] { lexicon.uncount(old.features) }
+      entries[slot] = nil
+      vectors.set(nil, slot: slot)
+      slotByID[id] = nil
+      freeSlots.append(slot)
+    }
+    guard !removedInOrder.isEmpty else { return [] }
+    ids = keptIDs
+    slotOrder = keptSlots
+    return removedInOrder
+  }
+
+  /// Puts the indexed ids in the order of `order`.
+  ///
+  /// - Parameter order: each indexed id one time, in the new order.
+  mutating func reorder(_ order: [String]) {
+    precondition(order.count == ids.count, "MetadataIndex.reorder: the order must name each id")
+    ids = order
+    slotOrder = order.map { id in
+      guard let slot = slotByID[id] else {
+        preconditionFailure("MetadataIndex.reorder: the order names an id that isn't indexed")
+      }
+      return slot
+    }
+  }
+
+  /// Stores `vector` for `id` when its entry still has the embedded text
+  /// with the digest `embeddedTextDigest`.
+  ///
+  /// - Parameters:
+  ///   - vector: the vector to store.
+  ///   - id: the id of the entry.
+  ///   - embeddedTextDigest: the digest of the text that `vector` was
+  ///     embedded from.
+  /// - Returns: whether the vector was stored.
+  @discardableResult
+  mutating func setVector(_ vector: [Float], forID id: String, embeddedTextDigest: Data) -> Bool {
+    guard let slot = slotByID[id], let entry = entries[slot],
+      entry.digests.embeddedText == embeddedTextDigest
+    else { return false }
+    vectors.set(vector, slot: slot)
+    return true
   }
 }

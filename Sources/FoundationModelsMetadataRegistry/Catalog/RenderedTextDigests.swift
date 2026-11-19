@@ -51,6 +51,19 @@ struct RenderedTextDigests: Sendable, Equatable {
     }
   }
 
+  /// Makes digests that were computed before, for example read from a
+  /// stored catalog.
+  ///
+  /// - Parameters:
+  ///   - blockDigest: the digest of the block.
+  ///   - indexedTextDigest: the digest of the indexed text.
+  ///   - embeddedTextDigest: the digest of the embedded text.
+  init(blockDigest: Data, indexedTextDigest: Data, embeddedTextDigest: Data) {
+    block = blockDigest
+    indexedText = indexedTextDigest
+    embeddedText = embeddedTextDigest
+  }
+
   /// The SHA-256 digest of `text`'s UTF-8 bytes.
   ///
   /// - Parameter text: the text to digest.

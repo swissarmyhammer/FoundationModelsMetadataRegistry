@@ -65,7 +65,7 @@ extension MetadataSearcher {
   /// decision:onDiagnostic:)` does not embed the catalog itself. It awaits the one
   /// shared embed of its `SharedCatalogEmbedding` and merges that batch
   /// into its own live `index`, through the same hash-checked
-  /// `MetadataIndex.EmbeddedBatch.merged(into:)` as its own catch-up. Thus
+  /// `MetadataIndex.merge(_:)` as its own catch-up. Thus
   /// an `update(items:)` that changed `index` during the shared embed
   /// always wins. When the shared embed failed, there is no batch and this
   /// searcher stays keyword-only for the pending entries.
@@ -73,7 +73,8 @@ extension MetadataSearcher {
     defer { firstSearchCatchUp = .done }
     if let sharedEmbedding {
       guard let batch = await sharedEmbedding.embeddedBatch() else { return }
-      index = batch.merged(into: index)
+      index.merge(batch)
+      store?.save(index)
       return
     }
     guard let embedder else { return }

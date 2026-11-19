@@ -154,6 +154,11 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
   /// Starts `.idle`: no `update(items:)` has run yet.
   var reloadEmbedLoop: ReloadEmbedLoop
 
+  /// The stored catalog that this searcher saves to after each change and
+  /// each embed chunk, or `nil` for a searcher with no persistence (see
+  /// `MetadataSearcher+Persistence.swift`).
+  let store: (any CatalogSaving<Item>)?
+
   /// Builds a searcher over `items`, indexing them once at `init` with no embedder.
   ///
   /// Cosine never ranks anything and every search degrades to
@@ -296,6 +301,7 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
       weights: weights,
       embedder: embedder,
       sharedEmbedding: nil,
+      store: nil,
       selection: selection,
       decision: decision,
       onDiagnostic: onDiagnostic,
@@ -304,15 +310,20 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
 
   /// The designated initializer that every other initializer calls. Each
   /// parameter is the same as in `init(index:mode:weights:embedder:
-  /// selection:decision:onDiagnostic:)`, and `sharedEmbedding` is the shared catalog
-  /// embed that the first search awaits, or `nil`. It records the size of
-  /// `index` in the `RegistryTelemetry.MetricName.catalogSize` gauge.
+  /// selection:decision:onDiagnostic:)`, `sharedEmbedding` is the shared catalog
+  /// embed that the first search awaits, or `nil`, and `store` is the
+  /// stored catalog to save to, or `nil`. With `catchUpAtFirstSearch`
+  /// `false`, the first search embeds nothing: the caller starts the reload
+  /// embed loop instead. It records the size of `index` in the
+  /// `RegistryTelemetry.MetricName.catalogSize` gauge.
   init(
     index: MetadataIndex<Item>,
     mode: SearchMode,
     weights: Weights,
     embedder: (any PooledEmbedding)?,
     sharedEmbedding: SharedCatalogEmbedding<Item>?,
+    store: (any CatalogSaving<Item>)?,
+    catchUpAtFirstSearch: Bool = true,
     selection: SelectionConfig?,
     decision: DecisionConfig?,
     onDiagnostic: @escaping @Sendable (MetadataDiagnostic) -> Void,
@@ -322,10 +333,11 @@ public actor MetadataSearcher<Item: SearchableMetadata> {
     self.weights = weights
     self.embedder = embedder
     self.sharedEmbedding = sharedEmbedding
+    self.store = store
     self.onDiagnostic = onDiagnostic
     selectionConfig = selection
     decisionConfig = decision
-    firstSearchCatchUp = embedder == nil ? .done : .pending
+    firstSearchCatchUp = embedder == nil || !catchUpAtFirstSearch ? .done : .pending
     reloadEmbedLoop = .idle
     selectionTier = Self.buildSelectionTierIfConfigured(
       config: selection, index: index, onDiagnostic: onDiagnostic,

@@ -9,19 +9,22 @@ import Tracing
 extension MetadataSearcher {
   /// Hot-reloads this searcher's catalog from `items`.
   ///
-  /// 1. Re-renders blocks and rebuilds the tokenized/trigram indexes
-  ///    synchronously (`MetadataIndex.incrementalBaseline(items:previous:
-  ///    onDiagnostic:)`) and assigns the result to `index` immediately —
+  /// 1. Re-renders each item and compares the digests of its three rendered
+  ///    texts with the indexed entry of the same id
+  ///    (`MetadataIndex.replaceAll(with:onDiagnostic:)`). Only an added or
+  ///    changed item is tokenized and trigrammed again; each other entry
+  ///    stays as it is, with its vector. The live `index` changes at once —
   ///    items are keyword-searchable (`.retrieval`/`.auto`'s BM25 +
   ///    trigram signals) before this call even reaches the embedder.
-  /// 2. Re-embeds incrementally: only items whose `(id, block-hash)`
-  ///    changed since the previous index are embedded, reusing every other
-  ///    item's stored embedding. The embed runs in the single-flight reload
+  /// 2. Re-embeds incrementally: only items whose embedded text changed (or
+  ///    that never had a vector) are embedded; each other item keeps its
+  ///    stored embedding. The embed runs in the single-flight reload
   ///    loop (see `ReloadEmbedLoop`), so a burst of calls embeds only the
   ///    newest catalog: when an embed is in flight, this call does not start
   ///    one of its own. It records that a newer catalog is pending, and the
   ///    loop embeds the pending ids of the current `index` when the embed in
-  ///    flight ends. A burst of N calls thus causes at most two embed calls.
+  ///    flight ends. A burst of N calls thus causes at most two embed calls
+  ///    for a catalog that fits in one embed chunk.
   ///    This step awaits the loop — an actor reentrancy point, so a
   ///    concurrent `search(intent:limit:)` interleaves and sees the
   ///    already-rebuilt keyword indexes with cosine absent for the
@@ -43,7 +46,7 @@ extension MetadataSearcher {
   ///    cached between searches.
   ///
   /// Hash-guarded: if `items` renders to content identical to what's
-  /// already indexed (same ids, same block hashes) *and* nothing is
+  /// already indexed (same ids, same order, same digests) *and* nothing is
   /// pending an embed (every entry already carries a real embedding, or
   /// none is expected), this call is a complete no-op — no re-embedding,
   /// no selection-tier rebuild, no diagnostics — so callers may forward
@@ -63,12 +66,15 @@ extension MetadataSearcher {
   /// of the newest catalog at once, the same as a caller that sends no
   /// burst. An embed that fails leaves its items pending for the next call.
   ///
+  /// To change some items with no new render of the others, use
+  /// `update(upserting:removing:)`.
+  ///
   /// Each call runs in one `RegistryTelemetry.SpanName.catalogUpdate` span,
   /// the hash-guarded no-op included. The span records the item count, the
   /// size of the new catalog, whether the content changed, and the count
   /// of entries that wait for an embed. The embed of the reload loop runs
-  /// in its own child `catalogEmbed` span. A call that assigns a new
-  /// baseline records its size in the
+  /// in its own child `catalogEmbed` span. A call that changes the catalog
+  /// or has pending embeds records its size in the
   /// `RegistryTelemetry.MetricName.catalogSize` gauge. The hash-guarded
   /// no-op records nothing.
   ///
@@ -79,81 +85,87 @@ extension MetadataSearcher {
     await RegistryTelemetry.tracer(explicit: nil).withSpan(RegistryTelemetry.SpanName.catalogUpdate)
     { span in
       span.attributes[RegistryTelemetry.AttributeKey.catalogItemCount] = items.count
-      await reload(items: items, recordingIn: span)
+      // A reload owns the catch-up from here on: whatever this call leaves
+      // pending is served keyword-only in the interim and embedded by this
+      // call (or the next reload), never by a first search embedding the
+      // same blocks a second time behind it.
+      firstSearchCatchUp = .done
+      let change = index.replaceAll(with: items, onDiagnostic: onDiagnostic)
+      await finish(change, recordingIn: span)
     }
   }
 
-  /// Does the work of `update(items:)` in its span.
+  /// Finishes one catalog change of `update(items:)` or
+  /// `update(upserting:removing:)`, after the live `index` changed.
+  ///
+  /// Records the facts of the change on `span`. Then, unless nothing
+  /// changed and nothing waits for an embed (the hash guard): records the
+  /// catalog size, rebuilds the selection tier when the content changed,
+  /// and runs the reload embed loop for the pending entries.
   ///
   /// - Parameters:
-  ///   - items: the catalog's new/refreshed items.
+  ///   - change: what the change did to `index`.
   ///   - span: the `catalogUpdate` span, which gets the catalog size, the
   ///     content-changed flag and the pending embed count.
-  private func reload(items: [Item], recordingIn span: any Span) async {
-    // A reload owns the catch-up from here on: whatever this call leaves
-    // pending is served keyword-only in the interim and embedded by this
-    // call (or the next reload), never by a first search embedding the
-    // same blocks a second time behind it.
-    firstSearchCatchUp = .done
-    let previous = index
-    let result = MetadataIndex.incrementalBaseline(
-      items: items,
-      previous: previous,
-      onDiagnostic: onDiagnostic,
-    )
-    let baseline = result.baseline
-
-    let contentChanged = !baseline.hasIdenticalContent(to: previous)
-    span.attributes[RegistryTelemetry.AttributeKey.catalogSize] = baseline.count
+  func finish(_ change: MetadataIndex<Item>.Change, recordingIn span: any Span) async {
+    let pendingCount = index.pendingEmbeddingCount
+    let contentChanged = !change.isEmpty
+    span.attributes[RegistryTelemetry.AttributeKey.catalogSize] = index.count
     span.attributes[RegistryTelemetry.AttributeKey.catalogContentChanged] = contentChanged
-    span.attributes[RegistryTelemetry.AttributeKey.catalogPendingEmbedCount] =
-      result.pendingEmbedIDs.count
-    guard contentChanged || !result.pendingEmbedIDs.isEmpty else { return }
+    span.attributes[RegistryTelemetry.AttributeKey.catalogPendingEmbedCount] = pendingCount
+    guard contentChanged || pendingCount > 0 else { return }
 
-    index = baseline
-    RegistryTelemetry.recordCatalogSize(baseline.count)
+    RegistryTelemetry.recordCatalogSize(index.count)
     // Rebuild the selection tier only when the content changed. An
     // embedding catch-up for the same content does not change keyword
     // search or the selection prefix, so a rebuild would assemble the
     // same prefix again.
     if contentChanged {
       selectionTier = Self.buildSelectionTierIfConfigured(
-        config: selectionConfig, index: baseline, onDiagnostic: onDiagnostic,
+        config: selectionConfig, index: index, onDiagnostic: onDiagnostic,
       )
+      store?.save(index)
     }
 
-    guard !result.pendingEmbedIDs.isEmpty, let embedder else { return }
+    guard pendingCount > 0, let embedder else { return }
     await embedNewestCatalog(with: embedder)
   }
 
-  /// Embeds every entry of the live `index` that has no embedding, then merges the vectors into the live `index`.
+  /// The maximum count of entries in one embedder call of a catch-up.
+  ///
+  /// A catch-up of a large catalog embeds it in chunks of this size and
+  /// merges each chunk into the live `index` as it arrives, so a search
+  /// during a long catch-up already ranks the embedded part with cosine.
+  static var embedChunkSize: Int { 256 }
+
+  /// Embeds every entry of the live `index` that has no embedding, in chunks, and merges each chunk into the live `index`.
   ///
   /// The one place a catch-up batch lands, shared by the reload embed loop
   /// (`runReloadEmbedLoop(with:)`) and the first-search catch-up
   /// (`runFirstSearchCatchUp()`). Internal, not private, because both
-  /// callers live in their own files. The embed goes through
-  /// `MetadataIndex.embedPendingEntries(with:source:onDiagnostic:)`: a no-op
-  /// when nothing is pending, and otherwise one `.embedCatchUp` report
-  /// before the embedder call, which runs in one `catalogEmbed` span.
+  /// callers live in their own files. Each chunk goes through
+  /// `MetadataIndex.embedPendingEntries(with:source:limit:onDiagnostic:)`:
+  /// a no-op when nothing is pending, and otherwise one embedder call in
+  /// one `catalogEmbed` span. Each chunk reports `.embedCatchUp` one time,
+  /// with the count of all entries that still wait, so the diagnostics of a
+  /// long catch-up show its progress.
   ///
-  /// Merges into `index` as it stands *after* the suspension -- not into
-  /// the stale baseline this batch was embedded from -- and only where
-  /// `index`'s current entry still matches the baseline's block hash for
-  /// that id (`MetadataIndex.EmbeddedBatch.merged(into:)`'s hash check).
-  /// A concurrent `update(items:)` call may have
-  /// moved the catalog on in the meantime (actor reentrancy across the
-  /// `await`); its result must win, never be silently clobbered by this
-  /// call's now-stale vector finishing late -- including when that
-  /// concurrent call re-embedded the *same* id with different content,
-  /// not just when it removed the id outright.
+  /// Each chunk reads the pending entries of `index` as it stands after the
+  /// previous chunk, and merges into `index` as it stands *after* its own
+  /// suspension -- and only where `index`'s current entry still matches the
+  /// embedded-text digest of the chunk for that id
+  /// (`MetadataIndex.merge(_:)`'s check). A concurrent `update(items:)`
+  /// call may have moved the catalog on in the meantime (actor reentrancy
+  /// across the `await`); its result must win, never be silently clobbered
+  /// by this call's now-stale vector finishing late.
   ///
   /// The selection tier is left alone. A merge changes stored vectors and
   /// never content, and the tier ranks nothing, so a caught-up embedding
   /// changes no answer the tier can give.
   ///
   /// An embedder that throws, or returns a vector count other than the
-  /// pending count, leaves every entry with whatever embedding it had --
-  /// graceful degradation, the same as `MetadataIndex.build(items:
+  /// chunk count, ends the catch-up: each entry keeps whatever embedding it
+  /// had -- graceful degradation, the same as `MetadataIndex.build(items:
   /// embedder:previous:onDiagnostic:)`; a later search then reports the
   /// still-absent embeddings via `.embeddingUnavailable`.
   ///
@@ -164,10 +176,12 @@ extension MetadataSearcher {
   func catchUpEmbeddings(with embedder: any PooledEmbedding, source: RegistryTelemetry.EmbedSource)
     async
   {
-    let batch = await index.embedPendingEntries(
-      with: embedder, source: source, onDiagnostic: onDiagnostic)
-    guard let batch else { return }
-    index = batch.merged(into: index)
+    while let batch = await index.embedPendingEntries(
+      with: embedder, source: source, limit: Self.embedChunkSize, onDiagnostic: onDiagnostic)
+    {
+      index.merge(batch)
+      store?.save(index)
+    }
   }
 
   /// Searches the catalog for `intent`, returning at most `limit` matches ordered by descending fused score.
@@ -331,7 +345,7 @@ extension MetadataSearcher {
   {
     switch route {
     case .retrieval:
-      return await retrievalSearch(intent: intent, limit: limit, over: index)
+      return await retrievalSearch(intent: intent, limit: limit)
     case .selection(let selection):
       return try await Self.selectionSearch(selection, intent: intent, limit: limit)
     case .decision(let config):

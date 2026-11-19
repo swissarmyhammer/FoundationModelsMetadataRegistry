@@ -59,6 +59,16 @@ public enum MetadataDiagnostic: Sendable, Equatable {
   /// of `total` catalog items have no embedding yet.
   case embedCatchUp(pending: Int, total: Int)
 
+  /// The stored catalog of a persistent searcher was not loaded, and its
+  /// files were removed: its format is old, its embedding model is not the
+  /// model of the searcher, or it is damaged. The searcher starts with an
+  /// empty catalog, and the next update of the caller builds it again.
+  case storedCatalogDropped(reason: StoredCatalogDropReason)
+
+  /// A persistent searcher could not write its catalog to its folder. The
+  /// files keep the last state that was written. The next save tries again.
+  case catalogSaveFailed
+
   /// The default `onDiagnostic` conformer every tier falls back to: logs
   /// `diagnostic` rather than doing nothing, so degradation is never silent
   /// even when a caller supplies no callback of its own.
@@ -142,6 +152,34 @@ public enum MetadataDiagnostic: Sendable, Equatable {
           Key.catalogSize: .stringConvertible(total),
         ],
       )
+    case .storedCatalogDropped(let reason):
+      return LogRecord(
+        diagnosticCase: .storedCatalogDropped,
+        message: "stored catalog dropped (\(reason.rawValue)); the next update builds it again.",
+        values: [Key.storeDropReason: .string(reason.rawValue)],
+      )
+    case .catalogSaveFailed:
+      return LogRecord(
+        diagnosticCase: .catalogSaveFailed,
+        message: "the catalog could not be saved; the stored catalog keeps its last state.",
+        values: [:],
+      )
     }
   }
+}
+
+/// Why a persistent searcher dropped its stored catalog
+/// (`MetadataDiagnostic.storedCatalogDropped(reason:)`).
+public enum StoredCatalogDropReason: String, Sendable, Equatable, CaseIterable {
+  /// The files have a format version other than the version of this
+  /// package.
+  case formatVersion
+
+  /// The vectors were made by an embedding model other than the model of
+  /// `CatalogPersistence.embeddingModelID`.
+  case embeddingModel
+
+  /// A file is damaged or cannot be decoded: a wrong checksum, a short file,
+  /// or an item that does not decode.
+  case damaged
 }

@@ -291,6 +291,10 @@ enum RegistryTelemetry {
 
     /// The count of entries in the catalog.
     static let catalogSize = "catalog.size"
+
+    /// Why a stored catalog was dropped, as a `StoredCatalogDropReason` raw
+    /// value.
+    static let storeDropReason = "store.drop_reason"
   }
 
   /// The name of one `MetadataDiagnostic` case: the value of
@@ -310,6 +314,12 @@ enum RegistryTelemetry {
 
     /// `MetadataDiagnostic.embedCatchUp(pending:total:)`.
     case embedCatchUp
+
+    /// `MetadataDiagnostic.storedCatalogDropped(reason:)`.
+    case storedCatalogDropped
+
+    /// `MetadataDiagnostic.catalogSaveFailed`.
+    case catalogSaveFailed
   }
 
   /// Selects the tracer that a call opens its span through.

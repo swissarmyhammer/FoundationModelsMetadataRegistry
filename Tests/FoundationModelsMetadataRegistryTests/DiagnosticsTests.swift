@@ -120,6 +120,13 @@ struct DiagnosticsTests {
         RegistryTelemetry.MetadataKey.catalogSize: .stringConvertible(total),
       ],
     ),
+    ExpectedRecord(
+      diagnostic: .storedCatalogDropped(reason: .embeddingModel),
+      messageText: "stored catalog dropped (embeddingModel)",
+      values: [RegistryTelemetry.MetadataKey.storeDropReason: .string("embeddingModel")],
+    ),
+    ExpectedRecord(
+      diagnostic: .catalogSaveFailed, messageText: "could not be saved", values: [:]),
   ]
 
   /// Each diagnostic whose metadata the key-spelling test examines, with
@@ -133,6 +140,13 @@ struct DiagnosticsTests {
         "diagnostic.case": "embedCatchUp",
         "embed.pending_count": .stringConvertible(pending),
         "catalog.size": .stringConvertible(total),
+      ],
+    ),
+    (
+      .storedCatalogDropped(reason: .damaged),
+      [
+        "diagnostic.case": "storedCatalogDropped",
+        "store.drop_reason": "damaged",
       ],
     ),
     (
@@ -153,6 +167,8 @@ struct DiagnosticsTests {
     case unknownSelectedId
     case retrievalCut
     case embedCatchUp
+    case storedCatalogDropped
+    case catalogSaveFailed
 
     /// Makes the name of the case of `diagnostic`. The switch has no
     /// `default`, so a new `MetadataDiagnostic` case stops the compile
@@ -171,6 +187,10 @@ struct DiagnosticsTests {
         self = .retrievalCut
       case .embedCatchUp:
         self = .embedCatchUp
+      case .storedCatalogDropped:
+        self = .storedCatalogDropped
+      case .catalogSaveFailed:
+        self = .catalogSaveFailed
       }
     }
   }

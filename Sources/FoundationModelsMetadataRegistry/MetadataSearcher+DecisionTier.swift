@@ -57,8 +57,9 @@ extension MetadataSearcher {
   ///    order of the items that the retrieval tier does not rank. Thus an
   ///    intent that no item satisfies gives an empty result.
   ///
-  /// The tier takes the `index` snapshot before its first suspension, and
-  /// each `Match` takes its block and its `item` from that snapshot. A
+  /// The tier embeds the query first, then takes the `index` snapshot and
+  /// ranks it with no suspension, and each `Match` takes its block and its
+  /// `item` from that snapshot. A
   /// concurrent `update(items:)` during the model call thus cannot mix the
   /// items of two catalogs. Each `Match` keeps the retrieval `Signals` of
   /// its item, or `Signals.unranked` when the retrieval tier does not rank
@@ -92,11 +93,13 @@ extension MetadataSearcher {
   func decisionSearch(_ config: DecisionConfig, intent: String, limit: Int) async throws
     -> TierAnswer
   {
-    let snapshot = index
-    guard limit > 0, !snapshot.ids.isEmpty else {
+    guard limit > 0, !index.ids.isEmpty else {
       return TierAnswer(tier: .decision, signals: [], matches: [])
     }
-    let retrieval = await retrievalSearch(intent: intent, limit: snapshot.count, over: snapshot)
+    let queryVector = await queryVector(for: intent)
+    let snapshot = index
+    let retrieval = rankRetrieval(
+      intent: intent, queryVector: queryVector, limit: snapshot.count, over: snapshot)
     let candidates = Self.candidates(in: snapshot, retrievalMatches: retrieval.matches)
 
     let probabilities = try await Self.probabilities(

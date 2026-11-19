@@ -2,69 +2,83 @@ import FoundationModelsExtras
 import Tracing
 
 /// The `.retrieval` search tier of `MetadataSearcher` (plan.md §5), through
-/// FoundationModelsRanker's `HybridRanker`.
+/// `RetrievalScorer`, which ranks as FoundationModelsRanker's `HybridRanker`.
 extension MetadataSearcher {
-  /// Runs the `.retrieval` tier through FoundationModelsRanker's `HybridRanker.topMatches`.
+  /// Runs the `.retrieval` tier over the live `index`.
   ///
-  /// `HybridRanker.topMatches(ids:documents:query:cosineScores:weights:
-  /// limit:)` fuses the BM25 + trigram + cosine rankings and normalizes to
-  /// `[0, 1]`; the hits map back through the catalog to verbatim `Match`es
-  /// (plan.md §5). Only ever returns documents at least one signal
-  /// actually ranked.
+  /// The query is embedded first (`queryVector(for:)`), which can suspend.
+  /// Then `rankRetrieval(intent:queryVector:limit:over:)` ranks the live
+  /// `index` with no suspension, so a concurrent `update(items:)` cannot
+  /// change the index during the rank, and the search keeps no copy of the
+  /// index across a suspension.
   ///
-  /// The `HybridRanker` call runs in one `RegistryTelemetry.SpanName.rank`
-  /// span, with the `hybrid` ranker and the count of indexed ids as the
-  /// candidate count. The call is synchronous and cannot hang, so the span
-  /// opens directly on the tracer and writes no "enter" log record. The
-  /// call records one `RegistryTelemetry.MetricName.rankDuration` value
-  /// with the `hybrid` ranker. A call with no candidate (`limit <= 0` or
-  /// an empty catalog) ranks nothing, so it opens no span, records no rank
-  /// duration and names no signal.
-  ///
-  /// Internal, not private, because `search(intent:limit:)` and the
-  /// decision tier live in their own files.
-  ///
-  /// The caller gives the index snapshot to rank. Each `Match` takes its
-  /// block and its `item` from that snapshot, so a concurrent
-  /// `update(items:)` during the cosine embed cannot mix two catalogs.
+  /// Internal, not private, because `search(intent:limit:)` lives in its own
+  /// file.
   ///
   /// - Parameters:
   ///   - intent: the search query.
   ///   - limit: the maximum number of matches to return.
-  ///   - index: the index snapshot to rank, usually the live `index`.
   /// - Returns: the fused matches, with the `retrieval` tier and the
   ///   signals that ranked them.
-  func retrievalSearch(intent: String, limit: Int, over index: MetadataIndex<Item>) async
-    -> TierAnswer
-  {
+  func retrievalSearch(intent: String, limit: Int) async -> TierAnswer {
     guard limit > 0, !index.ids.isEmpty else {
       return TierAnswer(tier: .retrieval, signals: [], matches: [])
     }
+    let queryVector = await queryVector(for: intent)
+    return rankRetrieval(intent: intent, queryVector: queryVector, limit: limit, over: index)
+  }
 
+  /// Ranks `index` for `intent` with `RetrievalScorer`, which gives the same
+  /// signals, fusion and order as FoundationModelsRanker's
+  /// `HybridRanker.topMatches(ids:documents:query:cosineScores:weights:limit:)`.
+  ///
+  /// The scorer fuses the BM25 + trigram + cosine rankings and normalizes to
+  /// `[0, 1]`; the ranked positions map back through the catalog to verbatim
+  /// `Match`es (plan.md §5). Only ever returns documents at least one signal
+  /// actually ranked.
+  ///
+  /// The rank runs in one `RegistryTelemetry.SpanName.rank` span, with the
+  /// `hybrid` ranker and the count of indexed ids as the candidate count.
+  /// The call is synchronous and cannot hang, so the span opens directly on
+  /// the tracer and writes no "enter" log record. The call records one
+  /// `RegistryTelemetry.MetricName.rankDuration` value with the `hybrid`
+  /// ranker. A call with no candidate (`limit <= 0` or an empty catalog)
+  /// ranks nothing, so it opens no span, records no rank duration and names
+  /// no signal.
+  ///
+  /// - Parameters:
+  ///   - intent: the search query.
+  ///   - queryVector: the embedding of the query, or `nil` to rank with no
+  ///     cosine signal.
+  ///   - limit: the maximum number of matches to return.
+  ///   - index: the index to rank. Each `Match` takes its block and its
+  ///     `item` from it.
+  /// - Returns: the fused matches, with the `retrieval` tier and the
+  ///   signals that ranked them.
+  func rankRetrieval(
+    intent: String,
+    queryVector: PreparedQueryVector?,
+    limit: Int,
+    over index: MetadataIndex<Item>,
+  ) -> TierAnswer {
+    guard limit > 0, !index.ids.isEmpty else {
+      return TierAnswer(tier: .retrieval, signals: [], matches: [])
+    }
     let weights = weights
-    let cosineScores = await Self.computeCosineScores(
-      intent: intent, index: index, weights: weights, embedder: embedder, onDiagnostic: onDiagnostic,
-    )
-    let hits = RegistryTelemetry.tracer(explicit: nil).withSpan(RegistryTelemetry.SpanName.rank) {
+    let scored = RegistryTelemetry.tracer(explicit: nil).withSpan(RegistryTelemetry.SpanName.rank) {
       span in
       span.attributes[RegistryTelemetry.AttributeKey.rankRanker] =
         RegistryTelemetry.Ranker.hybrid.rawValue
       span.attributes[RegistryTelemetry.AttributeKey.rankCandidateCount] = index.ids.count
       return RegistryTelemetry.rankTimer(for: .hybrid).measure {
-        HybridRanker.topMatches(
-          ids: index.ids,
-          documents: Self.rankedDocuments(in: index),
-          query: intent,
-          cosineScores: cosineScores,
-          weights: weights,
-          limit: limit,
-        )
+        RetrievalScorer.topMatches(
+          in: index, query: intent, queryVector: queryVector, weights: weights, limit: limit)
       }
     }
     return TierAnswer(
       tier: .retrieval,
-      signals: Self.retrievalSignals(weights: weights, rankedCosine: cosineScores != nil),
-      matches: Self.matches(fromHits: hits, in: index),
+      signals: Self.retrievalSignals(weights: weights, rankedCosine: queryVector != nil),
+      matches: Self.matches(fromScored: scored, in: index),
     )
   }
 
@@ -76,8 +90,7 @@ extension MetadataSearcher {
   ///
   /// - Parameters:
   ///   - weights: the fusion weights of the search.
-  ///   - rankedCosine: whether `computeCosineScores(intent:index:weights:
-  ///     embedder:onDiagnostic:)` gave scores.
+  ///   - rankedCosine: whether `queryVector(for:)` gave a vector.
   /// - Returns: the signals that ranked.
   private static func retrievalSignals(weights: Weights, rankedCosine: Bool) -> [RegistryTelemetry
     .Signal]
@@ -90,32 +103,15 @@ extension MetadataSearcher {
     return signals.filter(\.ranked).map(\.signal)
   }
 
-  // MARK: - Shared ranking inputs and Hit -> Match mapping
+  // MARK: - The query vector and the Match mapping
 
-  /// Every indexed entry's precomputed `RankedDocument`, positionally aligned with `index.ids`.
+  /// Embeds `intent` for the cosine signal, or returns `nil` to skip the
+  /// signal entirely.
   ///
-  /// This is the `documents` array `HybridRanker.topMatches` scores.
-  /// Every id in `index.ids` resolves by construction
-  /// (`ids` is exactly the set `rankedDocument(forID:)` can answer for),
-  /// so the `compactMap` never drops anything; `HybridRanker`'s own
-  /// `ids.count == documents.count` precondition would trap if that
-  /// invariant ever broke.
-  ///
-  /// - Parameter index: the catalog index to gather documents from.
-  /// - Returns: one `RankedDocument` per indexed id, in `ids` order.
-  private static func rankedDocuments(in index: MetadataIndex<Item>) -> [RankedDocument] {
-    index.ids.compactMap { index.rankedDocument(forID: $0) }
-  }
-
-  /// Computes the raw per-document cosine scores `HybridRanker` fuses as
-  /// its cosine signal, or `nil` to skip the signal entirely.
-  ///
-  /// `intent` is embedded through `embedder` and scored
-  /// against each catalog entry's stored block embedding via
-  /// `CosineScoring.cosineSimilarity(_:_:)` (plan.md §5 "brute-force
-  /// scoring — plain per-row dot products for cosine — is exact and
-  /// effectively instant" at metadata scale; decision #10, no vector
-  /// store).
+  /// The query is scored against each catalog entry's stored embedding with
+  /// the arithmetic of `CosineScoring.cosineSimilarity(_:_:)` (plan.md §5;
+  /// decision #10, no vector store, no ANN: an exact scan of a contiguous
+  /// matrix).
   ///
   /// Degrades to keyword-only (`nil`) and reports `.embeddingUnavailable`
   /// via `onDiagnostic` — exactly once per search — whenever cosine can't
@@ -127,67 +123,47 @@ extension MetadataSearcher {
   /// A zero `weights.cosine` also returns `nil`, but *without* the
   /// diagnostic: the caller doesn't want the signal, so there's no reason
   /// to embed the query or warn about a missing embedder for it. An item
-  /// with no stored embedding gets a `nil` score — the absent-signal rule
-  /// (plan.md §5): `HybridRanker` gives it no cosine rank, but it can
-  /// still rank through BM25 + trigram. Each item with an embedding gets
-  /// its real score, and `HybridRanker` ranks each one, also a zero or
-  /// negative score.
+  /// with no stored embedding gets no cosine score — the absent-signal rule
+  /// (plan.md §5): it gets no cosine rank, but it can still rank through
+  /// BM25 + trigram. Each item with an embedding gets its real score, and
+  /// each one ranks, also a zero or negative score.
   ///
-  /// - Parameters:
-  ///   - intent: the search query.
-  ///   - index: the catalog index whose stored embeddings are scored.
-  ///   - weights: the per-signal fusion weights (cosine is only computed
-  ///     when `weights.cosine > 0.0`).
-  ///   - embedder: the embedder to embed `intent` with, or `nil` to
-  ///     degrade to keyword-only.
-  ///   - onDiagnostic: called with `.embeddingUnavailable` when cosine
-  ///     was wanted but can't contribute.
-  /// - Returns: one raw cosine score per document, positionally aligned
-  ///   with `index.ids` (`nil` for a document with no embedding), or `nil`
-  ///   to skip the cosine signal.
-  private static func computeCosineScores(
-    intent: String,
-    index: MetadataIndex<Item>,
-    weights: Weights,
-    embedder: (any PooledEmbedding)?,
-    onDiagnostic: @Sendable (MetadataDiagnostic) -> Void,
-  ) async -> [Double?]? {
+  /// - Parameter intent: the search query.
+  /// - Returns: the prepared query vector, or `nil` to skip the cosine signal.
+  func queryVector(for intent: String) async -> PreparedQueryVector? {
     // Cosine only runs when configured to actually count: a zero weight
     // means the caller doesn't want the signal, so there's no reason to
     // embed the query or warn about a missing embedder for it.
     guard weights.cosine > 0.0 else { return nil }
-    guard let embedder, index.ids.contains(where: { index.embedding(forID: $0) != nil }),
+    guard let embedder, index.hasEmbeddings,
       let queryEmbedding = try? await embedder.embed(texts: [intent]).first
     else {
       onDiagnostic(.embeddingUnavailable)
       return nil
     }
-
-    return index.ids.map { id in
-      index.embedding(forID: id).map { CosineScoring.cosineSimilarity(queryEmbedding, $0) }
-    }
+    return PreparedQueryVector(queryEmbedding)
   }
 
-  /// Maps FoundationModelsRanker's `Hit`s back into this package's typed `Match<Item>`es.
+  /// Maps the scored positions back into this package's typed `Match<Item>`es.
   ///
-  /// Each hit's id is looked up in `index` — the id,
-  /// fused score, and raw per-signal `Signals` carry over verbatim, and
-  /// the catalog's stored block and typed `item` are re-attached here (a
-  /// `Hit` carries neither). Every id a hit carries resolves in `index`
-  /// by construction (the hits were ranked over `index.ids`); the
-  /// `compactMap` is defensive.
+  /// The position of each scored entry is looked up in `index` — the
+  /// fused score and the raw per-signal `Signals` carry over verbatim, and
+  /// the catalog's stored block and typed `item` are attached here. Every
+  /// position resolves in `index` by construction (the positions were
+  /// ranked over `index`); the `compactMap` is defensive.
   ///
   /// - Parameters:
-  ///   - hits: the ranked hits to map, in the order the result preserves.
-  ///   - index: the catalog index to look items/blocks up in.
-  /// - Returns: one `Match` per resolvable hit, in order.
-  private static func matches(fromHits hits: [Hit], in index: MetadataIndex<Item>) -> [Match<Item>]
-  {
-    hits.compactMap { hit in
-      guard let item = index.item(forID: hit.id), let block = index.block(forID: hit.id) else {
-        return nil
-      }
-      return Match(id: hit.id, block: block, score: hit.score, signals: hit.signals, item: item)
+  ///   - scored: the ranked positions, in the order the result preserves.
+  ///   - index: the catalog index the positions were ranked over.
+  /// - Returns: one `Match` per resolvable position, in order.
+  private static func matches(
+    fromScored scored: [RetrievalScorer.ScoredPosition], in index: MetadataIndex<Item>,
+  ) -> [Match<Item>] {
+    scored.compactMap { hit in
+      guard let entry = index.entries[index.slotOrder[hit.position]] else { return nil }
+      return Match(
+        id: index.ids[hit.position], block: entry.block, score: hit.score, signals: hit.signals,
+        item: entry.item)
     }
   }
 }
