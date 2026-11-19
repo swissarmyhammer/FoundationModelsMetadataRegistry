@@ -239,16 +239,49 @@ normalization to Ranker's `HybridRanker` (`topMatches` for `search`, `fullOrderi
 for the over-budget candidate ranking); only cosine scoring against the stored
 embeddings (`CosineScoring.cosineSimilarity`) and the `.embeddingUnavailable`/
 zero-weight gating stay local, with `Weights` now a typealias of Ranker's
-`SignalWeights`.)*
+`SignalWeights`. *(Changed 2026-11-19: the index keeps compact columns, and
+`RetrievalScorer` computes what `HybridRanker.topMatches` computes from them; see
+"Scale" below.)*)*
 
-**Scale.** Everything lives **in memory** — no database, no vector store, no ANN, no
-persistence. Expected catalogs are 10¹–10³ items (we are not designing for 10⁴+), so
-brute-force scoring — plain per-row dot products for cosine — is exact and effectively
-instant; CodeContextKit's own no-vector-DB reasoning holds *a fortiori* at metadata
-scale. If a catalog ever outgrows this, the `MetadataIndex` API is the seam:
-CodeContextKit's shipped contiguous row-major matrix + vDSP matvec design drops in
-behind it unchanged. Embedding is the *slow* path — it happens at `update()` time,
-incrementally (§8), never at query time (only the query itself is embedded per search).
+**Scale.** *(Changed 2026-11-19 — D207 of TestudoApp: the session search has a
+catalog of about 100,000 items.)* The first design expected catalogs of 10¹–10³
+items and kept one Ranker `RankedDocument` per item. At 10⁵ items of up to 2,000
+characters, three `Set<String>` and one `[String: Double]` per item take some GB,
+and `HybridRanker` builds a `BM25Corpus` over each document at each search. The
+`MetadataIndex` API was the seam, and the change is behind it:
+
+- **Compact columns.** Each entry keeps its terms and its character trigrams as
+  sorted `UInt32` ids of two interned vocabularies (`Lexicon`), in one array per
+  entry (`DocumentFeatures`): the same data as its `RankedDocument`, made with the
+  same `Tokenizer` and the same canonical trigram rule. The document frequencies and
+  the total length are counters that each add and each removal keep current.
+- **A contiguous matrix.** The vectors go into a row-major `[Float]` matrix in blocks
+  of 1,024 rows (`EmbeddingMatrix`), with the squared magnitude of each row. A copy of
+  the index that changes one vector copies one block, not the matrix.
+- **Slots.** Each entry lives in a slot; a removed entry frees its slot for a later
+  entry. A change of some items changes only their slots.
+- **An exact scorer.** `RetrievalScorer` scans the entries on all cores and computes
+  the same three signals, the same RRF arithmetic and normalization, and the same
+  order (ties by catalog position) as `HybridRanker.topMatches`. The cosine of a row
+  uses the sequential `Float` arithmetic of `CosineScoring.cosineSimilarity`, not a
+  vDSP product, so each cosine score is the same bit for bit. The ranking does not
+  change: `RetrievalScorerParityTests` compares the scorer with `HybridRanker` over
+  random catalogs, queries and vectors. The one difference is the order in which a
+  BM25 sum adds the query terms (`BM25Corpus` adds them in the order of a `Set`,
+  which changes from process to process), so a BM25 score can differ in its last
+  bits.
+- **No snapshot across a suspension.** A search embeds the query first, then ranks
+  the live index with no suspension, and an embed batch keeps the digests of its
+  entries, not a copy of the index. Thus no copy of a large index is alive while the
+  searcher changes it.
+
+Measured at 100,000 items of 500 to 2,000 characters with vectors of 768 dimensions
+(`Benchmarks/Results/2026-11-19-scale/`): a `.retrieval` search with a limit of the
+catalog size takes at most 85 ms, an update of 20 items 11 ms, a start
+from the stored catalog 1.1 s, and the searcher uses about 1,650 MiB. There
+is still no vector store and no ANN: the scan is exact. Embedding is the *slow*
+path — it happens at `update()` time, incrementally (§8), never at query time (only
+the query itself is embedded per search).
 
 ## 6. Selection tier — the dynamic session *(from Multitool's Librarian)*
 
@@ -471,6 +504,23 @@ notifications, a Multitool rebuild. Semantics:
    pending, and the loop does not repeat on a failure; the next `update(items:)`
    retries them.
 
+8. *(2026-11-19 — D207)* **An update of some items.** `update(upserting:removing:)`
+   adds, replaces and removes items by id. A replaced item keeps its place in the
+   catalog order; a new item goes to the end; an id in both lists is an upsert. Only
+   the items in the call are rendered and tokenized: the cost follows the count of
+   items in the call, not the size of the catalog. It has the same hash guard, the
+   same reuse of vectors by the digest of the embedded text, the same reload embed
+   loop and the same selection-tier rule as `update(items:)`. `update(items:)` stays,
+   and it also keeps each entry whose digests did not change, with its vector.
+9. *(2026-11-19 — D207)* **Embed chunks.** A catch-up embeds the pending entries in
+   chunks of 256, and merges each chunk into the live index when it arrives, so a
+   search during a long catch-up already ranks the embedded part with cosine. Each
+   embedder call reports `.embedCatchUp` one time, with the count that still waits.
+   A burst of updates still causes at most two embed calls for a catalog that fits
+   in one chunk.
+10. *(2026-11-19 — D207)* **Saves.** A searcher with persistence (decision #10) saves
+    after each change and each embed chunk, on a background queue.
+
 `update` is cheap to call redundantly (hash-guarded), so callers may forward every
 upstream change notification without coalescing — the searcher coalesces a burst
 itself (item 7). MCP's churn rate is the design target:
@@ -599,6 +649,41 @@ they must be searchable immediately (keyword tiers) and semantically shortly aft
     Expected scale is 10¹–10³ items, where brute-force scoring is exact and
     sufficient; the `MetadataIndex` API is the seam to swap in CodeContextKit's
     shipped contiguous-matrix/vDSP design if a catalog ever demands it.
+    *(Changed 2026-11-19 — D207 of TestudoApp, the session search: about 100,000
+    items.)* The index stays in memory and the search stays an exact scan, but the
+    index keeps compact columns and a contiguous matrix (§5 "Scale"), and a searcher
+    can **persist** its catalog and its vectors in a folder:
+    `CatalogPersistence(folder:embeddingModelID:)`, given to
+    `MetadataSearcher.init(persistence:...) async` or to
+    `SharedCatalogEmbedding.init(persistence:embedder:onDiagnostic:) async`, with
+    `Item: Codable`. Without the option, nothing is persisted, as before.
+    - **Start.** The searcher reads the stored items, their keyword statistics and
+      their vectors, with no embed and no call to the caller. An entry stored with no
+      vector is embedded in the background by the reload embed loop.
+    - **Files.** `catalog.snapshot` holds the whole catalog at one generation (the
+      vocabularies, then each entry: id, item as JSON, block, digests, features,
+      vector) and ends with its SHA-256. `catalog.journal` holds the changes after it:
+      records of removed ids, added or changed entries (with no features: the load
+      makes them again), and new vectors, each with its length and its SHA-256. A save
+      appends one record; it writes a new snapshot when the catalog order changed in
+      another way than appends and removals, or when the journal holds more than 4,096
+      entries or 64 MiB.
+    - **Crash rule.** A snapshot is written to a temporary file and renamed, so a crash
+      leaves the old snapshot or the new one. A journal record that is short or whose
+      digest is wrong ends the journal: the load keeps the records before it, cuts the
+      file there, and appends after the cut. A journal of another generation is left
+      from a crash during a new snapshot, and the load ignores it.
+    - **Dropped catalog.** A stored catalog of another format version, of another
+      `embeddingModelID`, or that is damaged, is dropped with
+      `.storedCatalogDropped(reason:)`: its files are removed, the searcher starts
+      empty, and the next update of the caller builds it again. A vector is kept only
+      for the digest of the text that it was embedded from, as for the reuse of §8.
+    - **Saves.** Each save runs on a background queue, off the path of the caller, and
+      writes only what differs from the stored catalog. Saves that wait are joined
+      into one. `waitForSaves()` returns when each save so far is written. A failed
+      write reports `.catalogSaveFailed`, and the next save writes a new snapshot.
+      Searchers that share one `SharedCatalogEmbedding` save to its one folder; when
+      they get the same updates, each change is written one time.
 11. **Agents stays opted out** — their baked-in-descriptions decision is respected;
     this package is their future option, not a requirement.
 12. *(shipped refinement, updated by the selection-tier migration)*
@@ -892,6 +977,25 @@ the compiler always selects the async overload (every `main.swift` is an async
 context). A caller that needs the catalog embedded before a step runs one search
 first, or builds the index with `MetadataIndex.build(items:embedder:previous:
 onDiagnostic:)` and gives it to `init(index:...)`.
+
+*(Added 2026-11-19 — D207.)* An update of some items, and the persistence option
+(decision #10):
+
+```swift
+// One turn of a session: new chunks, and the changed item of the session.
+await searcher.update(upserting: newChunks + [sessionItem], removing: [])
+// A deleted session: remove its items.
+await searcher.update(upserting: [], removing: idsOfTheSession)
+
+// A searcher whose catalog and vectors persist in a folder (Item: Codable).
+let persistent = await MetadataSearcher<TranscriptChunk>(
+  persistence: CatalogPersistence(
+    folder: home.appending(path: "session-search/server"),
+    embeddingModelID: "embeddinggemma-300m"),
+  mode: .retrieval,
+  embedder: embedder)
+await persistent.waitForSaves()   // before the process ends
+```
 
 ## 13. Examples
 

@@ -76,6 +76,50 @@ let decided = MetadataSearcher(
 `batchSize: 64` and `minimumProbability: 0.5`. A `.decision` search without a
 `DecisionConfig` throws `DecisionTierUnavailable`.
 
+## Large catalogs, updates and persistence
+
+The searcher supports catalogs of about 100,000 items of up to 2,000 characters.
+At that size a `.retrieval` search over the whole catalog takes at most
+85 ms, and an update of 20 items 11 ms (see
+[`Benchmarks/Results/2026-11-19-scale/`](Benchmarks/Results/2026-11-19-scale/)).
+The ranking is the same at each size.
+
+`update(upserting:removing:)` adds, replaces and removes some items by id, and
+does not build the other items again. An item that did not change costs nothing,
+and an item whose embedded text did not change keeps its vector:
+
+```swift
+await searcher.update(upserting: [newItem, changedItem], removing: ["old-id"])
+```
+
+`update(items:)` replaces the whole catalog, and keeps each item that did not
+change.
+
+Give a `CatalogPersistence` to keep the catalog and its vectors in a folder. The
+items must be `Codable`. At its start, the searcher reads the stored catalog with
+no embed, and after each change it saves on a background queue:
+
+```swift
+struct Chunk: SearchableMetadata, Codable {
+    let id: String
+    let text: String
+    func renderBlock() -> String { text }
+}
+
+let stored = await MetadataSearcher<Chunk>(
+    persistence: CatalogPersistence(folder: folder, embeddingModelID: "embeddinggemma-300m"),
+    mode: .retrieval,
+    embedder: embedder,
+)
+await stored.waitForSaves()  // before the process ends
+```
+
+A stored catalog of another embedding model id, of an old format, or that is
+damaged, is dropped with a `.storedCatalogDropped` diagnostic, and the next
+update builds it again. A crash keeps the last state that was written.
+`SharedCatalogEmbedding(persistence:embedder:)` gives the same option to
+searchers that share one catalog embed.
+
 ## Install
 
 Add the package to `Package.swift`:
@@ -108,6 +152,14 @@ swift run -c release --package-path Benchmarks RankingBenchmark --output <dir>
 ```
 
 The run writes `report.json` and `report.md` to `<dir>`.
+
+The cost gate at 100,000 items (search, update of 20 items, start from the
+stored catalog, memory) needs no model. It exits with a failure when a limit is
+not met:
+
+```sh
+swift run -c release --package-path Benchmarks ScaleBenchmark <dir>
+```
 
 The full design (architecture, diagnostics, the
 hot-reload contract) is in [`plan.md`](plan.md).
