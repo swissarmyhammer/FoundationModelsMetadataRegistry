@@ -14,6 +14,10 @@ private let supportTargetName = "BenchmarkSupport"
 /// The name of the executable target that runs the real configurations.
 private let runnerTargetName = "RankingBenchmark"
 
+/// The name of the executable target that runs the cost gate at 100,000
+/// items.
+private let scaleRunnerTargetName = "ScaleBenchmark"
+
 /// The name of the FoundationModelsExtras package, and of its core product:
 /// `ModelPool`, `HubModelLoader`, `PooledEmbedder`, `PooledModel` and the
 /// `PooledEmbedding` protocol.
@@ -95,6 +99,19 @@ let package = Package(
       // A target that imports `FoundationModelsExtrasLlamaCpp` must set
       // C++ interoperability, because the llama.cpp modules need it.
       swiftSettings: [.interoperabilityMode(.Cxx)],
+    ),
+    // The cost gate of a catalog of 100,000 items (D207): the time of a
+    // `.retrieval` search, of an update of 20 items and of a start from the
+    // stored catalog, and the memory. It links the registry only and loads
+    // no model: its embedder is a fast deterministic stub.
+    //
+    //     swift run -c release --package-path Benchmarks ScaleBenchmark
+    .executableTarget(
+      name: scaleRunnerTargetName,
+      dependencies: [
+        .product(name: registryPackageName, package: registryPackageName),
+        .product(name: extrasPackageName, package: extrasPackageName),
+      ],
     ),
     .testTarget(
       name: "\(supportTargetName)Tests",

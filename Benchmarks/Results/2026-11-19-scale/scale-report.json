@@ -1,0 +1,16 @@
+{
+  "averageTextLength" : 1256,
+  "buildMilliseconds" : 11721.410167,
+  "dimension" : 768,
+  "items" : 100000,
+  "passed" : true,
+  "removeMilliseconds" : 2.8320419999999999,
+  "residentAfterBuildMebibytes" : 1976,
+  "residentAfterStartMebibytes" : 1652,
+  "searchMaxMilliseconds" : 84.969916999999995,
+  "searchMedianMilliseconds" : 77.195417000000006,
+  "startMilliseconds" : 1055.4166250000001,
+  "storedMebibytes" : 864,
+  "updateMaxMilliseconds" : 10.952707999999999,
+  "updateMedianMilliseconds" : 10.587209
+}
