@@ -114,6 +114,10 @@ let stored = await MetadataSearcher<Chunk>(
 await stored.waitForSaves()  // before the process ends
 ```
 
+`items()` and `ids()` give the catalog in catalog order, also the stored catalog
+right after the start, so the caller can upsert only what changed and remove what
+is gone.
+
 A stored catalog of another embedding model id, of an old format, or that is
 damaged, is dropped with a `.storedCatalogDropped` diagnostic, and the next
 update builds it again. A crash keeps the last state that was written.

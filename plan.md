@@ -995,6 +995,7 @@ let persistent = await MetadataSearcher<TranscriptChunk>(
   mode: .retrieval,
   embedder: embedder)
 await persistent.waitForSaves()   // before the process ends
+let stored = await persistent.items()   // the stored catalog, in catalog order
 ```
 
 ## 13. Examples

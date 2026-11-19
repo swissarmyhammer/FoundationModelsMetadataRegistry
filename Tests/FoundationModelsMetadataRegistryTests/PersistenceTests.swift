@@ -104,6 +104,19 @@ struct PersistenceTests {
   }
 
   @Test
+  func theStoredItemsAreReadableRightAfterTheStart() async {
+    let folder = Self.makeFolder()
+    defer { try? FileManager.default.removeItem(at: folder) }
+    await Self.store(Self.catalog, in: folder)
+
+    let searcher = await Self.searcher(
+      in: folder, embedder: FakeEmbedder(failure: CancellationError()))
+
+    #expect(await searcher.items() == Self.catalog)
+    #expect(await searcher.ids() == Self.catalog.map(\.id))
+  }
+
+  @Test
   func theChangesAfterTheSnapshotComeBackFromTheJournal() async throws {
     let folder = Self.makeFolder()
     defer { try? FileManager.default.removeItem(at: folder) }
